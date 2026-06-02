@@ -1,0 +1,23 @@
+{
+  "imports": {
+    "@gety-ai/connector-sdk": "./dev/gety-connector-sdk/mod.ts",
+    "esbuild": "npm:esbuild@^0.24.2",
+    "@luca/esbuild-deno-loader": "jsr:@luca/esbuild-deno-loader@^0.11.1"
+  },
+  "tasks": {
+    "build": "deno run -A scripts/build.ts",
+    "dev": "deno run -A scripts/build.ts --watch",
+    "check": "deno check src/index.ts scripts/build.ts scripts/setup.ts",
+    "setup": "deno run -A scripts/setup.ts"
+  },
+  "fmt": {
+    "exclude": [
+      "dist/"
+    ]
+  },
+  "lint": {
+    "exclude": [
+      "dist/"
+    ]
+  }
+}

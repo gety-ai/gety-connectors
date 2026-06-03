@@ -1,8 +1,26 @@
 import * as esbuild from "esbuild";
 import { denoPlugins } from "@luca/esbuild-deno-loader";
+import { builtinModules } from "node:module";
 
 const watch = Deno.args.includes("--watch");
 const configPath = `${Deno.cwd()}/deno.json`;
+
+const nodeBuiltinModules = new Set(builtinModules);
+const nodeBuiltinAliasPlugin: esbuild.Plugin = {
+  name: "node-builtin-alias",
+  setup(build) {
+    build.onResolve({ filter: /^[^./][^:]*$/ }, (args) => {
+      if (!nodeBuiltinModules.has(args.path)) {
+        return undefined;
+      }
+
+      return {
+        path: `node:${args.path}`,
+        external: true,
+      };
+    });
+  },
+};
 
 const options: esbuild.BuildOptions = {
   entryPoints: ["src/index.ts"],
@@ -15,9 +33,12 @@ const options: esbuild.BuildOptions = {
   sourcemap: true,
   sourcesContent: true,
   external: ["@gety-ai/connector-sdk"],
-  plugins: denoPlugins({
-    configPath,
-  }),
+  plugins: [
+    nodeBuiltinAliasPlugin,
+    ...denoPlugins({
+      configPath,
+    }),
+  ],
   logLevel: "info",
 };
 

@@ -1,6 +1,12 @@
 import { type LinearClient } from '@linear/sdk';
 import { logInfo } from './log.ts';
-import { dateToIso, formatLinearTime, maxIsoDate } from './utils.ts';
+import { markdownImagesToLinks } from './markdown.ts';
+import {
+	dateToIso,
+	dateToTime,
+	formatLinearTime,
+	maxIsoDate,
+} from './utils.ts';
 
 export interface LinearComment {
 	id: string;
@@ -348,37 +354,7 @@ export function renderCommentsMarkdown(
 	return sections.join('\n');
 }
 
-export function markdownImagesToLinks(markdown: string): string {
-	const lines = markdown.split('\n');
-	const convertedLines: string[] = [];
-	let fence: MarkdownFence | null = null;
-
-	for (const line of lines) {
-		const fenceMarker = parseFenceMarker(line);
-		if (fence != null) {
-			convertedLines.push(line);
-			if (
-				fenceMarker != null && fenceMarker.char === fence.char &&
-				fenceMarker.length >= fence.length
-			) {
-				fence = null;
-			}
-			continue;
-		}
-
-		if (fenceMarker != null) {
-			fence = fenceMarker;
-			convertedLines.push(line);
-			continue;
-		}
-
-		convertedLines.push(markdownLineImagesToLinks(line));
-	}
-
-	return convertedLines.join('\n');
-}
-
-function commentBoundary(
+export function commentBoundary(
 	state: CommentDeltaState,
 	options: CommentSyncOptions,
 ): string {
@@ -494,167 +470,10 @@ function displayBotActor(
 
 function sortComments(comments: LinearComment[]): void {
 	comments.sort((a, b) => {
-		const aTime = dateToIso(a.createdAt) ?? '';
-		const bTime = dateToIso(b.createdAt) ?? '';
-		return aTime.localeCompare(bTime);
+		const aTime = dateToTime(a.createdAt) ?? Number.NEGATIVE_INFINITY;
+		const bTime = dateToTime(b.createdAt) ?? Number.NEGATIVE_INFINITY;
+		return aTime - bTime;
 	});
-}
-
-interface MarkdownFence {
-	char: '`' | '~';
-	length: number;
-}
-
-function parseFenceMarker(line: string): MarkdownFence | null {
-	const match = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
-	if (match == null) {
-		return null;
-	}
-
-	const marker = match[1];
-	return {
-		char: marker[0] as MarkdownFence['char'],
-		length: marker.length,
-	};
-}
-
-function markdownLineImagesToLinks(line: string): string {
-	let result = '';
-	let index = 0;
-
-	while (index < line.length) {
-		const codeSpanEnd = codeSpanCloseIndex(line, index);
-		if (codeSpanEnd != null) {
-			result += line.slice(index, codeSpanEnd);
-			index = codeSpanEnd;
-			continue;
-		}
-
-		const image = parseMarkdownImage(line, index);
-		if (image == null) {
-			result += line[index];
-			index += 1;
-			continue;
-		}
-
-		const label = image.alt.trim() === '' ? 'Image' : image.alt;
-		result += `[${label}]${image.target}`;
-		index = image.end;
-	}
-
-	return result;
-}
-
-function codeSpanCloseIndex(line: string, start: number): number | null {
-	if (line[start] !== '`' || isEscaped(line, start)) {
-		return null;
-	}
-
-	let tickCount = 1;
-	while (line[start + tickCount] === '`') {
-		tickCount += 1;
-	}
-
-	const close = line.indexOf('`'.repeat(tickCount), start + tickCount);
-	return close === -1 ? null : close + tickCount;
-}
-
-interface MarkdownImage {
-	alt: string;
-	target: string;
-	end: number;
-}
-
-function parseMarkdownImage(line: string, start: number): MarkdownImage | null {
-	if (
-		line[start] !== '!' || line[start + 1] !== '[' ||
-		isEscaped(line, start)
-	) {
-		return null;
-	}
-
-	const altEnd = closingBracketIndex(line, start + 2);
-	if (altEnd == null) {
-		return null;
-	}
-
-	const targetStart = altEnd + 1;
-	const targetEnd = closingTargetIndex(line, targetStart);
-	if (targetEnd == null) {
-		return null;
-	}
-
-	return {
-		alt: line.slice(start + 2, altEnd),
-		target: line.slice(targetStart, targetEnd),
-		end: targetEnd,
-	};
-}
-
-function closingBracketIndex(line: string, start: number): number | null {
-	let depth = 0;
-	for (let index = start; index < line.length; index += 1) {
-		const char = line[index];
-		if (isEscaped(line, index)) {
-			continue;
-		}
-		if (char === '[') {
-			depth += 1;
-			continue;
-		}
-		if (char === ']') {
-			if (depth === 0) {
-				return index;
-			}
-			depth -= 1;
-		}
-	}
-	return null;
-}
-
-function closingTargetIndex(line: string, start: number): number | null {
-	const opener = line[start];
-	if (opener === '(') {
-		return closingParenIndex(line, start + 1);
-	}
-	if (opener === '[') {
-		const end = closingBracketIndex(line, start + 1);
-		return end == null ? null : end + 1;
-	}
-	return null;
-}
-
-function closingParenIndex(line: string, start: number): number | null {
-	let depth = 0;
-	for (let index = start; index < line.length; index += 1) {
-		const char = line[index];
-		if (isEscaped(line, index)) {
-			continue;
-		}
-		if (char === '(') {
-			depth += 1;
-			continue;
-		}
-		if (char === ')') {
-			if (depth === 0) {
-				return index + 1;
-			}
-			depth -= 1;
-		}
-	}
-	return null;
-}
-
-function isEscaped(value: string, index: number): boolean {
-	let slashCount = 0;
-	for (
-		let cursor = index - 1;
-		cursor >= 0 && value[cursor] === '\\';
-		cursor -= 1
-	) {
-		slashCount += 1;
-	}
-	return slashCount % 2 === 1;
 }
 
 function emptyCommentConnection(): LinearCommentConnection {

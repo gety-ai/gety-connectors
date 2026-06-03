@@ -20,6 +20,17 @@ export function formatLinearTime(
 	return iso.slice(0, 16).replace('T', ' ');
 }
 
+export function dateToTime(
+	value: Date | string | null | undefined,
+): number | null {
+	const iso = dateToIso(value);
+	if (iso == null) {
+		return null;
+	}
+	const time = new Date(iso).getTime();
+	return Number.isNaN(time) ? null : time;
+}
+
 export function maxIsoDate(
 	a: string | null | undefined,
 	b: string | null | undefined,

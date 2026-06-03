@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {
+	commentBoundary,
 	type LinearComment,
-	markdownImagesToLinks,
 	renderCommentsMarkdown,
 } from './comment.ts';
+import { markdownImagesToLinks } from './markdown.ts';
 
 Deno.test('markdownImagesToLinks converts images without touching code', () => {
 	const markdown = [
@@ -23,7 +24,7 @@ Deno.test('markdownImagesToLinks converts images without touching code', () => {
 			'```',
 			'![Code block](https://example.com/block.png)',
 			'```',
-			'Text [Nested](https://example.com/a_(b).png "title")',
+			'Text [Nested](https://example.com/a_\\(b\\).png "title")',
 		].join('\n'),
 	);
 });
@@ -83,6 +84,38 @@ Deno.test('renderCommentsMarkdown renders separated threaded comments', () => {
 	assert.doesNotMatch(markdown, /#### Reply/);
 	assert.doesNotMatch(markdown, /- Author:/);
 	assert.doesNotMatch(markdown, /!\[image\]/);
+});
+
+Deno.test('renderCommentsMarkdown sorts timestamps by actual time', () => {
+	const markdown = renderCommentsMarkdown([
+		comment({
+			id: 'later',
+			body: 'Later',
+			createdAt: '2026-06-03T00:30:00.000Z',
+		}),
+		comment({
+			id: 'earlier',
+			body: 'Earlier',
+			createdAt: '2026-06-03T01:00:00.000+01:00',
+		}),
+	]);
+
+	assert.ok(markdown.indexOf('Earlier') < markdown.indexOf('Later'));
+});
+
+Deno.test('commentBoundary resumes an in-progress comment delta page', () => {
+	assert.equal(
+		commentBoundary({
+			comment_delta_boundary: '2026-06-03T00:00:00.000Z',
+			last_comment_updated_at: '2026-06-03T01:00:00.000Z',
+		}, {
+			commentDeltaPageSize: 50,
+			issueCommentPageSize: 50,
+			maxCommentDeltasPerPoll: 50,
+			incrementalOverlapMs: 1000,
+		}),
+		'2026-06-03T00:00:00.000Z',
+	);
 });
 
 function comment(overrides: Partial<LinearComment>): LinearComment {

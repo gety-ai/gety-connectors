@@ -17,6 +17,8 @@ This Gety custom connector indexes Linear issues as markdown documents.
 - Rebuilds affected issue documents when comments are created, edited, resolved,
   or archived.
 - Deletes archived or trashed Linear issues from Gety's index.
+- Runs every 5 minutes and processes issue sync page by page, up to 500 issues
+  per poll. Comment delta sync runs only after issue pagination is caught up.
 
 See `docs/advanced-sync.md` for webhook and deeper incremental sync notes.
 
@@ -54,7 +56,7 @@ deno task verify
 ```
 
 Unit tests use Deno's built-in test runner and cover stable pure functions such
-as markdown rendering and incremental timestamp boundaries. They do not require
+as markdown rendering and incremental cursor transitions. They do not require
 network access or a Linear API key.
 
 ## Live Runner

@@ -11,6 +11,7 @@ import {
 } from './comment.ts';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import {
+	buildIssueDelete,
 	buildIssueUpdate,
 	fetchIssueById,
 	fetchIssuePage,
@@ -22,25 +23,22 @@ import {
 import { hasValue, logInfo } from './log.ts';
 import { maxIsoDate } from './utils.ts';
 
-interface LinearState {
-	schema_version?: 1 | 2;
-	last_updated_at?: string;
+export interface LinearState {
+	schema_version?: number;
 	last_issue_updated_at?: string;
+	issue_delta_after?: string;
+	issue_delta_boundary?: string;
+	issue_delta_max_updated_at?: string;
+	rebuild_issue_sync?: boolean;
 	last_comment_updated_at?: string;
 	comment_delta_after?: string;
 	comment_delta_boundary?: string;
 	comment_delta_max_updated_at?: string;
-	last_poll_completed_at?: string;
-	last_poll_issue_count?: number;
-	last_poll_comment_count?: number;
-	last_poll_rebuilt_issue_count?: number;
-	last_poll_update_count?: number;
-	last_poll_hit_limit?: boolean;
 	index_comments?: boolean;
 }
 
 interface SyncOptions {
-	// Number of issues requested from Linear in each paginated API call.
+	// Number of issues requested from Linear in each page.
 	issuePageSize: number;
 
 	// Maximum number of issues processed in one Gety poll.
@@ -63,7 +61,7 @@ const DEFAULT_SYNC_OPTIONS: SyncOptions = {
 	issuePageSize: 50,
 	maxIssuesPerPoll: 500,
 	commentDeltaPageSize: 50,
-	maxCommentDeltasPerPoll: 500,
+	maxCommentDeltasPerPoll: 50,
 	issueCommentPageSize: 50,
 	incrementalOverlapMs: 1000,
 };
@@ -78,179 +76,197 @@ export default class LinearConnector
 
 	override onLoad(): void {
 		this.client = new LinearClient({ apiKey: this.config.api_key });
-		this.indexComments = this.config.index_comments;
+		this.indexComments = this.config.index_comments ?? true;
 	}
 
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
 		const previousState = this.lastState ?? {};
 		const rebuildAllIssues = this.shouldRebuildAllIssues(previousState);
+		let stateAfterIssues = previousState;
+		let issuePages = 0;
+		let issueCount = 0;
+		let issueUpdates = 0;
 		logInfo('poll started', {
 			index_comments: this.indexComments,
 			rebuild_all_issues: rebuildAllIssues,
 			has_issue_cursor: hasValue(
-				previousState.last_issue_updated_at ??
-					previousState.last_updated_at,
+				previousState.issue_delta_after ??
+					previousState.last_issue_updated_at,
 			),
 			has_comment_cursor: hasValue(
-				previousState.last_comment_updated_at ??
+				previousState.comment_delta_after ??
 					previousState.comment_delta_boundary ??
-					previousState.comment_delta_after,
+					previousState.last_comment_updated_at,
 			),
 		});
 
-		const issueResult = await this.pollIssues(previousState, rebuildAllIssues);
+		while (issueCount < this.syncOptions.maxIssuesPerPoll) {
+			const shouldRebuildPage = this.shouldRebuildAllIssues(stateAfterIssues);
+			const remainingIssues = this.syncOptions.maxIssuesPerPoll - issueCount;
+			const issueResult = await this.pollIssuePage(
+				stateAfterIssues,
+				shouldRebuildPage,
+				Math.min(this.syncOptions.issuePageSize, remainingIssues),
+			);
+			const shouldYieldIssuePage = shouldYieldIssueResult(
+				stateAfterIssues,
+				issueResult,
+				shouldRebuildPage,
+			);
+			stateAfterIssues = nextStateAfterIssuePage(
+				stateAfterIssues,
+				issueResult,
+				this.indexComments,
+			);
+			if (shouldYieldIssuePage) {
+				issuePages += 1;
+				issueCount += issueResult.issueCount;
+				issueUpdates += issueResult.updates.length;
+				yield { updates: issueResult.updates, state: stateAfterIssues };
+			}
+			if (!issueResult.hitLimit || issueResult.issueCount === 0) {
+				break;
+			}
+		}
+
+		if (stateAfterIssues.issue_delta_after != null) {
+			logInfo('poll finished', {
+				phase: 'issues',
+				issue_pages: issuePages,
+				issues: issueCount,
+				issue_updates: issueUpdates,
+				total_updates: issueUpdates,
+				hit_limit: true,
+			});
+			return;
+		}
+
 		const commentDelta = this.indexComments
 			? await changedCommentIssues(
 				this.client,
-				previousState,
+				stateAfterIssues,
 				this.signal,
 				this.syncOptions,
 			)
-			: emptyCommentDelta(previousState);
+			: emptyCommentDelta(stateAfterIssues);
 		if (!this.indexComments) {
 			logInfo('comment sync skipped', {
 				reason: 'index_comments_disabled',
 			});
 		}
 
-		const rebuiltFromComments = await this.rebuildCommentIssues(
-			commentDelta.issueIds,
-		);
-		const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
+		const rebuiltFromComments = this.indexComments
+			? await this.rebuildCommentIssues(commentDelta.issueIds)
+			: emptyCommentIssueRebuildResult();
 		logInfo('poll finished', {
-			issue_updates: issueResult.updates.length,
+			phase: 'comments',
+			issue_pages: issuePages,
+			issues: issueCount,
+			issue_updates: issueUpdates,
 			scanned_comments: commentDelta.commentCount,
 			rebuilt_issues: rebuiltFromComments.issueCount,
-			total_updates: updates.length,
-			hit_limit: issueResult.hitLimit || commentDelta.hitLimit,
+			total_updates: issueUpdates + rebuiltFromComments.updates.length,
+			hit_limit: commentDelta.hitLimit,
 		});
 
 		yield {
-			updates,
-			state: {
-				schema_version: STATE_SCHEMA_VERSION,
-				last_issue_updated_at: issueResult.lastIssueUpdatedAt,
-				last_comment_updated_at: nextCommentUpdatedAt(
-					previousState,
-					commentDelta,
-				),
-				comment_delta_after: commentDelta.nextAfter,
-				comment_delta_boundary: commentDelta.nextAfter
-					? commentDelta.boundary
-					: undefined,
-				comment_delta_max_updated_at: commentDelta.nextAfter
-					? commentDelta.maxUpdatedAt
-					: undefined,
-				last_poll_completed_at: new Date().toISOString(),
-				last_poll_issue_count: issueResult.issueCount,
-				last_poll_comment_count: commentDelta.commentCount,
-				last_poll_rebuilt_issue_count: rebuiltFromComments.issueCount,
-				last_poll_update_count: updates.length,
-				last_poll_hit_limit: issueResult.hitLimit || commentDelta.hitLimit,
-				index_comments: this.indexComments,
-			} satisfies LinearState,
+			updates: rebuiltFromComments.updates,
+			state: nextStateAfterCommentSync(
+				stateAfterIssues,
+				commentDelta,
+				this.indexComments,
+			),
 		};
 	}
 
 	private shouldRebuildAllIssues(previousState: LinearState): boolean {
-		return shouldRebuildAllIssuesForState(previousState, this.indexComments);
+		return previousState.rebuild_issue_sync === true ||
+			shouldRebuildAllIssuesForState(previousState, this.indexComments);
 	}
 
-	private async pollIssues(
+	private async pollIssuePage(
 		previousState: LinearState,
 		rebuildAllIssues: boolean,
-	): Promise<IssuePollResult> {
+		first: number,
+	): Promise<IssuePageResult> {
 		const filter = buildIssueFilter(
 			previousState,
 			rebuildAllIssues,
 			this.syncOptions,
 		);
+		const after = previousState.issue_delta_after;
+		const boundary = buildIssueBoundary(
+			previousState,
+			rebuildAllIssues,
+			this.syncOptions,
+		);
 		const updates: DocUpdate[] = [];
+		let maxUpdatedAt = previousState.issue_delta_max_updated_at;
 
-		let after: string | undefined;
-		let issueCount = 0;
-		let lastIssueUpdatedAt = previousState.last_issue_updated_at ??
-			previousState.last_updated_at;
-		let hasNextPage = true;
 		logInfo('issue sync started', {
-			mode: rebuildAllIssues ? 'full' : 'incremental',
-			page_size: this.syncOptions.issuePageSize,
-			max_issues: this.syncOptions.maxIssuesPerPoll,
+			mode: rebuildAllIssues ? 'rebuild' : 'incremental',
+			page_size: first,
+			resume_after: after != null,
 			has_filter: filter != null,
 		});
 
-		while (hasNextPage && issueCount < this.syncOptions.maxIssuesPerPoll) {
+		const connection = await fetchIssuePage(
+			this.client,
+			{ after, filter, first },
+			this.indexComments,
+			this.syncOptions.issueCommentPageSize,
+		);
+		logInfo('issue page fetched', {
+			issues: connection.nodes.length,
+			has_next_page: connection.pageInfo.hasNextPage,
+		});
+
+		const pageStartedAt = performance.now();
+		let extraCommentPageIssueCount = 0;
+		for (const issue of connection.nodes) {
 			this.signal.throwIfAborted();
 
-			const first = Math.min(
-				this.syncOptions.issuePageSize,
-				this.syncOptions.maxIssuesPerPoll - issueCount,
-			);
-			logInfo('fetching issue page', {
-				after: after == null ? 'no' : 'yes',
-				first,
-			});
-			const connection = await fetchIssuePage(
-				this.client,
-				{ after, filter, first },
-				this.indexComments,
-				this.syncOptions.issueCommentPageSize,
-			);
-			logInfo('issue page fetched', {
-				issues: connection.nodes.length,
-				has_next_page: connection.pageInfo.hasNextPage,
-			});
-
-			const pageStartedAt = performance.now();
-			let extraCommentPageIssueCount = 0;
-			for (const issue of connection.nodes) {
-				const updatedAt = issueUpdatedAt(issue);
-				if (updatedAt != null) {
-					lastIssueUpdatedAt = maxIsoDate(lastIssueUpdatedAt, updatedAt);
-				}
-
-				const comments = this.indexComments && !issueIsRemoved(issue)
-					? await fetchIssueComments(
-						issue,
-						this.client,
-						this.signal,
-						this.syncOptions,
-					)
-					: [];
-				if (issue.comments?.pageInfo.hasNextPage === true) {
-					extraCommentPageIssueCount += 1;
-				}
-				updates.push(buildIssueUpdate(issue, comments, {
-					renderComments: this.indexComments,
-				}));
+			const updatedAt = issueUpdatedAt(issue);
+			if (updatedAt != null) {
+				maxUpdatedAt = maxIsoDate(maxUpdatedAt, updatedAt);
 			}
 
-			issueCount += connection.nodes.length;
-			after = connection.pageInfo.endCursor ?? undefined;
-			hasNextPage = connection.pageInfo.hasNextPage && after != null;
-			logInfo('issue page processed', {
-				total_issues: issueCount,
-				total_updates: updates.length,
-				page_ms: Math.round(performance.now() - pageStartedAt),
-				extra_comment_page_issues: extraCommentPageIssueCount,
-				has_next_page: hasNextPage,
-			});
-
-			if (connection.nodes.length === 0) {
-				break;
+			const comments = this.indexComments && !issueIsRemoved(issue)
+				? await fetchIssueComments(
+					issue,
+					this.client,
+					this.signal,
+					this.syncOptions,
+				)
+				: [];
+			if (issue.comments?.pageInfo.hasNextPage === true) {
+				extraCommentPageIssueCount += 1;
 			}
+			updates.push(buildIssueUpdate(issue, comments, {
+				renderComments: this.indexComments,
+			}));
 		}
-		logInfo('issue sync finished', {
-			issues: issueCount,
+
+		const nextAfter = connection.pageInfo.hasNextPage
+			? connection.pageInfo.endCursor ?? undefined
+			: undefined;
+		const hitLimit = nextAfter != null;
+		logInfo('issue page processed', {
+			issues: connection.nodes.length,
 			updates: updates.length,
-			hit_limit: hasNextPage,
+			page_ms: Math.round(performance.now() - pageStartedAt),
+			extra_comment_page_issues: extraCommentPageIssueCount,
+			has_next_page: hitLimit,
 		});
 
 		return {
 			updates,
-			issueCount,
-			lastIssueUpdatedAt,
-			hitLimit: hasNextPage,
+			issueCount: connection.nodes.length,
+			maxUpdatedAt,
+			boundary,
+			nextAfter,
+			hitLimit,
+			rebuildAllIssues,
 		};
 	}
 
@@ -275,6 +291,8 @@ export default class LinearConnector
 				this.syncOptions.issueCommentPageSize,
 			);
 			if (issue == null) {
+				updates.push(buildIssueDelete(issueId));
+				issueCount += 1;
 				continue;
 			}
 			const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(
@@ -298,11 +316,17 @@ export default class LinearConnector
 	}
 }
 
-interface IssuePollResult {
+interface IssuePageResult extends IssueStateResult {
 	updates: DocUpdate[];
 	issueCount: number;
-	lastIssueUpdatedAt?: string;
+}
+
+export interface IssueStateResult {
+	maxUpdatedAt?: string;
+	boundary?: string;
+	nextAfter?: string;
 	hitLimit: boolean;
+	rebuildAllIssues: boolean;
 }
 
 interface CommentIssueRebuildResult {
@@ -323,22 +347,125 @@ export function shouldRebuildAllIssuesForState(
 	return indexComments || previousState.index_comments === true;
 }
 
-function buildIssueFilter(
+export function shouldYieldIssueResult(
+	previousState: Pick<LinearState, 'issue_delta_after'>,
+	result: Pick<IssueStateResult, 'hitLimit'> & { issueCount: number },
+	rebuildAllIssues: boolean,
+): boolean {
+	return rebuildAllIssues || previousState.issue_delta_after != null ||
+		result.issueCount > 0 || result.hitLimit;
+}
+
+export function buildIssueFilter(
 	state: LinearState,
 	rebuildAllIssues: boolean,
-	options: SyncOptions,
+	options: Pick<SyncOptions, 'incrementalOverlapMs'>,
 ): IssuesQueryVariables['filter'] {
+	const boundary = buildIssueBoundary(state, rebuildAllIssues, options);
+	if (boundary == null) {
+		return undefined;
+	}
+	return { updatedAt: { gte: boundary } };
+}
+
+export function buildIssueBoundary(
+	state: LinearState,
+	rebuildAllIssues: boolean,
+	options: Pick<SyncOptions, 'incrementalOverlapMs'>,
+): string | undefined {
 	if (rebuildAllIssues) {
 		return undefined;
 	}
-
-	const lastIssueUpdatedAt = state.last_issue_updated_at ??
-		state.last_updated_at;
-	if (lastIssueUpdatedAt == null) {
+	if (state.issue_delta_boundary != null) {
+		return state.issue_delta_boundary;
+	}
+	if (state.last_issue_updated_at == null) {
 		return undefined;
 	}
+	return issueDateBoundary(state.last_issue_updated_at, options);
+}
 
-	return { updatedAt: { gte: issueDateBoundary(lastIssueUpdatedAt, options) } };
+export function nextStateAfterIssuePage(
+	state: LinearState,
+	result: IssueStateResult,
+	indexComments: boolean,
+): LinearState {
+	return {
+		schema_version: STATE_SCHEMA_VERSION,
+		last_issue_updated_at: nextIssueUpdatedAt(state, result),
+		issue_delta_after: result.nextAfter,
+		issue_delta_boundary: result.nextAfter ? result.boundary : undefined,
+		issue_delta_max_updated_at: result.nextAfter
+			? result.maxUpdatedAt
+			: undefined,
+		rebuild_issue_sync: result.nextAfter && result.rebuildAllIssues
+			? true
+			: undefined,
+		last_comment_updated_at: indexComments
+			? state.last_comment_updated_at
+			: undefined,
+		comment_delta_after: indexComments ? state.comment_delta_after : undefined,
+		comment_delta_boundary: indexComments
+			? state.comment_delta_boundary
+			: undefined,
+		comment_delta_max_updated_at: indexComments
+			? state.comment_delta_max_updated_at
+			: undefined,
+		index_comments: indexComments,
+	};
+}
+
+export function nextIssueUpdatedAt(
+	state: LinearState,
+	result: Pick<IssueStateResult, 'maxUpdatedAt' | 'nextAfter'>,
+): string | undefined {
+	if (result.nextAfter != null) {
+		return state.last_issue_updated_at;
+	}
+	return maxIsoDate(
+		state.last_issue_updated_at,
+		result.maxUpdatedAt ?? state.issue_delta_max_updated_at,
+	);
+}
+
+export function nextStateAfterCommentSync(
+	state: LinearState,
+	delta: CommentDeltaResult,
+	indexComments: boolean,
+): LinearState {
+	return {
+		schema_version: STATE_SCHEMA_VERSION,
+		last_issue_updated_at: state.last_issue_updated_at,
+		issue_delta_after: state.issue_delta_after,
+		issue_delta_boundary: state.issue_delta_boundary,
+		issue_delta_max_updated_at: state.issue_delta_max_updated_at,
+		rebuild_issue_sync: state.rebuild_issue_sync,
+		last_comment_updated_at: indexComments
+			? nextCommentUpdatedAt(state, delta)
+			: undefined,
+		comment_delta_after: indexComments ? delta.nextAfter : undefined,
+		comment_delta_boundary: indexComments && delta.nextAfter
+			? delta.boundary
+			: undefined,
+		comment_delta_max_updated_at: indexComments && delta.nextAfter
+			? delta.maxUpdatedAt
+			: undefined,
+		index_comments: indexComments,
+	};
+}
+
+export function nextCommentUpdatedAt(
+	state: LinearState,
+	delta: CommentDeltaResult,
+): string | undefined {
+	if (delta.nextAfter != null) {
+		return state.last_comment_updated_at;
+	}
+
+	return maxIsoDate(
+		state.last_comment_updated_at,
+		delta.maxUpdatedAt ?? state.comment_delta_max_updated_at,
+	);
 }
 
 function emptyCommentDelta(state: LinearState): CommentDeltaResult {
@@ -352,16 +479,6 @@ function emptyCommentDelta(state: LinearState): CommentDeltaResult {
 	};
 }
 
-function nextCommentUpdatedAt(
-	state: LinearState,
-	delta: CommentDeltaResult,
-): string | undefined {
-	if (delta.nextAfter != null) {
-		return state.last_comment_updated_at;
-	}
-
-	return maxIsoDate(
-		state.last_comment_updated_at,
-		delta.maxUpdatedAt ?? state.comment_delta_max_updated_at,
-	);
+function emptyCommentIssueRebuildResult(): CommentIssueRebuildResult {
+	return { updates: [], issueCount: 0 };
 }

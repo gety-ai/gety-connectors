@@ -21,14 +21,35 @@ The current connector already uses issue-level incremental sync:
 - `IssueSortInput.updatedAt.order` supports ascending and descending sorting.
 - Archived or trashed issues are emitted as Gety deletes.
 
-The connector uses `updatedAt >= last_updated_at - 1s` to avoid missing issues
-around timestamp precision and concurrent poll boundaries. Repeated upserts are
-acceptable because Gety treats upsert as the full latest source state.
+The connector processes issue sync page by page. Each page requests 50 issues,
+yields that page immediately, and one Gety poll may process up to 500 issues. If
+issue pagination or a full rebuild still has more pages after that limit, the
+connector persists the issue page cursor and the next poll continues from there.
+Once issue pagination is caught up, the same poll may continue with one comment
+delta pass. Repeated upserts are acceptable because Gety treats upsert as the
+full latest source state.
+
+The issue cursor has two layers:
+
+- Completed cursor: `last_issue_updated_at`.
+- In-progress page cursor: `issue_delta_after`, `issue_delta_boundary`, and
+  `issue_delta_max_updated_at`.
+
+Incremental issue polling uses `updatedAt >= last_issue_updated_at - 1s` to
+avoid missing issues around timestamp precision and concurrent poll boundaries.
+When Linear returns another page, the connector persists the page cursor and
+keeps the same boundary for the next poll. This prevents a large set of issues
+with the same `updatedAt` from repeatedly restarting at the first page.
+
+Full rebuilds use the same issue page cursor and persist `rebuild_issue_sync`
+while a rebuild is in progress. Large workspaces therefore converge through
+committed issue pages instead of one long all-or-nothing poll.
 
 Remaining limitation: a hard-deleted issue that is no longer returned by the API
 cannot be detected by polling alone unless Linear exposes it as trashed or
-archived first. Webhooks are the better long-term source for exact delete
-events.
+archived first. If a changed comment points at an issue that can no longer be
+fetched, the connector emits a delete for that issue document. Webhooks or a
+periodic full reconciliation would be needed for exact hard-delete coverage.
 
 ## Comments
 
@@ -50,11 +71,15 @@ Comments are synced with the SDK:
 
 Implementation shape:
 
-- Issue polling still uses `updatedAt >= last_issue_updated_at - 1s`.
+- Issue polling still uses `updatedAt >= last_issue_updated_at - 1s` and yields
+  each issue page separately, up to 500 issues per poll.
 - Comment polling uses a separate `last_comment_updated_at` cursor with the same
-  1 second overlap.
+  1 second overlap. Issue pages never advance this comment cursor; only comment
+  delta sync does.
 - Changed comments are converted to issue IDs, then each affected issue is
   rebuilt by fetching its full current comment list.
+- Comment delta runs after issue pagination is caught up. If an issue rebuild is
+  still paginating, comment delta waits for the next poll.
 - Archived comments are fetched so their owning issue can be rebuilt, but they
   are omitted from the rendered markdown.
 - Comment threads are rendered as separate blocks with dividers between
@@ -97,7 +122,7 @@ no public HTTP endpoint for Linear to call.
 
 1. Keep issue polling and comment polling independent so a large comment backlog
    cannot block issue metadata updates.
-2. Add a bounded backfill mode for comments, for example 500 comments per poll,
-   using `updatedAt` ascending order.
+2. If hard-delete cleanup becomes required, add periodic reconciliation against
+   the current issue list.
 3. If Gety adds an inbound event endpoint, add webhook support for `Issue` and
    `Comment` resources, then use polling only as reconciliation.

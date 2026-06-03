@@ -4,9 +4,9 @@ import {
 	latestCommentUpdatedAt,
 	type LinearComment,
 	type LinearCommentConnection,
-	markdownImagesToLinks,
 	renderCommentsMarkdown,
 } from './comment.ts';
+import { markdownImagesToLinks } from './markdown.ts';
 import { dateToIso, formatLinearTime, maxIsoDate } from './utils.ts';
 
 export type IssuesQueryVariables = NonNullable<
@@ -252,7 +252,15 @@ export async function fetchIssueById(
 }
 
 export function issueDocId(issue: LinearIssue): string {
-	return `linear:issue:${issue.id}`;
+	return issueDocIdFromId(issue.id);
+}
+
+export function issueDocIdFromId(issueId: string): string {
+	return `linear:issue:${issueId}`;
+}
+
+export function buildIssueDelete(issueId: string): DocUpdate {
+	return del(issueDocIdFromId(issueId));
 }
 
 export function issueIsRemoved(issue: LinearIssue): boolean {

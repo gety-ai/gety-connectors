@@ -43,7 +43,7 @@ export abstract class Connector<
 	protected lastState: State | null = null;
 	protected signal: AbortSignal = new AbortController().signal;
 
-	onload?(): void | Promise<void>;
+	onLoad?(): void | Promise<void>;
 
 	abstract poll(): AsyncGenerator<PollResult, void, unknown>;
 }

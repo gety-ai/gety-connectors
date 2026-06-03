@@ -76,7 +76,7 @@ export default class LinearConnector
 	private indexComments = true;
 	private readonly syncOptions = DEFAULT_SYNC_OPTIONS;
 
-	override onload(): void {
+	override onLoad(): void {
 		this.client = new LinearClient({ apiKey: this.config.api_key });
 		this.indexComments = this.config.index_comments;
 	}

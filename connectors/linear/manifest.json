@@ -4,6 +4,7 @@
 	"version": "0.1.0",
 	"min_app_version": "0.5.1",
 	"entry": "dist/main.js",
+	"icon": "assets/linear.webp",
 	"description": "Indexes Linear issues as searchable markdown documents.",
 	"author": {
 		"name": "Gety"

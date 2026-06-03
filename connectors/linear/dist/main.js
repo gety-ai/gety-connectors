@@ -91430,7 +91430,7 @@ var LinearConnector = class extends Connector {
   client;
   indexComments = true;
   syncOptions = DEFAULT_SYNC_OPTIONS;
-  onload() {
+  onLoad() {
     this.client = new LinearClient({ apiKey: this.config.api_key });
     this.indexComments = this.config.index_comments;
   }

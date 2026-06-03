@@ -19,6 +19,13 @@
 				"type": "password",
 				"description": "Create a personal API key in Linear settings.",
 				"required": true
+			},
+			{
+				"id": "index_comments",
+				"title": "Index comments",
+				"type": "checkbox",
+				"description": "Append Linear issue comments to each issue markdown document.",
+				"default_value": true
 			}
 		]
 	},

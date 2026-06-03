@@ -8,12 +8,17 @@ This Gety custom connector indexes Linear issues as markdown documents.
 - Indexes Linear issues with `doc_type: "linear:issue"`.
 - Stores each issue as markdown so Gety can render the source preview when the
   search result has `content_format: "markdown"`.
+- Appends Linear comments into the issue markdown when `index_comments` is
+  enabled and the issue has visible comments.
+- Converts markdown images in issue descriptions and comments into normal links
+  so the Gety preview does not load remote images inline.
 - Uses each issue's Linear URL as the Gety doc link.
 - Re-upserts changed issues using `updatedAt` incremental polling.
+- Rebuilds affected issue documents when comments are created, edited, resolved,
+  or archived.
 - Deletes archived or trashed Linear issues from Gety's index.
 
-See `docs/advanced-sync.md` for comments, webhook, and deeper incremental sync
-research.
+See `docs/advanced-sync.md` for webhook and deeper incremental sync notes.
 
 ## Files
 
@@ -50,5 +55,5 @@ then builds. `deno task build` only regenerates `dist/main.js` and
 5. Wait for the first poll to finish, then search for a Linear issue key or
    title.
 
-After changing `src/index.ts`, run `deno task build`, then use Restart in Gety
-to load the new `dist/main.js`.
+After changing files under `src/`, run `deno task build`, then use Restart in
+Gety to load the new `dist/main.js`.

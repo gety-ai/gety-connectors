@@ -1,233 +1,159 @@
 import {
 	Connector,
-	del,
 	type DocUpdate,
 	type PollResult,
-	upsert,
 } from '@gety-ai/connector-sdk';
+import { LinearClient, LinearDocument } from '@linear/sdk';
 import {
-	type Issue,
-	LinearClient,
-	LinearDocument,
-	type Project,
-	type Team,
-	type User,
-	type WorkflowState,
-} from '@linear/sdk';
+	changedCommentIssues,
+	type CommentDeltaResult,
+	fetchIssueComments,
+} from './comment.ts';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+import {
+	buildIssueUpdate,
+	issueDateBoundary,
+	issueIsRemoved,
+	type IssuesQueryVariables,
+	issueUpdatedAt,
+	maxIsoDate,
+} from './issue.ts';
 
-type LinearState = {
-	schema_version?: 1;
+interface LinearState {
+	schema_version?: 1 | 2;
 	last_updated_at?: string;
+	last_issue_updated_at?: string;
+	last_comment_updated_at?: string;
+	comment_delta_after?: string;
+	comment_delta_boundary?: string;
+	comment_delta_max_updated_at?: string;
 	last_poll_completed_at?: string;
 	last_poll_issue_count?: number;
+	last_poll_comment_count?: number;
+	last_poll_rebuilt_issue_count?: number;
 	last_poll_update_count?: number;
 	last_poll_hit_limit?: boolean;
+	index_comments?: boolean;
+}
+
+interface SyncOptions {
+	// Number of issues requested from Linear in each paginated API call.
+	issuePageSize: number;
+
+	// Maximum number of issues processed in one Gety poll.
+	maxIssuesPerPoll: number;
+
+	// Number of changed comments requested from Linear in each API call.
+	commentDeltaPageSize: number;
+
+	// Maximum number of changed comments scanned in one Gety poll.
+	maxCommentDeltasPerPoll: number;
+
+	// Number of comments requested per page when rebuilding one issue.
+	issueCommentPageSize: number;
+
+	// Timestamp overlap used by incremental polling to avoid boundary misses.
+	incrementalOverlapMs: number;
+}
+
+const DEFAULT_SYNC_OPTIONS: SyncOptions = {
+	issuePageSize: 50,
+	maxIssuesPerPoll: 500,
+	commentDeltaPageSize: 50,
+	maxCommentDeltasPerPoll: 500,
+	issueCommentPageSize: 50,
+	incrementalOverlapMs: 1000,
 };
-
-type IssueDetails = {
-	assigneeName: string | null;
-	projectName: string | null;
-	stateName: string | null;
-	teamName: string | null;
-	teamKey: string | null;
-};
-
-type IssuesQueryVariables = NonNullable<Parameters<LinearClient['issues']>[0]>;
-
-const DOC_TYPE = 'linear:issue';
-const ISSUE_PAGE_SIZE = 50;
-const MAX_ISSUES_PER_POLL = 500;
-const INCREMENTAL_OVERLAP_MS = 1000;
-
-function readState(value: unknown): LinearState {
-	if (value === null || typeof value !== 'object') {
-		return {};
-	}
-
-	const state = value as LinearState;
-	return {
-		schema_version: state.schema_version === 1 ? 1 : undefined,
-		last_updated_at: readIsoDateString(state.last_updated_at),
-		last_poll_completed_at: readIsoDateString(state.last_poll_completed_at),
-		last_poll_issue_count: readNumber(state.last_poll_issue_count),
-		last_poll_update_count: readNumber(state.last_poll_update_count),
-		last_poll_hit_limit: typeof state.last_poll_hit_limit === 'boolean'
-			? state.last_poll_hit_limit
-			: undefined,
-	};
-}
-
-function readIsoDateString(value: unknown): string | undefined {
-	if (typeof value !== 'string') {
-		return undefined;
-	}
-	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
-
-function readNumber(value: unknown): number | undefined {
-	return typeof value === 'number' && Number.isFinite(value)
-		? value
-		: undefined;
-}
-
-function dateToIso(value: Date | null | undefined): string | null {
-	return value instanceof Date && !Number.isNaN(value.getTime())
-		? value.toISOString()
-		: null;
-}
-
-function maxIsoDate(a: string | undefined, b: string): string {
-	if (a == null) {
-		return b;
-	}
-	return new Date(b).getTime() > new Date(a).getTime() ? b : a;
-}
-
-function buildIssueFilter(state: LinearState): IssuesQueryVariables['filter'] {
-	if (state.last_updated_at == null) {
-		return undefined;
-	}
-
-	const boundary = new Date(
-		new Date(state.last_updated_at).getTime() - INCREMENTAL_OVERLAP_MS,
-	).toISOString();
-	return { updatedAt: { gte: boundary } };
-}
-
-async function readIssueDetails(issue: Issue): Promise<IssueDetails> {
-	const [assignee, project, state, team] = await Promise.all([
-		readRelation<User>(issue.assignee),
-		readRelation<Project>(issue.project),
-		readRelation<WorkflowState>(issue.state),
-		readRelation<Team>(issue.team),
-	]);
-
-	return {
-		assigneeName: assignee?.displayName ?? assignee?.name ?? null,
-		projectName: project?.name ?? null,
-		stateName: state?.name ?? null,
-		teamName: team?.name ?? null,
-		teamKey: team?.key ?? null,
-	};
-}
-
-async function readRelation<T>(
-	relation: PromiseLike<T> | undefined,
-): Promise<T | null> {
-	if (relation == null) {
-		return null;
-	}
-
-	try {
-		return await relation;
-	} catch {
-		return null;
-	}
-}
-
-function issueDocId(issue: Issue): string {
-	return `linear:issue:${issue.id}`;
-}
-
-function issueIsRemoved(issue: Issue): boolean {
-	return issue.archivedAt != null || issue.trashed === true;
-}
-
-async function issueToUpdate(issue: Issue): Promise<DocUpdate> {
-	if (issueIsRemoved(issue)) {
-		return del(issueDocId(issue));
-	}
-
-	const details = await readIssueDetails(issue);
-	const updatedAt = dateToIso(issue.updatedAt) ?? new Date().toISOString();
-	const createdAt = dateToIso(issue.createdAt);
-
-	return upsert({
-		id: issueDocId(issue),
-		title: `${issue.identifier} ${issue.title}`,
-		content: renderIssueMarkdown(issue, details),
-		content_format: 'markdown',
-		doc_updated_at: updatedAt,
-		doc_type: DOC_TYPE,
-		metadata: {
-			url: issue.url,
-			source: 'linear',
-			issue_id: issue.id,
-			identifier: issue.identifier,
-			number: issue.number,
-			priority: issue.priority,
-			priority_label: issue.priorityLabel,
-			state: details.stateName ?? undefined,
-			team: details.teamName ?? undefined,
-			team_key: details.teamKey ?? undefined,
-			assignee: details.assigneeName ?? undefined,
-			project: details.projectName ?? undefined,
-			created_at: createdAt ?? undefined,
-			updated_at: updatedAt,
-		},
-	});
-}
-
-function renderIssueMarkdown(issue: Issue, details: IssueDetails): string {
-	const description = issue.description?.trim() || '_No description._';
-	const fields = [
-		['Status', details.stateName],
-		['Team', formatTeam(details)],
-		['Assignee', details.assigneeName],
-		['Project', details.projectName],
-		['Priority', issue.priorityLabel],
-		['Created', dateToIso(issue.createdAt)],
-		['Updated', dateToIso(issue.updatedAt)],
-	];
-
-	return [
-		`# ${issue.identifier}: ${issue.title}`,
-		'',
-		`[Open in Linear](${issue.url})`,
-		'',
-		'## Details',
-		...fields.map(([label, value]) => `- ${label}: ${value ?? 'None'}`),
-		'',
-		'## Description',
-		'',
-		description,
-	].join('\n');
-}
-
-function formatTeam(details: IssueDetails): string | null {
-	if (details.teamName == null && details.teamKey == null) {
-		return null;
-	}
-	if (details.teamName != null && details.teamKey != null) {
-		return `${details.teamName} (${details.teamKey})`;
-	}
-	return details.teamName ?? details.teamKey;
-}
 
 export default class LinearConnector
 	extends Connector<ManifestConfig, LinearState> {
 	private client!: LinearClient;
+	private indexComments = true;
+	private readonly syncOptions = DEFAULT_SYNC_OPTIONS;
 
 	override onload(): void {
-		this.client = new LinearClient({ apiKey: this.config.api_key.trim() });
+		this.client = new LinearClient({ apiKey: this.config.api_key });
+		this.indexComments = this.config.index_comments;
 	}
 
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const previousState = readState(this.lastState);
-		const filter = buildIssueFilter(previousState);
+		const previousState = this.lastState ?? {};
+		const rebuildAllIssues = this.shouldRebuildAllIssues(previousState);
+		const issueResult = await this.pollIssues(previousState, rebuildAllIssues);
+		const commentDelta = this.indexComments
+			? await changedCommentIssues(
+				this.client,
+				previousState,
+				this.signal,
+				this.syncOptions,
+			)
+			: emptyCommentDelta(previousState);
+
+		const rebuiltFromComments = await this.rebuildCommentIssues(
+			commentDelta.issueIds,
+			issueResult.touchedIssueIds,
+		);
+		const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
+
+		yield {
+			updates,
+			state: {
+				schema_version: 2,
+				last_issue_updated_at: issueResult.lastIssueUpdatedAt,
+				last_comment_updated_at: nextCommentUpdatedAt(
+					previousState,
+					commentDelta,
+				),
+				comment_delta_after: commentDelta.nextAfter,
+				comment_delta_boundary: commentDelta.nextAfter
+					? commentDelta.boundary
+					: undefined,
+				comment_delta_max_updated_at: commentDelta.nextAfter
+					? commentDelta.maxUpdatedAt
+					: undefined,
+				last_poll_completed_at: new Date().toISOString(),
+				last_poll_issue_count: issueResult.issueCount,
+				last_poll_comment_count: commentDelta.commentCount,
+				last_poll_rebuilt_issue_count: rebuiltFromComments.issueCount,
+				last_poll_update_count: updates.length,
+				last_poll_hit_limit: issueResult.hitLimit || commentDelta.hitLimit,
+				index_comments: this.indexComments,
+			} satisfies LinearState,
+		};
+	}
+
+	private shouldRebuildAllIssues(previousState: LinearState): boolean {
+		if (previousState.index_comments === this.indexComments) {
+			return false;
+		}
+		return this.indexComments || previousState.index_comments === true;
+	}
+
+	private async pollIssues(
+		previousState: LinearState,
+		rebuildAllIssues: boolean,
+	): Promise<IssuePollResult> {
+		const filter = buildIssueFilter(
+			previousState,
+			rebuildAllIssues,
+			this.syncOptions,
+		);
 		const updates: DocUpdate[] = [];
+		const touchedIssueIds = new Set<string>();
 
 		let after: string | undefined;
 		let issueCount = 0;
-		let lastUpdatedAt = previousState.last_updated_at;
+		let lastIssueUpdatedAt = previousState.last_issue_updated_at ??
+			previousState.last_updated_at;
 		let hasNextPage = true;
 
-		while (hasNextPage && issueCount < MAX_ISSUES_PER_POLL) {
+		while (hasNextPage && issueCount < this.syncOptions.maxIssuesPerPoll) {
 			this.signal.throwIfAborted();
 
-			const first = Math.min(ISSUE_PAGE_SIZE, MAX_ISSUES_PER_POLL - issueCount);
+			const first = Math.min(
+				this.syncOptions.issuePageSize,
+				this.syncOptions.maxIssuesPerPoll - issueCount,
+			);
 			const connection = await this.client.issues({
 				after,
 				filter,
@@ -241,11 +167,20 @@ export default class LinearConnector
 			});
 
 			for (const issue of connection.nodes) {
-				const updatedAt = dateToIso(issue.updatedAt);
+				touchedIssueIds.add(issue.id);
+				const updatedAt = issueUpdatedAt(issue);
 				if (updatedAt != null) {
-					lastUpdatedAt = maxIsoDate(lastUpdatedAt, updatedAt);
+					lastIssueUpdatedAt = maxIsoDate(lastIssueUpdatedAt, updatedAt);
 				}
-				updates.push(await issueToUpdate(issue));
+
+				const comments = this.indexComments && !issueIsRemoved(issue)
+					? await fetchIssueComments(issue, this.signal, this.syncOptions)
+					: [];
+				updates.push(
+					await buildIssueUpdate(issue, comments, {
+						renderComments: this.indexComments,
+					}),
+				);
 			}
 
 			issueCount += connection.nodes.length;
@@ -257,16 +192,96 @@ export default class LinearConnector
 			}
 		}
 
-		yield {
+		return {
 			updates,
-			state: {
-				schema_version: 1,
-				last_updated_at: lastUpdatedAt,
-				last_poll_completed_at: new Date().toISOString(),
-				last_poll_issue_count: issueCount,
-				last_poll_update_count: updates.length,
-				last_poll_hit_limit: hasNextPage,
-			} satisfies LinearState,
+			touchedIssueIds,
+			issueCount,
+			lastIssueUpdatedAt,
+			hitLimit: hasNextPage,
 		};
 	}
+
+	private async rebuildCommentIssues(
+		issueIds: Set<string>,
+		alreadyTouched: Set<string>,
+	): Promise<CommentIssueRebuildResult> {
+		const updates: DocUpdate[] = [];
+		let issueCount = 0;
+
+		for (const issueId of issueIds) {
+			if (alreadyTouched.has(issueId)) {
+				continue;
+			}
+
+			this.signal.throwIfAborted();
+			const issue = await this.client.issue(issueId);
+			const comments = issueIsRemoved(issue)
+				? []
+				: await fetchIssueComments(issue, this.signal, this.syncOptions);
+			updates.push(
+				await buildIssueUpdate(issue, comments, {
+					renderComments: this.indexComments,
+				}),
+			);
+			issueCount += 1;
+		}
+
+		return { updates, issueCount };
+	}
+}
+
+interface IssuePollResult {
+	updates: DocUpdate[];
+	touchedIssueIds: Set<string>;
+	issueCount: number;
+	lastIssueUpdatedAt?: string;
+	hitLimit: boolean;
+}
+
+interface CommentIssueRebuildResult {
+	updates: DocUpdate[];
+	issueCount: number;
+}
+
+function buildIssueFilter(
+	state: LinearState,
+	rebuildAllIssues: boolean,
+	options: SyncOptions,
+): IssuesQueryVariables['filter'] {
+	if (rebuildAllIssues) {
+		return undefined;
+	}
+
+	const lastIssueUpdatedAt = state.last_issue_updated_at ??
+		state.last_updated_at;
+	if (lastIssueUpdatedAt == null) {
+		return undefined;
+	}
+
+	return { updatedAt: { gte: issueDateBoundary(lastIssueUpdatedAt, options) } };
+}
+
+function emptyCommentDelta(state: LinearState): CommentDeltaResult {
+	return {
+		issueIds: new Set(),
+		commentCount: 0,
+		maxUpdatedAt: state.comment_delta_max_updated_at,
+		boundary: state.comment_delta_boundary,
+		nextAfter: undefined,
+		hitLimit: false,
+	};
+}
+
+function nextCommentUpdatedAt(
+	state: LinearState,
+	delta: CommentDeltaResult,
+): string | undefined {
+	if (delta.nextAfter != null) {
+		return state.last_comment_updated_at;
+	}
+
+	return maxIsoDate(
+		state.last_comment_updated_at,
+		delta.maxUpdatedAt ?? state.comment_delta_max_updated_at,
+	);
 }

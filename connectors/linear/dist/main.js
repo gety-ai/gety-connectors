@@ -1,8 +1,6 @@
 // src/index.ts
 import {
-  Connector,
-  del,
-  upsert
+  Connector
 } from "@gety-ai/connector-sdk";
 
 // ../../.cache/deno/deno_esbuild/registry.npmjs.org/@linear/sdk@86.0.0/node_modules/@linear/sdk/dist/chunk-DPPnyiuk.mjs
@@ -92888,97 +92886,355 @@ var LinearClient = class extends LinearSdk {
   }
 };
 
-// src/index.ts
-var DOC_TYPE = "linear:issue";
-var ISSUE_PAGE_SIZE = 50;
-var MAX_ISSUES_PER_POLL = 500;
-var INCREMENTAL_OVERLAP_MS = 1e3;
-function readState(value) {
-  if (value === null || typeof value !== "object") {
-    return {};
+// src/comment.ts
+async function changedCommentIssues(client, state, signal, options) {
+  const issueIds = /* @__PURE__ */ new Set();
+  const boundary = commentBoundary(state, options);
+  let after = state.comment_delta_after;
+  let maxUpdatedAt = state.comment_delta_max_updated_at;
+  let commentCount = 0;
+  let hasNextPage = true;
+  while (hasNextPage && commentCount < options.maxCommentDeltasPerPoll) {
+    signal.throwIfAborted();
+    const first = Math.min(
+      options.commentDeltaPageSize,
+      options.maxCommentDeltasPerPoll - commentCount
+    );
+    const connection = await client.comments({
+      after,
+      filter: { updatedAt: { gte: boundary } },
+      first,
+      includeArchived: true,
+      orderBy: _generated_documents_exports.PaginationOrderBy.UpdatedAt
+    });
+    for (const comment of connection.nodes) {
+      if (comment.issueId != null) {
+        issueIds.add(comment.issueId);
+      }
+      maxUpdatedAt = maxIsoDate(maxUpdatedAt, dateToIso(comment.updatedAt));
+    }
+    commentCount += connection.nodes.length;
+    after = connection.pageInfo.endCursor ?? void 0;
+    hasNextPage = connection.pageInfo.hasNextPage && after != null;
+    if (connection.nodes.length === 0) {
+      break;
+    }
   }
-  const state = value;
   return {
-    schema_version: state.schema_version === 1 ? 1 : void 0,
-    last_updated_at: readIsoDateString(state.last_updated_at),
-    last_poll_completed_at: readIsoDateString(state.last_poll_completed_at),
-    last_poll_issue_count: readNumber(state.last_poll_issue_count),
-    last_poll_update_count: readNumber(state.last_poll_update_count),
-    last_poll_hit_limit: typeof state.last_poll_hit_limit === "boolean" ? state.last_poll_hit_limit : void 0
+    issueIds,
+    commentCount,
+    maxUpdatedAt,
+    boundary,
+    nextAfter: hasNextPage ? after : void 0,
+    hitLimit: hasNextPage
   };
 }
-function readIsoDateString(value) {
-  if (typeof value !== "string") {
-    return void 0;
+async function fetchIssueComments(issue, signal, options) {
+  const comments = [];
+  let after;
+  let hasNextPage = true;
+  while (hasNextPage) {
+    signal.throwIfAborted();
+    const connection = await issue.comments({
+      after,
+      first: options.issueCommentPageSize,
+      includeArchived: true,
+      orderBy: _generated_documents_exports.PaginationOrderBy.CreatedAt
+    });
+    comments.push(...connection.nodes);
+    after = connection.pageInfo.endCursor ?? void 0;
+    hasNextPage = connection.pageInfo.hasNextPage && after != null;
+    if (connection.nodes.length === 0) {
+      break;
+    }
   }
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? void 0 : date.toISOString();
+  return comments;
 }
-function readNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+function latestCommentUpdatedAt(comments) {
+  return comments.reduce(
+    (latest, comment) => maxIsoDate(latest, dateToIso(comment.updatedAt)),
+    void 0
+  );
+}
+function renderCommentsMarkdown(comments) {
+  const visibleComments = comments.filter(
+    (comment) => comment.archivedAt == null
+  );
+  if (visibleComments.length === 0) {
+    return "";
+  }
+  const commentsById = new Map(visibleComments.map((comment) => [
+    comment.id,
+    comment
+  ]));
+  const childrenByParentId = /* @__PURE__ */ new Map();
+  const roots = [];
+  for (const comment of visibleComments) {
+    if (comment.parentId != null && commentsById.has(comment.parentId)) {
+      const children = childrenByParentId.get(comment.parentId) ?? [];
+      children.push(comment);
+      childrenByParentId.set(comment.parentId, children);
+      continue;
+    }
+    roots.push(comment);
+  }
+  sortComments(roots);
+  for (const children of childrenByParentId.values()) {
+    sortComments(children);
+  }
+  const sections = ["## Comments", ""];
+  for (const [index, comment] of roots.entries()) {
+    if (index > 0) {
+      sections.push("", "---", "");
+    }
+    sections.push(renderCommentBlock(comment, childrenByParentId, 0));
+  }
+  return sections.join("\n");
+}
+function markdownImagesToLinks(markdown) {
+  const lines = markdown.split("\n");
+  const convertedLines = [];
+  let fence = null;
+  for (const line of lines) {
+    const fenceMarker = parseFenceMarker(line);
+    if (fence != null) {
+      convertedLines.push(line);
+      if (fenceMarker != null && fenceMarker.char === fence.char && fenceMarker.length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMarker != null) {
+      fence = fenceMarker;
+      convertedLines.push(line);
+      continue;
+    }
+    convertedLines.push(markdownLineImagesToLinks(line));
+  }
+  return convertedLines.join("\n");
+}
+function commentBoundary(state, options) {
+  if (state.comment_delta_boundary != null) {
+    return state.comment_delta_boundary;
+  }
+  const lastCommentUpdatedAt = state.last_comment_updated_at ?? (/* @__PURE__ */ new Date(0)).toISOString();
+  return new Date(
+    new Date(lastCommentUpdatedAt).getTime() - options.incrementalOverlapMs
+  ).toISOString();
+}
+function renderCommentBlock(comment, childrenByParentId, depth) {
+  const headingLevel = Math.min(3 + depth, 6);
+  const title = depth === 0 ? "Comment" : "Reply";
+  const body = markdownImagesToLinks(comment.body.trim());
+  const lines = [
+    `${"#".repeat(headingLevel)} ${title}`,
+    "",
+    ...commentMetadata(comment),
+    "",
+    ...quotedText(comment)
+  ];
+  if (body) {
+    lines.push(body);
+  }
+  for (const child of childrenByParentId.get(comment.id) ?? []) {
+    lines.push("", renderCommentBlock(child, childrenByParentId, depth + 1));
+  }
+  return lines.join("\n");
+}
+function commentMetadata(comment) {
+  const metadata = [`- Created: ${dateToIso(comment.createdAt) ?? "Unknown"}`];
+  const updatedAt = dateToIso(comment.updatedAt);
+  const editedAt = dateToIso(comment.editedAt);
+  const resolvedAt = dateToIso(comment.resolvedAt);
+  if (updatedAt != null) {
+    metadata.push(`- Updated: ${updatedAt}`);
+  }
+  if (editedAt != null) {
+    metadata.push(`- Edited: ${editedAt}`);
+  }
+  if (resolvedAt != null) {
+    metadata.push(`- Resolved: ${resolvedAt}`);
+  }
+  return metadata;
+}
+function quotedText(comment) {
+  const quoted = comment.quotedText?.trim();
+  if (!quoted) {
+    return [];
+  }
+  return [
+    ...quoted.split(/\r?\n/).map((line) => `> ${line}`),
+    ""
+  ];
+}
+function sortComments(comments) {
+  comments.sort((a, b) => {
+    const aTime = dateToIso(a.createdAt) ?? "";
+    const bTime = dateToIso(b.createdAt) ?? "";
+    return aTime.localeCompare(bTime);
+  });
+}
+function parseFenceMarker(line) {
+  const match = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
+  if (match == null) {
+    return null;
+  }
+  const marker = match[1];
+  return {
+    char: marker[0],
+    length: marker.length
+  };
+}
+function markdownLineImagesToLinks(line) {
+  let result = "";
+  let index = 0;
+  while (index < line.length) {
+    const codeSpanEnd = codeSpanCloseIndex(line, index);
+    if (codeSpanEnd != null) {
+      result += line.slice(index, codeSpanEnd);
+      index = codeSpanEnd;
+      continue;
+    }
+    const image = parseMarkdownImage(line, index);
+    if (image == null) {
+      result += line[index];
+      index += 1;
+      continue;
+    }
+    const label = image.alt.trim() === "" ? "Image" : image.alt;
+    result += `[${label}]${image.target}`;
+    index = image.end;
+  }
+  return result;
+}
+function codeSpanCloseIndex(line, start) {
+  if (line[start] !== "`" || isEscaped(line, start)) {
+    return null;
+  }
+  let tickCount = 1;
+  while (line[start + tickCount] === "`") {
+    tickCount += 1;
+  }
+  const close = line.indexOf("`".repeat(tickCount), start + tickCount);
+  return close === -1 ? null : close + tickCount;
+}
+function parseMarkdownImage(line, start) {
+  if (line[start] !== "!" || line[start + 1] !== "[" || isEscaped(line, start)) {
+    return null;
+  }
+  const altEnd = closingBracketIndex(line, start + 2);
+  if (altEnd == null) {
+    return null;
+  }
+  const targetStart = altEnd + 1;
+  const targetEnd = closingTargetIndex(line, targetStart);
+  if (targetEnd == null) {
+    return null;
+  }
+  return {
+    alt: line.slice(start + 2, altEnd),
+    target: line.slice(targetStart, targetEnd),
+    end: targetEnd
+  };
+}
+function closingBracketIndex(line, start) {
+  let depth = 0;
+  for (let index = start; index < line.length; index += 1) {
+    const char = line[index];
+    if (isEscaped(line, index)) {
+      continue;
+    }
+    if (char === "[") {
+      depth += 1;
+      continue;
+    }
+    if (char === "]") {
+      if (depth === 0) {
+        return index;
+      }
+      depth -= 1;
+    }
+  }
+  return null;
+}
+function closingTargetIndex(line, start) {
+  const opener = line[start];
+  if (opener === "(") {
+    return closingParenIndex(line, start + 1);
+  }
+  if (opener === "[") {
+    const end = closingBracketIndex(line, start + 1);
+    return end == null ? null : end + 1;
+  }
+  return null;
+}
+function closingParenIndex(line, start) {
+  let depth = 0;
+  for (let index = start; index < line.length; index += 1) {
+    const char = line[index];
+    if (isEscaped(line, index)) {
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (depth === 0) {
+        return index + 1;
+      }
+      depth -= 1;
+    }
+  }
+  return null;
+}
+function isEscaped(value, index) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
 }
 function dateToIso(value) {
   return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : null;
 }
 function maxIsoDate(a, b) {
   if (a == null) {
-    return b;
+    return b ?? void 0;
+  }
+  if (b == null) {
+    return a;
   }
   return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
-function buildIssueFilter(state) {
-  if (state.last_updated_at == null) {
-    return void 0;
-  }
-  const boundary = new Date(
-    new Date(state.last_updated_at).getTime() - INCREMENTAL_OVERLAP_MS
-  ).toISOString();
-  return { updatedAt: { gte: boundary } };
-}
-async function readIssueDetails(issue) {
-  const [assignee, project, state, team] = await Promise.all([
-    readRelation(issue.assignee),
-    readRelation(issue.project),
-    readRelation(issue.state),
-    readRelation(issue.team)
-  ]);
-  return {
-    assigneeName: assignee?.displayName ?? assignee?.name ?? null,
-    projectName: project?.name ?? null,
-    stateName: state?.name ?? null,
-    teamName: team?.name ?? null,
-    teamKey: team?.key ?? null
-  };
-}
-async function readRelation(relation) {
-  if (relation == null) {
-    return null;
-  }
-  try {
-    return await relation;
-  } catch {
-    return null;
-  }
-}
+
+// src/issue.ts
+import { del, upsert } from "@gety-ai/connector-sdk";
+var DOC_TYPE = "linear:issue";
 function issueDocId(issue) {
   return `linear:issue:${issue.id}`;
 }
 function issueIsRemoved(issue) {
   return issue.archivedAt != null || issue.trashed === true;
 }
-async function issueToUpdate(issue) {
+function issueUpdatedAt(issue) {
+  return dateToIso2(issue.updatedAt);
+}
+async function buildIssueUpdate(issue, comments, options) {
   if (issueIsRemoved(issue)) {
     return del(issueDocId(issue));
   }
-  const details = await readIssueDetails(issue);
-  const updatedAt = dateToIso(issue.updatedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
-  const createdAt = dateToIso(issue.createdAt);
+  const details = await issueDetails(issue);
+  const issueUpdatedAt2 = dateToIso2(issue.updatedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
+  const commentsUpdatedAt = options.renderComments ? latestCommentUpdatedAt(comments) : void 0;
+  const docUpdatedAt = maxIsoDate2(issueUpdatedAt2, commentsUpdatedAt) ?? issueUpdatedAt2;
+  const createdAt = dateToIso2(issue.createdAt);
   return upsert({
     id: issueDocId(issue),
     title: `${issue.identifier} ${issue.title}`,
-    content: renderIssueMarkdown(issue, details),
+    content: renderIssueMarkdown(issue, details, comments, options),
     content_format: "markdown",
-    doc_updated_at: updatedAt,
+    doc_updated_at: docUpdatedAt,
     doc_type: DOC_TYPE,
     metadata: {
       url: issue.url,
@@ -92994,33 +93250,75 @@ async function issueToUpdate(issue) {
       assignee: details.assigneeName ?? void 0,
       project: details.projectName ?? void 0,
       created_at: createdAt ?? void 0,
-      updated_at: updatedAt
+      updated_at: issueUpdatedAt2,
+      comments_updated_at: commentsUpdatedAt
     }
   });
 }
-function renderIssueMarkdown(issue, details) {
-  const description = issue.description?.trim() || "_No description._";
+function issueDateBoundary(value, options) {
+  const iso = typeof value === "string" ? value : issueUpdatedAt(value);
+  if (iso == null) {
+    return void 0;
+  }
+  return new Date(
+    new Date(iso).getTime() - options.incrementalOverlapMs
+  ).toISOString();
+}
+function dateToIso2(value) {
+  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : null;
+}
+function maxIsoDate2(a, b) {
+  if (a == null) {
+    return b;
+  }
+  if (b == null) {
+    return a;
+  }
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
+async function issueDetails(issue) {
+  const [assignee, project, state, team] = await Promise.all([
+    resolveRelation(issue.assignee),
+    resolveRelation(issue.project),
+    resolveRelation(issue.state),
+    resolveRelation(issue.team)
+  ]);
+  return {
+    assigneeName: assignee?.displayName ?? assignee?.name ?? null,
+    projectName: project?.name ?? null,
+    stateName: state?.name ?? null,
+    teamName: team?.name ?? null,
+    teamKey: team?.key ?? null
+  };
+}
+async function resolveRelation(relation) {
+  return relation == null ? null : await relation;
+}
+function renderIssueMarkdown(issue, details, comments, options) {
+  const description = issue.description?.trim();
   const fields = [
     ["Status", details.stateName],
     ["Team", formatTeam(details)],
     ["Assignee", details.assigneeName],
     ["Project", details.projectName],
     ["Priority", issue.priorityLabel],
-    ["Created", dateToIso(issue.createdAt)],
-    ["Updated", dateToIso(issue.updatedAt)]
+    ["Created", dateToIso2(issue.createdAt)],
+    ["Updated", dateToIso2(issue.updatedAt)]
   ];
-  return [
+  const sections = [
     `# ${issue.identifier}: ${issue.title}`,
     "",
-    `[Open in Linear](${issue.url})`,
-    "",
     "## Details",
-    ...fields.map(([label, value]) => `- ${label}: ${value ?? "None"}`),
-    "",
-    "## Description",
-    "",
-    description
-  ].join("\n");
+    ...fields.map(([label, value]) => `- ${label}: ${value ?? "None"}`)
+  ];
+  if (description) {
+    sections.push("", "## Description", "", markdownImagesToLinks(description));
+  }
+  const commentsMarkdown = options.renderComments ? renderCommentsMarkdown(comments) : "";
+  if (commentsMarkdown) {
+    sections.push("", commentsMarkdown);
+  }
+  return sections.join("\n");
 }
 function formatTeam(details) {
   if (details.teamName == null && details.teamKey == null) {
@@ -93031,22 +93329,85 @@ function formatTeam(details) {
   }
   return details.teamName ?? details.teamKey;
 }
+
+// src/index.ts
+var DEFAULT_SYNC_OPTIONS = {
+  issuePageSize: 50,
+  maxIssuesPerPoll: 500,
+  commentDeltaPageSize: 50,
+  maxCommentDeltasPerPoll: 500,
+  issueCommentPageSize: 50,
+  incrementalOverlapMs: 1e3
+};
 var LinearConnector = class extends Connector {
   client;
+  indexComments = true;
+  syncOptions = DEFAULT_SYNC_OPTIONS;
   onload() {
-    this.client = new LinearClient({ apiKey: this.config.api_key.trim() });
+    this.client = new LinearClient({ apiKey: this.config.api_key });
+    this.indexComments = this.config.index_comments;
   }
   async *poll() {
-    const previousState = readState(this.lastState);
-    const filter = buildIssueFilter(previousState);
+    const previousState = this.lastState ?? {};
+    const rebuildAllIssues = this.shouldRebuildAllIssues(previousState);
+    const issueResult = await this.pollIssues(previousState, rebuildAllIssues);
+    const commentDelta = this.indexComments ? await changedCommentIssues(
+      this.client,
+      previousState,
+      this.signal,
+      this.syncOptions
+    ) : emptyCommentDelta(previousState);
+    const rebuiltFromComments = await this.rebuildCommentIssues(
+      commentDelta.issueIds,
+      issueResult.touchedIssueIds
+    );
+    const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
+    yield {
+      updates,
+      state: {
+        schema_version: 2,
+        last_issue_updated_at: issueResult.lastIssueUpdatedAt,
+        last_comment_updated_at: nextCommentUpdatedAt(
+          previousState,
+          commentDelta
+        ),
+        comment_delta_after: commentDelta.nextAfter,
+        comment_delta_boundary: commentDelta.nextAfter ? commentDelta.boundary : void 0,
+        comment_delta_max_updated_at: commentDelta.nextAfter ? commentDelta.maxUpdatedAt : void 0,
+        last_poll_completed_at: (/* @__PURE__ */ new Date()).toISOString(),
+        last_poll_issue_count: issueResult.issueCount,
+        last_poll_comment_count: commentDelta.commentCount,
+        last_poll_rebuilt_issue_count: rebuiltFromComments.issueCount,
+        last_poll_update_count: updates.length,
+        last_poll_hit_limit: issueResult.hitLimit || commentDelta.hitLimit,
+        index_comments: this.indexComments
+      }
+    };
+  }
+  shouldRebuildAllIssues(previousState) {
+    if (previousState.index_comments === this.indexComments) {
+      return false;
+    }
+    return this.indexComments || previousState.index_comments === true;
+  }
+  async pollIssues(previousState, rebuildAllIssues) {
+    const filter = buildIssueFilter(
+      previousState,
+      rebuildAllIssues,
+      this.syncOptions
+    );
     const updates = [];
+    const touchedIssueIds = /* @__PURE__ */ new Set();
     let after;
     let issueCount = 0;
-    let lastUpdatedAt = previousState.last_updated_at;
+    let lastIssueUpdatedAt = previousState.last_issue_updated_at ?? previousState.last_updated_at;
     let hasNextPage = true;
-    while (hasNextPage && issueCount < MAX_ISSUES_PER_POLL) {
+    while (hasNextPage && issueCount < this.syncOptions.maxIssuesPerPoll) {
       this.signal.throwIfAborted();
-      const first = Math.min(ISSUE_PAGE_SIZE, MAX_ISSUES_PER_POLL - issueCount);
+      const first = Math.min(
+        this.syncOptions.issuePageSize,
+        this.syncOptions.maxIssuesPerPoll - issueCount
+      );
       const connection = await this.client.issues({
         after,
         filter,
@@ -93059,11 +93420,17 @@ var LinearConnector = class extends Connector {
         }
       });
       for (const issue of connection.nodes) {
-        const updatedAt = dateToIso(issue.updatedAt);
+        touchedIssueIds.add(issue.id);
+        const updatedAt = issueUpdatedAt(issue);
         if (updatedAt != null) {
-          lastUpdatedAt = maxIsoDate(lastUpdatedAt, updatedAt);
+          lastIssueUpdatedAt = maxIsoDate2(lastIssueUpdatedAt, updatedAt);
         }
-        updates.push(await issueToUpdate(issue));
+        const comments = this.indexComments && !issueIsRemoved(issue) ? await fetchIssueComments(issue, this.signal, this.syncOptions) : [];
+        updates.push(
+          await buildIssueUpdate(issue, comments, {
+            renderComments: this.indexComments
+          })
+        );
       }
       issueCount += connection.nodes.length;
       after = connection.pageInfo.endCursor ?? void 0;
@@ -93072,19 +93439,63 @@ var LinearConnector = class extends Connector {
         break;
       }
     }
-    yield {
+    return {
       updates,
-      state: {
-        schema_version: 1,
-        last_updated_at: lastUpdatedAt,
-        last_poll_completed_at: (/* @__PURE__ */ new Date()).toISOString(),
-        last_poll_issue_count: issueCount,
-        last_poll_update_count: updates.length,
-        last_poll_hit_limit: hasNextPage
-      }
+      touchedIssueIds,
+      issueCount,
+      lastIssueUpdatedAt,
+      hitLimit: hasNextPage
     };
   }
+  async rebuildCommentIssues(issueIds, alreadyTouched) {
+    const updates = [];
+    let issueCount = 0;
+    for (const issueId of issueIds) {
+      if (alreadyTouched.has(issueId)) {
+        continue;
+      }
+      this.signal.throwIfAborted();
+      const issue = await this.client.issue(issueId);
+      const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(issue, this.signal, this.syncOptions);
+      updates.push(
+        await buildIssueUpdate(issue, comments, {
+          renderComments: this.indexComments
+        })
+      );
+      issueCount += 1;
+    }
+    return { updates, issueCount };
+  }
 };
+function buildIssueFilter(state, rebuildAllIssues, options) {
+  if (rebuildAllIssues) {
+    return void 0;
+  }
+  const lastIssueUpdatedAt = state.last_issue_updated_at ?? state.last_updated_at;
+  if (lastIssueUpdatedAt == null) {
+    return void 0;
+  }
+  return { updatedAt: { gte: issueDateBoundary(lastIssueUpdatedAt, options) } };
+}
+function emptyCommentDelta(state) {
+  return {
+    issueIds: /* @__PURE__ */ new Set(),
+    commentCount: 0,
+    maxUpdatedAt: state.comment_delta_max_updated_at,
+    boundary: state.comment_delta_boundary,
+    nextAfter: void 0,
+    hitLimit: false
+  };
+}
+function nextCommentUpdatedAt(state, delta) {
+  if (delta.nextAfter != null) {
+    return state.last_comment_updated_at;
+  }
+  return maxIsoDate2(
+    state.last_comment_updated_at,
+    delta.maxUpdatedAt ?? state.comment_delta_max_updated_at
+  );
+}
 export {
   LinearConnector as default
 };

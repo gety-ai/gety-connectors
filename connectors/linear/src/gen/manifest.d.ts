@@ -2,4 +2,5 @@
 
 export interface ManifestConfig {
 	api_key: string;
+	index_comments: boolean;
 }

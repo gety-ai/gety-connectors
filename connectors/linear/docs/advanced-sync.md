@@ -1,6 +1,7 @@
 # Advanced Linear Sync Notes
 
-These notes capture the next implementation layer after the issues-only MVP.
+These notes capture the current issue/comment polling design and the remaining
+sync limitations.
 
 ## Sources Checked
 
@@ -31,7 +32,13 @@ events.
 
 ## Comments
 
-Comments can be synced with the SDK:
+The connector embeds comments into the owning `linear:issue` markdown document
+when `index_comments` is enabled and the issue has visible comments. This
+matches the desired Gety behavior: search results still open the issue, and the
+source preview shows the issue description followed by comment blocks when those
+sections exist.
+
+Comments are synced with the SDK:
 
 - Top-level query: `linearClient.comments({ first, after, filter, orderBy })`.
 - Per-issue query: `issue.comments({ first, after })`.
@@ -41,21 +48,30 @@ Comments can be synced with the SDK:
   `quotedText`.
 - `Comment.body` is already markdown.
 
-Recommended next step: index comments as separate docs:
+Implementation shape:
 
-- `doc_type`: `linear:comment`
-- `id`: `linear:comment:<comment.id>`
-- `parent_id`: `linear:issue:<comment.issueId>` when `issueId` is present
-- `content_format`: `markdown`
-- `metadata.url`: `comment.url`
+- Issue polling still uses `updatedAt >= last_issue_updated_at - 1s`.
+- Comment polling uses a separate `last_comment_updated_at` cursor with the same
+  1 second overlap.
+- Changed comments are converted to issue IDs, then each affected issue is
+  rebuilt by fetching its full current comment list.
+- Archived comments are fetched so their owning issue can be rebuilt, but they
+  are omitted from the rendered markdown.
+- Comment threads are rendered as separate blocks with dividers between
+  top-level comments and nested headings for replies.
+- Empty description and empty comments sections are omitted instead of rendering
+  placeholder text.
+- Markdown images in issue descriptions and comments are converted into normal
+  markdown links before indexing.
 
-This keeps issue documents stable and avoids rebuilding an issue body every time
-a comment changes. It also lets Gety search comments directly while still
-preserving the issue hierarchy.
+This approach makes the Gety preview more natural, but every changed comment
+causes a full issue upsert. A hard-deleted comment that is no longer returned by
+Linear cannot be detected by polling alone unless Linear exposes it first as an
+archived comment.
 
-Alternative: append recent comments into the issue markdown. This makes issue
-preview more complete, but it creates heavier issue updates and makes comment
-deletes/edits harder to represent cleanly.
+Separate `linear:comment` docs remain a future option if Gety should show
+comments as independent search results. In that model, a comment doc would use
+`parent_id = linear:issue:<issueId>` and `content_format = markdown`.
 
 ## Webhooks
 
@@ -79,11 +95,9 @@ no public HTTP endpoint for Linear to call.
 
 ## Recommended Roadmap
 
-1. Add comments as separate `linear:comment` markdown docs with their own
-   `last_comment_updated_at` state cursor.
-2. Keep issue polling and comment polling independent so a large comment backlog
+1. Keep issue polling and comment polling independent so a large comment backlog
    cannot block issue metadata updates.
-3. Add a bounded backfill mode for comments, for example 500 comments per poll,
+2. Add a bounded backfill mode for comments, for example 500 comments per poll,
    using `updatedAt` ascending order.
-4. If Gety adds an inbound event endpoint, add webhook support for `Issue` and
+3. If Gety adds an inbound event endpoint, add webhook support for `Issue` and
    `Comment` resources, then use polling only as reconciliation.

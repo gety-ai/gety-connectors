@@ -28,12 +28,16 @@ research.
 ## Build
 
 ```bash
-deno task check
+deno task verify
 deno task build
 ```
 
 The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
 runtime through its import map. The Linear SDK is bundled into `dist/main.js`.
+
+`deno task verify` formats code, applies safe lint fixes, runs type checking,
+then builds. `deno task build` only regenerates `dist/main.js` and
+`dist/main.js.map` for fast local iteration.
 
 ## Install In Gety
 

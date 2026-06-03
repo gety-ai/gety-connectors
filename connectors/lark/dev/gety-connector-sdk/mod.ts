@@ -35,9 +35,12 @@ export type PollResult = {
 	state?: unknown;
 };
 
-export abstract class Connector {
-	protected config: Record<string, unknown> = {};
-	protected lastState: unknown | null = null;
+export abstract class Connector<
+	Config extends object = Record<string, unknown>,
+	State = unknown,
+> {
+	protected config: Config = {} as Config;
+	protected lastState: State | null = null;
 	protected signal: AbortSignal = new AbortController().signal;
 
 	onload?(): void | Promise<void>;

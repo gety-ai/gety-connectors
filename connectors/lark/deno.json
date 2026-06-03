@@ -7,7 +7,8 @@
 	"tasks": {
 		"build": "deno run -A scripts/build.ts",
 		"dev": "deno run -A scripts/build.ts --watch",
-		"check": "deno check src/index.ts scripts/build.ts scripts/setup.ts dev/gety-connector-sdk/mod.ts",
+		"check": "deno task generate && deno check src/index.ts scripts/build.ts scripts/setup.ts scripts/generate-manifest-config.ts dev/gety-connector-sdk/mod.ts src/gen/manifest.d.ts",
+		"generate": "deno run -A scripts/generate-manifest-config.ts",
 		"setup": "deno run -A scripts/setup.ts",
 		"fix": "deno task fmt && deno task lint:fix",
 		"fmt": "deno fmt",

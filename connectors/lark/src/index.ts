@@ -1,4 +1,5 @@
 import { Connector, type PollResult, upsert } from '@gety-ai/connector-sdk';
+import type { ManifestConfig } from './gen/manifest.d.ts';
 
 type SampleState = {
 	run_count?: number;
@@ -7,18 +8,12 @@ type SampleState = {
 const GETY_URL = 'https://gety.ai/';
 const DOC_UPDATED_AT = '2026-05-12T00:00:00Z';
 
-function readRunCount(state: unknown): number {
-	if (state === null || typeof state !== 'object') {
-		return 0;
-	}
-
-	const maybeState = state as SampleState;
-	return typeof maybeState.run_count === 'number' ? maybeState.run_count : 0;
-}
-
-export default class GetySampleConnector extends Connector {
+export default class GetySampleConnector extends Connector<
+	ManifestConfig,
+	SampleState
+> {
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const nextRunCount = readRunCount(this.lastState) + 1;
+		const nextRunCount = (this.lastState?.run_count ?? 0) + 1;
 
 		yield {
 			updates: [

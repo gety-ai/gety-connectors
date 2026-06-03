@@ -25,7 +25,7 @@ interface RuntimeConnector {
 	config: Record<string, unknown>;
 	lastState: unknown;
 	signal: AbortSignal;
-	onload?(): void | Promise<void>;
+	onLoad?(): void | Promise<void>;
 	poll(): AsyncGenerator<PollResult, void, unknown>;
 }
 
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
 		connector.config = config;
 		connector.lastState = state;
 		connector.signal = abortController.signal;
-		await connector.onload?.();
+		await connector.onLoad?.();
 
 		let resultCount = 0;
 		let pollUpdates = 0;

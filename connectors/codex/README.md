@@ -49,8 +49,8 @@ deno task runner -- --reset-state
 `dev/runner.ts` is a generic local runner for the Gety connector runtime
 contract. It is not sample-specific: it reads `manifest.json`, imports the
 manifest `entry` (`dist/main.js` by default), builds config values from `.env`,
-injects `config`, `lastState`, and `signal`, then runs `onload()` and `poll()`.
-Each poll cycle creates a fresh connector instance and runs `onload()`, matching
+injects `config`, `lastState`, and `signal`, then runs `onLoad()` and `poll()`.
+Each poll cycle creates a fresh connector instance and runs `onLoad()`, matching
 Gety's one-shot Deno runner lifecycle.
 
 Config environment variables are derived from manifest field IDs. For example, a

@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 import { denoPlugins } from '@luca/esbuild-deno-loader';
 import { builtinModules } from 'node:module';
+import { generateManifestConfig } from './generate-manifest-config.ts';
 
 const watch = Deno.args.includes('--watch');
 const configPath = `${Deno.cwd()}/deno.json`;
@@ -22,6 +23,15 @@ const nodeBuiltinAliasPlugin: esbuild.Plugin = {
 	},
 };
 
+const manifestConfigPlugin: esbuild.Plugin = {
+	name: 'manifest-config',
+	setup(build) {
+		build.onStart(async () => {
+			await generateManifestConfig();
+		});
+	},
+};
+
 const options: esbuild.BuildOptions = {
 	entryPoints: ['src/index.ts'],
 	outfile: 'dist/main.js',
@@ -34,6 +44,7 @@ const options: esbuild.BuildOptions = {
 	sourcesContent: true,
 	external: ['@gety-ai/connector-sdk'],
 	plugins: [
+		manifestConfigPlugin,
 		nodeBuiltinAliasPlugin,
 		...denoPlugins({
 			configPath,
@@ -45,8 +56,19 @@ const options: esbuild.BuildOptions = {
 if (watch) {
 	const context = await esbuild.context(options);
 	await context.watch();
-	console.log('Watching src/index.ts and dependencies...');
+	void watchManifestConfig();
+	console.log('Watching src/index.ts, manifest.json, and dependencies...');
 } else {
 	await esbuild.build(options);
 	esbuild.stop();
+}
+
+async function watchManifestConfig(): Promise<void> {
+	const watcher = Deno.watchFs('manifest.json');
+	for await (const event of watcher) {
+		if (event.kind === 'access') {
+			continue;
+		}
+		await generateManifestConfig();
+	}
 }

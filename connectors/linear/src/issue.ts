@@ -7,6 +7,7 @@ import {
 	markdownImagesToLinks,
 	renderCommentsMarkdown,
 } from './comment.ts';
+import { dateToIso, formatLinearTime, maxIsoDate } from './utils.ts';
 
 export type IssuesQueryVariables = NonNullable<
 	Parameters<LinearClient['issues']>[0]
@@ -119,6 +120,30 @@ const COMMENT_FIELDS = `
 	parentId
 	body
 	quotedText
+	user {
+		id
+		displayName
+		name
+		url
+	}
+	onBehalfOf {
+		id
+		displayName
+		name
+		url
+	}
+	externalUser {
+		id
+		displayName
+		name
+	}
+	botActor {
+		id
+		name
+		userDisplayName
+		type
+		subType
+	}
 	archivedAt
 	createdAt
 	updatedAt
@@ -297,31 +322,6 @@ export function issueDateBoundary(
 	).toISOString();
 }
 
-export function dateToIso(
-	value: Date | string | null | undefined,
-): string | null {
-	if (value instanceof Date) {
-		return Number.isNaN(value.getTime()) ? null : value.toISOString();
-	}
-	if (typeof value === 'string') {
-		return Number.isNaN(new Date(value).getTime()) ? null : value;
-	}
-	return null;
-}
-
-export function maxIsoDate(
-	a: string | undefined,
-	b: string | undefined,
-): string | undefined {
-	if (a == null) {
-		return b;
-	}
-	if (b == null) {
-		return a;
-	}
-	return new Date(b).getTime() > new Date(a).getTime() ? b : a;
-}
-
 function issueDetails(issue: LinearIssue): IssueDetails {
 	return {
 		assigneeName: issue.assignee?.displayName ?? issue.assignee?.name ?? null,
@@ -345,8 +345,8 @@ function renderIssueMarkdown(
 		['Assignee', details.assigneeName],
 		['Project', details.projectName],
 		['Priority', issue.priorityLabel],
-		['Created', dateToIso(issue.createdAt)],
-		['Updated', dateToIso(issue.updatedAt)],
+		['Created', formatLinearTime(issue.createdAt)],
+		['Updated', formatLinearTime(issue.updatedAt)],
 	];
 
 	const sections = [

@@ -90683,6 +90683,33 @@ function hasValue(value) {
   return value != null && value !== "";
 }
 
+// src/utils.ts
+function dateToIso(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    return Number.isNaN(new Date(value).getTime()) ? null : value;
+  }
+  return null;
+}
+function formatLinearTime(value) {
+  const iso = dateToIso(value);
+  if (iso == null) {
+    return null;
+  }
+  return iso.slice(0, 16).replace("T", " ");
+}
+function maxIsoDate(a, b) {
+  if (a == null) {
+    return b ?? void 0;
+  }
+  if (b == null) {
+    return a;
+  }
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
+
 // src/comment.ts
 var COMMENT_DELTA_QUERY = `
 	query GetyLinearCommentDelta(
@@ -90728,6 +90755,30 @@ var ISSUE_COMMENTS_QUERY = `
 					parentId
 					body
 					quotedText
+					user {
+						id
+						displayName
+						name
+						url
+					}
+					onBehalfOf {
+						id
+						displayName
+						name
+						url
+					}
+					externalUser {
+						id
+						displayName
+						name
+					}
+					botActor {
+						id
+						name
+						userDisplayName
+						type
+						subType
+					}
 					archivedAt
 					createdAt
 					updatedAt
@@ -90909,49 +90960,71 @@ function commentBoundary(state, options) {
   ).toISOString();
 }
 function renderCommentBlock(comment, childrenByParentId, depth) {
-  const headingLevel = Math.min(3 + depth, 6);
-  const title = depth === 0 ? "Comment" : "Reply";
-  const body = markdownImagesToLinks((comment.body ?? "").trim());
-  const lines = [
-    `${"#".repeat(headingLevel)} ${title}`,
-    "",
-    ...commentMetadata(comment),
-    "",
-    ...quotedText(comment)
-  ];
-  if (body) {
-    lines.push(body);
+  const prefix = quotePrefix(depth);
+  const body = commentBodyMarkdown(comment);
+  const lines = [`${prefix} ${commentHeader(comment)}`];
+  if (body.length > 0) {
+    lines.push(prefix, ...quoteMarkdownLines(body, prefix));
   }
   for (const child of childrenByParentId.get(comment.id) ?? []) {
     lines.push("", renderCommentBlock(child, childrenByParentId, depth + 1));
   }
   return lines.join("\n");
 }
-function commentMetadata(comment) {
-  const metadata = [`- Created: ${dateToIso(comment.createdAt) ?? "Unknown"}`];
-  const updatedAt = dateToIso(comment.updatedAt);
-  const editedAt = dateToIso(comment.editedAt);
-  const resolvedAt = dateToIso(comment.resolvedAt);
-  if (updatedAt != null) {
-    metadata.push(`- Updated: ${updatedAt}`);
-  }
-  if (editedAt != null) {
-    metadata.push(`- Edited: ${editedAt}`);
-  }
-  if (resolvedAt != null) {
-    metadata.push(`- Resolved: ${resolvedAt}`);
-  }
-  return metadata;
+function quotePrefix(depth) {
+  return Array.from({ length: depth + 1 }, () => ">").join(" ");
 }
-function quotedText(comment) {
-  const quoted = comment.quotedText?.trim();
-  if (!quoted) {
-    return [];
+function commentHeader(comment) {
+  return `@${commentAuthorName(comment)} \xB7 ${commentTime(comment)}`;
+}
+function commentAuthorName(comment) {
+  const onBehalfOf = displayUserName(comment.onBehalfOf);
+  const botActor = displayBotActor(comment.botActor);
+  if (onBehalfOf != null) {
+    return botActor == null ? onBehalfOf : `${onBehalfOf} via ${botActor}`;
   }
-  return [
-    ...quoted.split(/\r?\n/).map((line) => `> ${line}`),
-    ""
-  ];
+  const user = displayUserName(comment.user);
+  if (user != null) {
+    return user;
+  }
+  const externalUser = displayExternalUser(comment.externalUser);
+  if (externalUser != null) {
+    return botActor == null ? `${externalUser} (external)` : `${externalUser} (external via ${botActor})`;
+  }
+  return botActor == null ? "unknown" : `${botActor} (bot)`;
+}
+function commentTime(comment) {
+  return formatLinearTime(comment.createdAt) ?? "unknown time";
+}
+function commentBodyMarkdown(comment) {
+  const lines = [];
+  const quoted = comment.quotedText?.trim();
+  if (quoted) {
+    lines.push(...quoted.split(/\r?\n/).map((line) => `> ${line}`), "");
+  }
+  const body = markdownImagesToLinks((comment.body ?? "").trim());
+  if (body) {
+    lines.push(...body.split(/\r?\n/));
+  }
+  return lines;
+}
+function quoteMarkdownLines(lines, prefix) {
+  return lines.map((line) => line === "" ? prefix : `${prefix} ${line}`);
+}
+function displayUserName(user) {
+  const name = user?.displayName ?? user?.name;
+  if (name == null || name.trim() === "") {
+    return null;
+  }
+  return name.trim();
+}
+function displayExternalUser(user) {
+  const name = user?.displayName ?? user?.name;
+  return name == null || name.trim() === "" ? null : name.trim();
+}
+function displayBotActor(actor) {
+  const name = actor?.userDisplayName ?? actor?.name ?? actor?.type;
+  return name == null || name.trim() === "" ? null : name.trim();
 }
 function sortComments(comments) {
   comments.sort((a, b) => {
@@ -91081,24 +91154,6 @@ function isEscaped(value, index) {
   }
   return slashCount % 2 === 1;
 }
-function dateToIso(value) {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  if (typeof value === "string") {
-    return Number.isNaN(new Date(value).getTime()) ? null : value;
-  }
-  return null;
-}
-function maxIsoDate(a, b) {
-  if (a == null) {
-    return b ?? void 0;
-  }
-  if (b == null) {
-    return a;
-  }
-  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
-}
 function emptyCommentConnection() {
   return {
     nodes: [],
@@ -91145,6 +91200,30 @@ var COMMENT_FIELDS = `
 	parentId
 	body
 	quotedText
+	user {
+		id
+		displayName
+		name
+		url
+	}
+	onBehalfOf {
+		id
+		displayName
+		name
+		url
+	}
+	externalUser {
+		id
+		displayName
+		name
+	}
+	botActor {
+		id
+		name
+		userDisplayName
+		type
+		subType
+	}
 	archivedAt
 	createdAt
 	updatedAt
@@ -91238,17 +91317,17 @@ function issueIsRemoved(issue) {
   return issue.archivedAt != null || issue.trashed === true;
 }
 function issueUpdatedAt(issue) {
-  return dateToIso2(issue.updatedAt);
+  return dateToIso(issue.updatedAt);
 }
 function buildIssueUpdate(issue, comments, options) {
   if (issueIsRemoved(issue)) {
     return del(issueDocId(issue));
   }
   const details = issueDetails(issue);
-  const issueUpdatedAt2 = dateToIso2(issue.updatedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
+  const issueUpdatedAt2 = dateToIso(issue.updatedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
   const commentsUpdatedAt = options.renderComments ? latestCommentUpdatedAt(comments) : void 0;
-  const docUpdatedAt = maxIsoDate2(issueUpdatedAt2, commentsUpdatedAt) ?? issueUpdatedAt2;
-  const createdAt = dateToIso2(issue.createdAt);
+  const docUpdatedAt = maxIsoDate(issueUpdatedAt2, commentsUpdatedAt) ?? issueUpdatedAt2;
+  const createdAt = dateToIso(issue.createdAt);
   return upsert({
     id: issueDocId(issue),
     title: `${issue.identifier} ${issue.title}`,
@@ -91284,24 +91363,6 @@ function issueDateBoundary(value, options) {
     new Date(iso).getTime() - options.incrementalOverlapMs
   ).toISOString();
 }
-function dateToIso2(value) {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  if (typeof value === "string") {
-    return Number.isNaN(new Date(value).getTime()) ? null : value;
-  }
-  return null;
-}
-function maxIsoDate2(a, b) {
-  if (a == null) {
-    return b;
-  }
-  if (b == null) {
-    return a;
-  }
-  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
-}
 function issueDetails(issue) {
   return {
     assigneeName: issue.assignee?.displayName ?? issue.assignee?.name ?? null,
@@ -91319,8 +91380,8 @@ function renderIssueMarkdown(issue, details, comments, options) {
     ["Assignee", details.assigneeName],
     ["Project", details.projectName],
     ["Priority", issue.priorityLabel],
-    ["Created", dateToIso2(issue.createdAt)],
-    ["Updated", dateToIso2(issue.updatedAt)]
+    ["Created", formatLinearTime(issue.createdAt)],
+    ["Updated", formatLinearTime(issue.updatedAt)]
   ];
   const sections = [
     `# ${issue.identifier}: ${issue.title}`,
@@ -91481,7 +91542,7 @@ var LinearConnector = class extends Connector {
         touchedIssueIds.add(issue.id);
         const updatedAt = issueUpdatedAt(issue);
         if (updatedAt != null) {
-          lastIssueUpdatedAt = maxIsoDate2(lastIssueUpdatedAt, updatedAt);
+          lastIssueUpdatedAt = maxIsoDate(lastIssueUpdatedAt, updatedAt);
         }
         const comments = this.indexComments && !issueIsRemoved(issue) ? await fetchIssueComments(
           issue,
@@ -91592,7 +91653,7 @@ function nextCommentUpdatedAt(state, delta) {
   if (delta.nextAfter != null) {
     return state.last_comment_updated_at;
   }
-  return maxIsoDate2(
+  return maxIsoDate(
     state.last_comment_updated_at,
     delta.maxUpdatedAt ?? state.comment_delta_max_updated_at
   );

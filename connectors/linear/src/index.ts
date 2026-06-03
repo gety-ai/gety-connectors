@@ -18,9 +18,9 @@ import {
 	issueIsRemoved,
 	type IssuesQueryVariables,
 	issueUpdatedAt,
-	maxIsoDate,
 } from './issue.ts';
 import { hasValue, logInfo } from './log.ts';
+import { maxIsoDate } from './utils.ts';
 
 interface LinearState {
 	schema_version?: 1 | 2;

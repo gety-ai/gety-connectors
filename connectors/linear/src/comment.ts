@@ -1,5 +1,6 @@
 import { type LinearClient } from '@linear/sdk';
 import { logInfo } from './log.ts';
+import { dateToIso, formatLinearTime, maxIsoDate } from './utils.ts';
 
 export interface LinearComment {
 	id: string;
@@ -7,11 +8,36 @@ export interface LinearComment {
 	parentId?: string | null;
 	body?: string | null;
 	quotedText?: string | null;
+	user?: LinearCommentUser | null;
+	onBehalfOf?: LinearCommentUser | null;
+	externalUser?: LinearCommentExternalUser | null;
+	botActor?: LinearCommentBotActor | null;
 	archivedAt?: Date | string | null;
 	createdAt?: Date | string | null;
 	updatedAt?: Date | string | null;
 	editedAt?: Date | string | null;
 	resolvedAt?: Date | string | null;
+}
+
+interface LinearCommentUser {
+	id?: string | null;
+	displayName?: string | null;
+	name?: string | null;
+	url?: string | null;
+}
+
+interface LinearCommentExternalUser {
+	id?: string | null;
+	displayName?: string | null;
+	name?: string | null;
+}
+
+interface LinearCommentBotActor {
+	id?: string | null;
+	name?: string | null;
+	userDisplayName?: string | null;
+	type?: string | null;
+	subType?: string | null;
 }
 
 export interface LinearCommentConnection {
@@ -106,6 +132,30 @@ const ISSUE_COMMENTS_QUERY = `
 					parentId
 					body
 					quotedText
+					user {
+						id
+						displayName
+						name
+						url
+					}
+					onBehalfOf {
+						id
+						displayName
+						name
+						url
+					}
+					externalUser {
+						id
+						displayName
+						name
+					}
+					botActor {
+						id
+						name
+						userDisplayName
+						type
+						subType
+					}
 					archivedAt
 					createdAt
 					updatedAt
@@ -348,18 +398,11 @@ function renderCommentBlock(
 	childrenByParentId: Map<string, LinearComment[]>,
 	depth: number,
 ): string {
-	const headingLevel = Math.min(3 + depth, 6);
-	const title = depth === 0 ? 'Comment' : 'Reply';
-	const body = markdownImagesToLinks((comment.body ?? '').trim());
-	const lines = [
-		`${'#'.repeat(headingLevel)} ${title}`,
-		'',
-		...commentMetadata(comment),
-		'',
-		...quotedText(comment),
-	];
-	if (body) {
-		lines.push(body);
+	const prefix = quotePrefix(depth);
+	const body = commentBodyMarkdown(comment);
+	const lines = [`${prefix} ${commentHeader(comment)}`];
+	if (body.length > 0) {
+		lines.push(prefix, ...quoteMarkdownLines(body, prefix));
 	}
 
 	for (const child of childrenByParentId.get(comment.id) ?? []) {
@@ -369,35 +412,84 @@ function renderCommentBlock(
 	return lines.join('\n');
 }
 
-function commentMetadata(comment: LinearComment): string[] {
-	const metadata = [`- Created: ${dateToIso(comment.createdAt) ?? 'Unknown'}`];
-	const updatedAt = dateToIso(comment.updatedAt);
-	const editedAt = dateToIso(comment.editedAt);
-	const resolvedAt = dateToIso(comment.resolvedAt);
-
-	if (updatedAt != null) {
-		metadata.push(`- Updated: ${updatedAt}`);
-	}
-	if (editedAt != null) {
-		metadata.push(`- Edited: ${editedAt}`);
-	}
-	if (resolvedAt != null) {
-		metadata.push(`- Resolved: ${resolvedAt}`);
-	}
-
-	return metadata;
+function quotePrefix(depth: number): string {
+	return Array.from({ length: depth + 1 }, () => '>').join(' ');
 }
 
-function quotedText(comment: LinearComment): string[] {
-	const quoted = comment.quotedText?.trim();
-	if (!quoted) {
-		return [];
+function commentHeader(comment: LinearComment): string {
+	return `@${commentAuthorName(comment)} · ${commentTime(comment)}`;
+}
+
+function commentAuthorName(comment: LinearComment): string {
+	const onBehalfOf = displayUserName(comment.onBehalfOf);
+	const botActor = displayBotActor(comment.botActor);
+	if (onBehalfOf != null) {
+		return botActor == null ? onBehalfOf : `${onBehalfOf} via ${botActor}`;
 	}
 
-	return [
-		...quoted.split(/\r?\n/).map((line) => `> ${line}`),
-		'',
-	];
+	const user = displayUserName(comment.user);
+	if (user != null) {
+		return user;
+	}
+
+	const externalUser = displayExternalUser(comment.externalUser);
+	if (externalUser != null) {
+		return botActor == null
+			? `${externalUser} (external)`
+			: `${externalUser} (external via ${botActor})`;
+	}
+
+	return botActor == null ? 'unknown' : `${botActor} (bot)`;
+}
+
+function commentTime(comment: LinearComment): string {
+	return formatLinearTime(comment.createdAt) ?? 'unknown time';
+}
+
+function commentBodyMarkdown(comment: LinearComment): string[] {
+	const lines: string[] = [];
+	const quoted = comment.quotedText?.trim();
+	if (quoted) {
+		lines.push(...quoted.split(/\r?\n/).map((line) => `> ${line}`), '');
+	}
+
+	const body = markdownImagesToLinks((comment.body ?? '').trim());
+	if (body) {
+		lines.push(...body.split(/\r?\n/));
+	}
+
+	return lines;
+}
+
+function quoteMarkdownLines(
+	lines: readonly string[],
+	prefix: string,
+): string[] {
+	return lines.map((line) => line === '' ? prefix : `${prefix} ${line}`);
+}
+
+function displayUserName(
+	user: LinearCommentUser | null | undefined,
+): string | null {
+	const name = user?.displayName ?? user?.name;
+	if (name == null || name.trim() === '') {
+		return null;
+	}
+	return name.trim();
+}
+
+function displayExternalUser(
+	user: LinearCommentExternalUser | null | undefined,
+): string | null {
+	const name = user?.displayName ?? user?.name;
+	return name == null || name.trim() === '' ? null : name.trim();
+}
+
+function displayBotActor(
+	actor: LinearCommentBotActor | null | undefined,
+): string | null {
+	const name = actor?.userDisplayName ?? actor?.name ?? actor?.type;
+	return name == null || name.trim() === '' ? null : name.trim();
 }
 
 function sortComments(comments: LinearComment[]): void {
@@ -563,29 +655,6 @@ function isEscaped(value: string, index: number): boolean {
 		slashCount += 1;
 	}
 	return slashCount % 2 === 1;
-}
-
-function dateToIso(value: Date | string | null | undefined): string | null {
-	if (value instanceof Date) {
-		return Number.isNaN(value.getTime()) ? null : value.toISOString();
-	}
-	if (typeof value === 'string') {
-		return Number.isNaN(new Date(value).getTime()) ? null : value;
-	}
-	return null;
-}
-
-function maxIsoDate(
-	a: string | undefined,
-	b: string | null | undefined,
-): string | undefined {
-	if (a == null) {
-		return b ?? undefined;
-	}
-	if (b == null) {
-		return a;
-	}
-	return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
 
 function emptyCommentConnection(): LinearCommentConnection {

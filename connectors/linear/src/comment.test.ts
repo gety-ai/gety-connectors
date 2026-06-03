@@ -47,12 +47,19 @@ Deno.test('renderCommentsMarkdown renders separated threaded comments', () => {
 			id: 'root-1',
 			body: 'First ![image](https://example.com/a.png)',
 			createdAt: new Date('2026-06-03T00:00:00.000Z'),
+			user: {
+				displayName: 'alice',
+				url: 'https://linear.app/example/profiles/alice',
+			},
 		}),
 		comment({
 			id: 'reply-1',
 			parentId: 'root-1',
 			body: 'Reply body',
 			createdAt: new Date('2026-06-03T00:01:00.000Z'),
+			user: {
+				displayName: 'bob',
+			},
 		}),
 		comment({
 			id: 'root-2',
@@ -62,26 +69,23 @@ Deno.test('renderCommentsMarkdown renders separated threaded comments', () => {
 	]);
 
 	assert.match(markdown, /^## Comments/);
-	assert.match(markdown, /### Comment/);
-	assert.match(markdown, /#### Reply/);
 	assert.match(markdown, /\n---\n/);
-	assert.match(markdown, /First \[image\]\(https:\/\/example\.com\/a\.png\)/);
+	assert.match(
+		markdown,
+		/> @alice · 2026-06-03 00:00\n>\n> First \[image\]\(https:\/\/example\.com\/a\.png\)/,
+	);
+	assert.match(
+		markdown,
+		/> > @bob · 2026-06-03 00:01\n> >\n> > Reply body/,
+	);
+	assert.match(markdown, /> @unknown · 2026-06-03 00:02/);
+	assert.doesNotMatch(markdown, /### Comment/);
+	assert.doesNotMatch(markdown, /#### Reply/);
+	assert.doesNotMatch(markdown, /- Author:/);
 	assert.doesNotMatch(markdown, /!\[image\]/);
 });
 
-interface MockComment {
-	id: string;
-	body: string;
-	parentId: string | null;
-	createdAt: Date;
-	updatedAt: Date;
-	editedAt: Date | null;
-	archivedAt: Date | null;
-	resolvedAt: Date | null;
-	quotedText: string | null;
-}
-
-function comment(overrides: Partial<MockComment>): LinearComment {
+function comment(overrides: Partial<LinearComment>): LinearComment {
 	return {
 		id: 'comment',
 		body: 'Body',

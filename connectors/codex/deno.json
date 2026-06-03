@@ -7,15 +7,17 @@
 	"tasks": {
 		"build": "deno run -A scripts/build.ts",
 		"dev": "deno run -A scripts/build.ts --watch",
-		"check": "deno task generate && deno check src/index.ts scripts/build.ts scripts/setup.ts scripts/generate-manifest-config.ts dev/gety-connector-sdk/mod.ts src/gen/manifest.d.ts",
+		"check": "deno task generate && deno check src/index.ts scripts/build.ts scripts/setup.ts scripts/generate-manifest-config.ts dev/gety-connector-sdk/mod.ts dev/runner.ts src/gen/manifest.d.ts",
 		"generate": "deno run -A scripts/generate-manifest-config.ts",
 		"setup": "deno run -A scripts/setup.ts",
+		"test": "deno test src",
+		"runner": "deno task build && deno run -A --env-file=.env dev/runner.ts",
 		"fix": "deno task fmt && deno task lint:fix",
 		"fmt": "deno fmt",
 		"fmt:check": "deno fmt --check",
 		"lint": "deno lint",
 		"lint:fix": "deno lint --fix",
-		"verify": "deno task fix && deno task check && deno task build"
+		"verify": "deno task fix && deno task check && deno task test && deno task build"
 	},
 	"fmt": {
 		"useTabs": true,

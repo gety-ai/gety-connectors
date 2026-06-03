@@ -68,6 +68,8 @@ const DEFAULT_SYNC_OPTIONS: SyncOptions = {
 	incrementalOverlapMs: 1000,
 };
 
+export const STATE_SCHEMA_VERSION = 2;
+
 export default class LinearConnector
 	extends Connector<ManifestConfig, LinearState> {
 	private client!: LinearClient;
@@ -113,7 +115,6 @@ export default class LinearConnector
 
 		const rebuiltFromComments = await this.rebuildCommentIssues(
 			commentDelta.issueIds,
-			issueResult.touchedIssueIds,
 		);
 		const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
 		logInfo('poll finished', {
@@ -127,7 +128,7 @@ export default class LinearConnector
 		yield {
 			updates,
 			state: {
-				schema_version: 2,
+				schema_version: STATE_SCHEMA_VERSION,
 				last_issue_updated_at: issueResult.lastIssueUpdatedAt,
 				last_comment_updated_at: nextCommentUpdatedAt(
 					previousState,
@@ -152,10 +153,7 @@ export default class LinearConnector
 	}
 
 	private shouldRebuildAllIssues(previousState: LinearState): boolean {
-		if (previousState.index_comments === this.indexComments) {
-			return false;
-		}
-		return this.indexComments || previousState.index_comments === true;
+		return shouldRebuildAllIssuesForState(previousState, this.indexComments);
 	}
 
 	private async pollIssues(
@@ -168,7 +166,6 @@ export default class LinearConnector
 			this.syncOptions,
 		);
 		const updates: DocUpdate[] = [];
-		const touchedIssueIds = new Set<string>();
 
 		let after: string | undefined;
 		let issueCount = 0;
@@ -207,7 +204,6 @@ export default class LinearConnector
 			const pageStartedAt = performance.now();
 			let extraCommentPageIssueCount = 0;
 			for (const issue of connection.nodes) {
-				touchedIssueIds.add(issue.id);
 				const updatedAt = issueUpdatedAt(issue);
 				if (updatedAt != null) {
 					lastIssueUpdatedAt = maxIsoDate(lastIssueUpdatedAt, updatedAt);
@@ -252,7 +248,6 @@ export default class LinearConnector
 
 		return {
 			updates,
-			touchedIssueIds,
 			issueCount,
 			lastIssueUpdatedAt,
 			hitLimit: hasNextPage,
@@ -261,25 +256,17 @@ export default class LinearConnector
 
 	private async rebuildCommentIssues(
 		issueIds: Set<string>,
-		alreadyTouched: Set<string>,
 	): Promise<CommentIssueRebuildResult> {
 		const updates: DocUpdate[] = [];
 		let issueCount = 0;
-		let skippedIssueCount = 0;
 
 		if (issueIds.size > 0) {
 			logInfo('comment issue rebuild started', {
 				affected_issues: issueIds.size,
-				already_touched_issues: alreadyTouched.size,
 			});
 		}
 
 		for (const issueId of issueIds) {
-			if (alreadyTouched.has(issueId)) {
-				skippedIssueCount += 1;
-				continue;
-			}
-
 			this.signal.throwIfAborted();
 			const issue = await fetchIssueById(
 				this.client,
@@ -304,7 +291,6 @@ export default class LinearConnector
 		if (issueIds.size > 0) {
 			logInfo('comment issue rebuild finished', {
 				rebuilt_issues: issueCount,
-				skipped_issues: skippedIssueCount,
 			});
 		}
 
@@ -314,7 +300,6 @@ export default class LinearConnector
 
 interface IssuePollResult {
 	updates: DocUpdate[];
-	touchedIssueIds: Set<string>;
 	issueCount: number;
 	lastIssueUpdatedAt?: string;
 	hitLimit: boolean;
@@ -323,6 +308,19 @@ interface IssuePollResult {
 interface CommentIssueRebuildResult {
 	updates: DocUpdate[];
 	issueCount: number;
+}
+
+export function shouldRebuildAllIssuesForState(
+	previousState: Pick<LinearState, 'index_comments' | 'schema_version'>,
+	indexComments: boolean,
+): boolean {
+	if (previousState.schema_version !== STATE_SCHEMA_VERSION) {
+		return true;
+	}
+	if (previousState.index_comments === indexComments) {
+		return false;
+	}
+	return indexComments || previousState.index_comments === true;
 }
 
 function buildIssueFilter(

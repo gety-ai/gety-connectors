@@ -91425,6 +91425,7 @@ var DEFAULT_SYNC_OPTIONS = {
   issueCommentPageSize: 50,
   incrementalOverlapMs: 1e3
 };
+var STATE_SCHEMA_VERSION = 2;
 var LinearConnector = class extends Connector {
   client;
   indexComments = true;
@@ -91459,8 +91460,7 @@ var LinearConnector = class extends Connector {
       });
     }
     const rebuiltFromComments = await this.rebuildCommentIssues(
-      commentDelta.issueIds,
-      issueResult.touchedIssueIds
+      commentDelta.issueIds
     );
     const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
     logInfo("poll finished", {
@@ -91473,7 +91473,7 @@ var LinearConnector = class extends Connector {
     yield {
       updates,
       state: {
-        schema_version: 2,
+        schema_version: STATE_SCHEMA_VERSION,
         last_issue_updated_at: issueResult.lastIssueUpdatedAt,
         last_comment_updated_at: nextCommentUpdatedAt(
           previousState,
@@ -91493,10 +91493,7 @@ var LinearConnector = class extends Connector {
     };
   }
   shouldRebuildAllIssues(previousState) {
-    if (previousState.index_comments === this.indexComments) {
-      return false;
-    }
-    return this.indexComments || previousState.index_comments === true;
+    return shouldRebuildAllIssuesForState(previousState, this.indexComments);
   }
   async pollIssues(previousState, rebuildAllIssues) {
     const filter = buildIssueFilter(
@@ -91505,7 +91502,6 @@ var LinearConnector = class extends Connector {
       this.syncOptions
     );
     const updates = [];
-    const touchedIssueIds = /* @__PURE__ */ new Set();
     let after;
     let issueCount = 0;
     let lastIssueUpdatedAt = previousState.last_issue_updated_at ?? previousState.last_updated_at;
@@ -91539,7 +91535,6 @@ var LinearConnector = class extends Connector {
       const pageStartedAt = performance.now();
       let extraCommentPageIssueCount = 0;
       for (const issue of connection.nodes) {
-        touchedIssueIds.add(issue.id);
         const updatedAt = issueUpdatedAt(issue);
         if (updatedAt != null) {
           lastIssueUpdatedAt = maxIsoDate(lastIssueUpdatedAt, updatedAt);
@@ -91578,27 +91573,20 @@ var LinearConnector = class extends Connector {
     });
     return {
       updates,
-      touchedIssueIds,
       issueCount,
       lastIssueUpdatedAt,
       hitLimit: hasNextPage
     };
   }
-  async rebuildCommentIssues(issueIds, alreadyTouched) {
+  async rebuildCommentIssues(issueIds) {
     const updates = [];
     let issueCount = 0;
-    let skippedIssueCount = 0;
     if (issueIds.size > 0) {
       logInfo("comment issue rebuild started", {
-        affected_issues: issueIds.size,
-        already_touched_issues: alreadyTouched.size
+        affected_issues: issueIds.size
       });
     }
     for (const issueId of issueIds) {
-      if (alreadyTouched.has(issueId)) {
-        skippedIssueCount += 1;
-        continue;
-      }
       this.signal.throwIfAborted();
       const issue = await fetchIssueById(
         this.client,
@@ -91622,13 +91610,21 @@ var LinearConnector = class extends Connector {
     }
     if (issueIds.size > 0) {
       logInfo("comment issue rebuild finished", {
-        rebuilt_issues: issueCount,
-        skipped_issues: skippedIssueCount
+        rebuilt_issues: issueCount
       });
     }
     return { updates, issueCount };
   }
 };
+function shouldRebuildAllIssuesForState(previousState, indexComments) {
+  if (previousState.schema_version !== STATE_SCHEMA_VERSION) {
+    return true;
+  }
+  if (previousState.index_comments === indexComments) {
+    return false;
+  }
+  return indexComments || previousState.index_comments === true;
+}
 function buildIssueFilter(state, rebuildAllIssues, options) {
   if (rebuildAllIssues) {
     return void 0;
@@ -91659,6 +91655,8 @@ function nextCommentUpdatedAt(state, delta) {
   );
 }
 export {
-  LinearConnector as default
+  STATE_SCHEMA_VERSION,
+  LinearConnector as default,
+  shouldRebuildAllIssuesForState
 };
 //# sourceMappingURL=main.js.map

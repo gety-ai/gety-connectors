@@ -1,15 +1,9 @@
 import { del, type DocUpdate, upsert } from '@gety-ai/connector-sdk';
-import {
-	type Comment,
-	type Issue,
-	type LinearClient,
-	type Project,
-	type Team,
-	type User,
-	type WorkflowState,
-} from '@linear/sdk';
+import type { LinearClient } from '@linear/sdk';
 import {
 	latestCommentUpdatedAt,
+	type LinearComment,
+	type LinearCommentConnection,
 	markdownImagesToLinks,
 	renderCommentsMarkdown,
 } from './comment.ts';
@@ -19,6 +13,52 @@ export type IssuesQueryVariables = NonNullable<
 >;
 
 export const DOC_TYPE = 'linear:issue';
+
+export interface LinearIssue {
+	id: string;
+	identifier: string;
+	title: string;
+	description?: string | null;
+	url: string;
+	number: number;
+	priority?: number | null;
+	priorityLabel?: string | null;
+	createdAt?: Date | string | null;
+	updatedAt?: Date | string | null;
+	archivedAt?: Date | string | null;
+	trashed?: boolean | null;
+	assignee?: LinearUser | null;
+	project?: LinearProject | null;
+	state?: LinearWorkflowState | null;
+	team?: LinearTeam | null;
+	comments?: LinearCommentConnection | null;
+}
+
+export interface LinearIssueConnection {
+	nodes: LinearIssue[];
+	pageInfo: {
+		endCursor?: string | null;
+		hasNextPage: boolean;
+	};
+}
+
+interface LinearUser {
+	displayName?: string | null;
+	name?: string | null;
+}
+
+interface LinearProject {
+	name?: string | null;
+}
+
+interface LinearWorkflowState {
+	name?: string | null;
+}
+
+interface LinearTeam {
+	name?: string | null;
+	key?: string | null;
+}
 
 interface IssueDetails {
 	assigneeName: string | null;
@@ -36,28 +76,178 @@ interface IssueIncrementalOptions {
 	incrementalOverlapMs: number;
 }
 
-export function issueDocId(issue: Issue): string {
+interface IssuePageResponse {
+	issues: LinearIssueConnection;
+}
+
+interface IssueResponse {
+	issue?: LinearIssue | null;
+}
+
+const ISSUE_FIELDS = `
+	id
+	identifier
+	title
+	description
+	url
+	number
+	priority
+	priorityLabel
+	createdAt
+	updatedAt
+	archivedAt
+	trashed
+	state {
+		name
+	}
+	team {
+		name
+		key
+	}
+	assignee {
+		displayName
+		name
+	}
+	project {
+		name
+	}
+`;
+
+const COMMENT_FIELDS = `
+	id
+	issueId
+	parentId
+	body
+	quotedText
+	archivedAt
+	createdAt
+	updatedAt
+	editedAt
+	resolvedAt
+`;
+
+const ISSUE_PAGE_QUERY = `
+	query GetyLinearIssues(
+		$after: String
+		$filter: IssueFilter
+		$first: Int!
+		$includeComments: Boolean!
+		$commentFirst: Int!
+		$sort: [IssueSortInput!]
+	) {
+		issues(
+			after: $after
+			filter: $filter
+			first: $first
+			includeArchived: true
+			sort: $sort
+		) {
+			nodes {
+				${ISSUE_FIELDS}
+				comments(
+					first: $commentFirst
+					includeArchived: true
+					orderBy: createdAt
+				) @include(if: $includeComments) {
+					nodes {
+						${COMMENT_FIELDS}
+					}
+					pageInfo {
+						endCursor
+						hasNextPage
+					}
+				}
+			}
+			pageInfo {
+				endCursor
+				hasNextPage
+			}
+		}
+	}
+`;
+
+const ISSUE_QUERY = `
+	query GetyLinearIssue(
+		$id: String!
+		$includeComments: Boolean!
+		$commentFirst: Int!
+	) {
+		issue(id: $id) {
+			${ISSUE_FIELDS}
+			comments(
+				first: $commentFirst
+				includeArchived: true
+				orderBy: createdAt
+			) @include(if: $includeComments) {
+				nodes {
+					${COMMENT_FIELDS}
+				}
+				pageInfo {
+					endCursor
+					hasNextPage
+				}
+			}
+		}
+	}
+`;
+
+export async function fetchIssuePage(
+	client: LinearClient,
+	variables: Pick<IssuesQueryVariables, 'after' | 'filter' | 'first'>,
+	includeComments: boolean,
+	commentFirst: number,
+): Promise<LinearIssueConnection> {
+	const response = await client.client.rawRequest<
+		IssuePageResponse,
+		Record<string, unknown>
+	>(ISSUE_PAGE_QUERY, {
+		...variables,
+		commentFirst,
+		includeComments,
+		sort: [{ updatedAt: { order: 'Ascending' } }],
+	});
+	return response.data?.issues ?? emptyIssueConnection();
+}
+
+export async function fetchIssueById(
+	client: LinearClient,
+	id: string,
+	includeComments: boolean,
+	commentFirst: number,
+): Promise<LinearIssue | null> {
+	const response = await client.client.rawRequest<
+		IssueResponse,
+		Record<string, unknown>
+	>(ISSUE_QUERY, {
+		commentFirst,
+		id,
+		includeComments,
+	});
+	return response.data?.issue ?? null;
+}
+
+export function issueDocId(issue: LinearIssue): string {
 	return `linear:issue:${issue.id}`;
 }
 
-export function issueIsRemoved(issue: Issue): boolean {
+export function issueIsRemoved(issue: LinearIssue): boolean {
 	return issue.archivedAt != null || issue.trashed === true;
 }
 
-export function issueUpdatedAt(issue: Issue): string | null {
+export function issueUpdatedAt(issue: LinearIssue): string | null {
 	return dateToIso(issue.updatedAt);
 }
 
-export async function buildIssueUpdate(
-	issue: Issue,
-	comments: readonly Comment[],
+export function buildIssueUpdate(
+	issue: LinearIssue,
+	comments: readonly LinearComment[],
 	options: BuildIssueUpdateOptions,
-): Promise<DocUpdate> {
+): DocUpdate {
 	if (issueIsRemoved(issue)) {
 		return del(issueDocId(issue));
 	}
 
-	const details = await issueDetails(issue);
+	const details = issueDetails(issue);
 	const issueUpdatedAt = dateToIso(issue.updatedAt) ?? new Date().toISOString();
 	const commentsUpdatedAt = options.renderComments
 		? latestCommentUpdatedAt(comments)
@@ -79,8 +269,8 @@ export async function buildIssueUpdate(
 			issue_id: issue.id,
 			identifier: issue.identifier,
 			number: issue.number,
-			priority: issue.priority,
-			priority_label: issue.priorityLabel,
+			priority: issue.priority ?? undefined,
+			priority_label: issue.priorityLabel ?? undefined,
 			state: details.stateName ?? undefined,
 			team: details.teamName ?? undefined,
 			team_key: details.teamKey ?? undefined,
@@ -94,7 +284,7 @@ export async function buildIssueUpdate(
 }
 
 export function issueDateBoundary(
-	value: Issue | string,
+	value: LinearIssue | string,
 	options: IssueIncrementalOptions,
 ): string | undefined {
 	const iso = typeof value === 'string' ? value : issueUpdatedAt(value);
@@ -107,10 +297,16 @@ export function issueDateBoundary(
 	).toISOString();
 }
 
-export function dateToIso(value: Date | null | undefined): string | null {
-	return value instanceof Date && !Number.isNaN(value.getTime())
-		? value.toISOString()
-		: null;
+export function dateToIso(
+	value: Date | string | null | undefined,
+): string | null {
+	if (value instanceof Date) {
+		return Number.isNaN(value.getTime()) ? null : value.toISOString();
+	}
+	if (typeof value === 'string') {
+		return Number.isNaN(new Date(value).getTime()) ? null : value;
+	}
+	return null;
 }
 
 export function maxIsoDate(
@@ -126,33 +322,20 @@ export function maxIsoDate(
 	return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
 
-async function issueDetails(issue: Issue): Promise<IssueDetails> {
-	const [assignee, project, state, team] = await Promise.all([
-		resolveRelation<User>(issue.assignee),
-		resolveRelation<Project>(issue.project),
-		resolveRelation<WorkflowState>(issue.state),
-		resolveRelation<Team>(issue.team),
-	]);
-
+function issueDetails(issue: LinearIssue): IssueDetails {
 	return {
-		assigneeName: assignee?.displayName ?? assignee?.name ?? null,
-		projectName: project?.name ?? null,
-		stateName: state?.name ?? null,
-		teamName: team?.name ?? null,
-		teamKey: team?.key ?? null,
+		assigneeName: issue.assignee?.displayName ?? issue.assignee?.name ?? null,
+		projectName: issue.project?.name ?? null,
+		stateName: issue.state?.name ?? null,
+		teamName: issue.team?.name ?? null,
+		teamKey: issue.team?.key ?? null,
 	};
 }
 
-async function resolveRelation<T>(
-	relation: PromiseLike<T> | undefined,
-): Promise<T | null> {
-	return relation == null ? null : await relation;
-}
-
 function renderIssueMarkdown(
-	issue: Issue,
+	issue: LinearIssue,
 	details: IssueDetails,
-	comments: readonly Comment[],
+	comments: readonly LinearComment[],
 	options: BuildIssueUpdateOptions,
 ): string {
 	const description = issue.description?.trim();
@@ -195,4 +378,13 @@ function formatTeam(details: IssueDetails): string | null {
 		return `${details.teamName} (${details.teamKey})`;
 	}
 	return details.teamName ?? details.teamKey;
+}
+
+function emptyIssueConnection(): LinearIssueConnection {
+	return {
+		nodes: [],
+		pageInfo: {
+			hasNextPage: false,
+		},
+	};
 }

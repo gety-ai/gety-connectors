@@ -3,7 +3,7 @@ import {
 	type DocUpdate,
 	type PollResult,
 } from '@gety-ai/connector-sdk';
-import { LinearClient, LinearDocument } from '@linear/sdk';
+import { LinearClient } from '@linear/sdk';
 import {
 	changedCommentIssues,
 	type CommentDeltaResult,
@@ -12,12 +12,15 @@ import {
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import {
 	buildIssueUpdate,
+	fetchIssueById,
+	fetchIssuePage,
 	issueDateBoundary,
 	issueIsRemoved,
 	type IssuesQueryVariables,
 	issueUpdatedAt,
 	maxIsoDate,
 } from './issue.ts';
+import { hasValue, logInfo } from './log.ts';
 
 interface LinearState {
 	schema_version?: 1 | 2;
@@ -79,6 +82,20 @@ export default class LinearConnector
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
 		const previousState = this.lastState ?? {};
 		const rebuildAllIssues = this.shouldRebuildAllIssues(previousState);
+		logInfo('poll started', {
+			index_comments: this.indexComments,
+			rebuild_all_issues: rebuildAllIssues,
+			has_issue_cursor: hasValue(
+				previousState.last_issue_updated_at ??
+					previousState.last_updated_at,
+			),
+			has_comment_cursor: hasValue(
+				previousState.last_comment_updated_at ??
+					previousState.comment_delta_boundary ??
+					previousState.comment_delta_after,
+			),
+		});
+
 		const issueResult = await this.pollIssues(previousState, rebuildAllIssues);
 		const commentDelta = this.indexComments
 			? await changedCommentIssues(
@@ -88,12 +105,24 @@ export default class LinearConnector
 				this.syncOptions,
 			)
 			: emptyCommentDelta(previousState);
+		if (!this.indexComments) {
+			logInfo('comment sync skipped', {
+				reason: 'index_comments_disabled',
+			});
+		}
 
 		const rebuiltFromComments = await this.rebuildCommentIssues(
 			commentDelta.issueIds,
 			issueResult.touchedIssueIds,
 		);
 		const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
+		logInfo('poll finished', {
+			issue_updates: issueResult.updates.length,
+			scanned_comments: commentDelta.commentCount,
+			rebuilt_issues: rebuiltFromComments.issueCount,
+			total_updates: updates.length,
+			hit_limit: issueResult.hitLimit || commentDelta.hitLimit,
+		});
 
 		yield {
 			updates,
@@ -146,6 +175,12 @@ export default class LinearConnector
 		let lastIssueUpdatedAt = previousState.last_issue_updated_at ??
 			previousState.last_updated_at;
 		let hasNextPage = true;
+		logInfo('issue sync started', {
+			mode: rebuildAllIssues ? 'full' : 'incremental',
+			page_size: this.syncOptions.issuePageSize,
+			max_issues: this.syncOptions.maxIssuesPerPoll,
+			has_filter: filter != null,
+		});
 
 		while (hasNextPage && issueCount < this.syncOptions.maxIssuesPerPoll) {
 			this.signal.throwIfAborted();
@@ -154,18 +189,23 @@ export default class LinearConnector
 				this.syncOptions.issuePageSize,
 				this.syncOptions.maxIssuesPerPoll - issueCount,
 			);
-			const connection = await this.client.issues({
-				after,
-				filter,
+			logInfo('fetching issue page', {
+				after: after == null ? 'no' : 'yes',
 				first,
-				includeArchived: true,
-				sort: {
-					updatedAt: {
-						order: LinearDocument.PaginationSortOrder.Ascending,
-					},
-				},
+			});
+			const connection = await fetchIssuePage(
+				this.client,
+				{ after, filter, first },
+				this.indexComments,
+				this.syncOptions.issueCommentPageSize,
+			);
+			logInfo('issue page fetched', {
+				issues: connection.nodes.length,
+				has_next_page: connection.pageInfo.hasNextPage,
 			});
 
+			const pageStartedAt = performance.now();
+			let extraCommentPageIssueCount = 0;
 			for (const issue of connection.nodes) {
 				touchedIssueIds.add(issue.id);
 				const updatedAt = issueUpdatedAt(issue);
@@ -174,23 +214,41 @@ export default class LinearConnector
 				}
 
 				const comments = this.indexComments && !issueIsRemoved(issue)
-					? await fetchIssueComments(issue, this.signal, this.syncOptions)
+					? await fetchIssueComments(
+						issue,
+						this.client,
+						this.signal,
+						this.syncOptions,
+					)
 					: [];
-				updates.push(
-					await buildIssueUpdate(issue, comments, {
-						renderComments: this.indexComments,
-					}),
-				);
+				if (issue.comments?.pageInfo.hasNextPage === true) {
+					extraCommentPageIssueCount += 1;
+				}
+				updates.push(buildIssueUpdate(issue, comments, {
+					renderComments: this.indexComments,
+				}));
 			}
 
 			issueCount += connection.nodes.length;
 			after = connection.pageInfo.endCursor ?? undefined;
 			hasNextPage = connection.pageInfo.hasNextPage && after != null;
+			logInfo('issue page processed', {
+				total_issues: issueCount,
+				total_updates: updates.length,
+				page_ms: Math.round(performance.now() - pageStartedAt),
+				extra_comment_page_issues: extraCommentPageIssueCount,
+				has_next_page: hasNextPage,
+			});
 
 			if (connection.nodes.length === 0) {
 				break;
 			}
 		}
+		logInfo('issue sync finished', {
+			issues: issueCount,
+			updates: updates.length,
+			hit_limit: hasNextPage,
+		});
 
 		return {
 			updates,
@@ -207,23 +265,47 @@ export default class LinearConnector
 	): Promise<CommentIssueRebuildResult> {
 		const updates: DocUpdate[] = [];
 		let issueCount = 0;
+		let skippedIssueCount = 0;
+
+		if (issueIds.size > 0) {
+			logInfo('comment issue rebuild started', {
+				affected_issues: issueIds.size,
+				already_touched_issues: alreadyTouched.size,
+			});
+		}
 
 		for (const issueId of issueIds) {
 			if (alreadyTouched.has(issueId)) {
+				skippedIssueCount += 1;
 				continue;
 			}
 
 			this.signal.throwIfAborted();
-			const issue = await this.client.issue(issueId);
-			const comments = issueIsRemoved(issue)
-				? []
-				: await fetchIssueComments(issue, this.signal, this.syncOptions);
-			updates.push(
-				await buildIssueUpdate(issue, comments, {
-					renderComments: this.indexComments,
-				}),
+			const issue = await fetchIssueById(
+				this.client,
+				issueId,
+				this.indexComments,
+				this.syncOptions.issueCommentPageSize,
 			);
+			if (issue == null) {
+				continue;
+			}
+			const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(
+				issue,
+				this.client,
+				this.signal,
+				this.syncOptions,
+			);
+			updates.push(buildIssueUpdate(issue, comments, {
+				renderComments: this.indexComments,
+			}));
 			issueCount += 1;
+		}
+		if (issueIds.size > 0) {
+			logInfo('comment issue rebuild finished', {
+				rebuilt_issues: issueCount,
+				skipped_issues: skippedIssueCount,
+			});
 		}
 
 		return { updates, issueCount };

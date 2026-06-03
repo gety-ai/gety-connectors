@@ -1,9 +1,32 @@
-import {
-	type Comment,
-	type Issue,
-	type LinearClient,
-	LinearDocument,
-} from '@linear/sdk';
+import { type LinearClient } from '@linear/sdk';
+import { logInfo } from './log.ts';
+
+export interface LinearComment {
+	id: string;
+	issueId?: string | null;
+	parentId?: string | null;
+	body?: string | null;
+	quotedText?: string | null;
+	archivedAt?: Date | string | null;
+	createdAt?: Date | string | null;
+	updatedAt?: Date | string | null;
+	editedAt?: Date | string | null;
+	resolvedAt?: Date | string | null;
+}
+
+export interface LinearCommentConnection {
+	nodes: LinearComment[];
+	pageInfo: {
+		endCursor?: string | null;
+		hasNextPage: boolean;
+	};
+}
+
+interface IssueCommentSource {
+	id: string;
+	identifier: string;
+	comments?: LinearCommentConnection | null;
+}
 
 export interface CommentDeltaState {
 	last_comment_updated_at?: string;
@@ -28,6 +51,76 @@ export interface CommentSyncOptions {
 	incrementalOverlapMs: number;
 }
 
+interface CommentDeltaResponse {
+	comments: LinearCommentConnection;
+}
+
+interface IssueCommentsResponse {
+	issue?: {
+		comments: LinearCommentConnection;
+	} | null;
+}
+
+const COMMENT_DELTA_QUERY = `
+	query GetyLinearCommentDelta(
+		$after: String
+		$boundary: DateTimeOrDuration!
+		$first: Int!
+	) {
+		comments(
+			after: $after
+			filter: { updatedAt: { gte: $boundary } }
+			first: $first
+			includeArchived: true
+			orderBy: updatedAt
+		) {
+			nodes {
+				id
+				issueId
+				updatedAt
+			}
+			pageInfo {
+				endCursor
+				hasNextPage
+			}
+		}
+	}
+`;
+
+const ISSUE_COMMENTS_QUERY = `
+	query GetyLinearIssueComments(
+		$issueId: String!
+		$after: String
+		$first: Int!
+	) {
+		issue(id: $issueId) {
+			comments(
+				after: $after
+				first: $first
+				includeArchived: true
+				orderBy: createdAt
+			) {
+				nodes {
+					id
+					issueId
+					parentId
+					body
+					quotedText
+					archivedAt
+					createdAt
+					updatedAt
+					editedAt
+					resolvedAt
+				}
+				pageInfo {
+					endCursor
+					hasNextPage
+				}
+			}
+		}
+	}
+`;
+
 export async function changedCommentIssues(
 	client: LinearClient,
 	state: CommentDeltaState,
@@ -40,6 +133,12 @@ export async function changedCommentIssues(
 	let maxUpdatedAt = state.comment_delta_max_updated_at;
 	let commentCount = 0;
 	let hasNextPage = true;
+	logInfo('comment delta started', {
+		boundary,
+		resume_after: after != null,
+		page_size: options.commentDeltaPageSize,
+		max_comments: options.maxCommentDeltasPerPoll,
+	});
 
 	while (hasNextPage && commentCount < options.maxCommentDeltasPerPoll) {
 		signal.throwIfAborted();
@@ -48,13 +147,19 @@ export async function changedCommentIssues(
 			options.commentDeltaPageSize,
 			options.maxCommentDeltasPerPoll - commentCount,
 		);
-		const connection = await client.comments({
-			after,
-			filter: { updatedAt: { gte: boundary } },
+		logInfo('fetching comment delta page', {
+			after: after == null ? 'no' : 'yes',
 			first,
-			includeArchived: true,
-			orderBy: LinearDocument.PaginationOrderBy.UpdatedAt,
 		});
+		const response = await client.client.rawRequest<
+			CommentDeltaResponse,
+			Record<string, unknown>
+		>(COMMENT_DELTA_QUERY, {
+			after,
+			boundary,
+			first,
+		});
+		const connection = response.data?.comments ?? emptyCommentConnection();
 
 		for (const comment of connection.nodes) {
 			if (comment.issueId != null) {
@@ -66,11 +171,22 @@ export async function changedCommentIssues(
 		commentCount += connection.nodes.length;
 		after = connection.pageInfo.endCursor ?? undefined;
 		hasNextPage = connection.pageInfo.hasNextPage && after != null;
+		logInfo('comment delta page processed', {
+			comments: connection.nodes.length,
+			total_comments: commentCount,
+			affected_issues: issueIds.size,
+			has_next_page: hasNextPage,
+		});
 
 		if (connection.nodes.length === 0) {
 			break;
 		}
 	}
+	logInfo('comment delta finished', {
+		comments: commentCount,
+		affected_issues: issueIds.size,
+		hit_limit: hasNextPage,
+	});
 
 	return {
 		issueIds,
@@ -83,27 +199,44 @@ export async function changedCommentIssues(
 }
 
 export async function fetchIssueComments(
-	issue: Issue,
+	issue: IssueCommentSource,
+	client: LinearClient,
 	signal: AbortSignal,
 	options: CommentSyncOptions,
-): Promise<Comment[]> {
-	const comments: Comment[] = [];
-	let after: string | undefined;
-	let hasNextPage = true;
+): Promise<LinearComment[]> {
+	const comments = [...(issue.comments?.nodes ?? [])];
+	let after = issue.comments?.pageInfo.endCursor ?? undefined;
+	let hasNextPage = issue.comments?.pageInfo.hasNextPage === true &&
+		after != null;
+	let pageCount = issue.comments == null ? 0 : 1;
 
 	while (hasNextPage) {
 		signal.throwIfAborted();
 
-		const connection = await issue.comments({
+		const response = await client.client.rawRequest<
+			IssueCommentsResponse,
+			Record<string, unknown>
+		>(ISSUE_COMMENTS_QUERY, {
 			after,
 			first: options.issueCommentPageSize,
-			includeArchived: true,
-			orderBy: LinearDocument.PaginationOrderBy.CreatedAt,
+			issueId: issue.id,
 		});
+		const connection = response.data?.issue?.comments ??
+			emptyCommentConnection();
 
+		pageCount += 1;
 		comments.push(...connection.nodes);
 		after = connection.pageInfo.endCursor ?? undefined;
 		hasNextPage = connection.pageInfo.hasNextPage && after != null;
+		if (hasNextPage || pageCount > 1) {
+			logInfo('issue comments page processed', {
+				issue: issue.identifier,
+				pages: pageCount,
+				page_comments: connection.nodes.length,
+				total_comments: comments.length,
+				has_next_page: hasNextPage,
+			});
+		}
 
 		if (connection.nodes.length === 0) {
 			break;
@@ -114,7 +247,7 @@ export async function fetchIssueComments(
 }
 
 export function latestCommentUpdatedAt(
-	comments: readonly Comment[],
+	comments: readonly LinearComment[],
 ): string | undefined {
 	return comments.reduce<string | undefined>(
 		(latest, comment) => maxIsoDate(latest, dateToIso(comment.updatedAt)),
@@ -122,7 +255,9 @@ export function latestCommentUpdatedAt(
 	);
 }
 
-export function renderCommentsMarkdown(comments: readonly Comment[]): string {
+export function renderCommentsMarkdown(
+	comments: readonly LinearComment[],
+): string {
 	const visibleComments = comments.filter((comment) =>
 		comment.archivedAt == null
 	);
@@ -134,8 +269,8 @@ export function renderCommentsMarkdown(comments: readonly Comment[]): string {
 		comment.id,
 		comment,
 	]));
-	const childrenByParentId = new Map<string, Comment[]>();
-	const roots: Comment[] = [];
+	const childrenByParentId = new Map<string, LinearComment[]>();
+	const roots: LinearComment[] = [];
 
 	for (const comment of visibleComments) {
 		if (comment.parentId != null && commentsById.has(comment.parentId)) {
@@ -209,13 +344,13 @@ function commentBoundary(
 }
 
 function renderCommentBlock(
-	comment: Comment,
-	childrenByParentId: Map<string, Comment[]>,
+	comment: LinearComment,
+	childrenByParentId: Map<string, LinearComment[]>,
 	depth: number,
 ): string {
 	const headingLevel = Math.min(3 + depth, 6);
 	const title = depth === 0 ? 'Comment' : 'Reply';
-	const body = markdownImagesToLinks(comment.body.trim());
+	const body = markdownImagesToLinks((comment.body ?? '').trim());
 	const lines = [
 		`${'#'.repeat(headingLevel)} ${title}`,
 		'',
@@ -234,7 +369,7 @@ function renderCommentBlock(
 	return lines.join('\n');
 }
 
-function commentMetadata(comment: Comment): string[] {
+function commentMetadata(comment: LinearComment): string[] {
 	const metadata = [`- Created: ${dateToIso(comment.createdAt) ?? 'Unknown'}`];
 	const updatedAt = dateToIso(comment.updatedAt);
 	const editedAt = dateToIso(comment.editedAt);
@@ -253,7 +388,7 @@ function commentMetadata(comment: Comment): string[] {
 	return metadata;
 }
 
-function quotedText(comment: Comment): string[] {
+function quotedText(comment: LinearComment): string[] {
 	const quoted = comment.quotedText?.trim();
 	if (!quoted) {
 		return [];
@@ -265,7 +400,7 @@ function quotedText(comment: Comment): string[] {
 	];
 }
 
-function sortComments(comments: Comment[]): void {
+function sortComments(comments: LinearComment[]): void {
 	comments.sort((a, b) => {
 		const aTime = dateToIso(a.createdAt) ?? '';
 		const bTime = dateToIso(b.createdAt) ?? '';
@@ -430,10 +565,14 @@ function isEscaped(value: string, index: number): boolean {
 	return slashCount % 2 === 1;
 }
 
-function dateToIso(value: Date | null | undefined): string | null {
-	return value instanceof Date && !Number.isNaN(value.getTime())
-		? value.toISOString()
-		: null;
+function dateToIso(value: Date | string | null | undefined): string | null {
+	if (value instanceof Date) {
+		return Number.isNaN(value.getTime()) ? null : value.toISOString();
+	}
+	if (typeof value === 'string') {
+		return Number.isNaN(new Date(value).getTime()) ? null : value;
+	}
+	return null;
 }
 
 function maxIsoDate(
@@ -447,4 +586,13 @@ function maxIsoDate(
 		return a;
 	}
 	return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
+
+function emptyCommentConnection(): LinearCommentConnection {
+	return {
+		nodes: [],
+		pageInfo: {
+			hasNextPage: false,
+		},
+	};
 }

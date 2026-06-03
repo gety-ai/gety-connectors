@@ -4,21 +4,7 @@ import {
 } from "@gety-ai/connector-sdk";
 
 // ../../.cache/deno/deno_esbuild/registry.npmjs.org/@linear/sdk@86.0.0/node_modules/@linear/sdk/dist/chunk-DPPnyiuk.mjs
-var __defProp = Object.defineProperty;
 var __commonJSMin = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
-var __export = (all, symbols) => {
-  let target = {};
-  for (var name in all) {
-    __defProp(target, name, {
-      get: all[name],
-      enumerable: true
-    });
-  }
-  if (symbols) {
-    __defProp(target, Symbol.toStringTag, { value: "Module" });
-  }
-  return target;
-};
 
 // ../../.cache/deno/deno_esbuild/registry.npmjs.org/@linear/sdk@86.0.0/node_modules/@linear/sdk/dist/webhooks-BisgAo6N.mjs
 import crypto from "node:crypto";
@@ -1188,2204 +1174,6 @@ function headersToObject(headers) {
   });
   return o;
 }
-var _generated_documents_exports = /* @__PURE__ */ __export({
-  ActorBotFragmentDoc: () => ActorBotFragmentDoc,
-  AdministrableTeamsDocument: () => AdministrableTeamsDocument,
-  AgentActivitiesDocument: () => AgentActivitiesDocument,
-  AgentActivityActionContentFragmentDoc: () => AgentActivityActionContentFragmentDoc,
-  AgentActivityConnectionFragmentDoc: () => AgentActivityConnectionFragmentDoc,
-  AgentActivityDocument: () => AgentActivityDocument,
-  AgentActivityElicitationContentFragmentDoc: () => AgentActivityElicitationContentFragmentDoc,
-  AgentActivityErrorContentFragmentDoc: () => AgentActivityErrorContentFragmentDoc,
-  AgentActivityFragmentDoc: () => AgentActivityFragmentDoc,
-  AgentActivityPayloadFragmentDoc: () => AgentActivityPayloadFragmentDoc,
-  AgentActivityPromptContentFragmentDoc: () => AgentActivityPromptContentFragmentDoc,
-  AgentActivityResponseContentFragmentDoc: () => AgentActivityResponseContentFragmentDoc,
-  AgentActivitySignal: () => AgentActivitySignal,
-  AgentActivityThoughtContentFragmentDoc: () => AgentActivityThoughtContentFragmentDoc,
-  AgentActivityType: () => AgentActivityType,
-  AgentActivityWebhookPayloadFragmentDoc: () => AgentActivityWebhookPayloadFragmentDoc,
-  AgentSessionConnectionFragmentDoc: () => AgentSessionConnectionFragmentDoc,
-  AgentSessionCreateOnCommentDocument: () => AgentSessionCreateOnCommentDocument,
-  AgentSessionCreateOnIssueDocument: () => AgentSessionCreateOnIssueDocument,
-  AgentSessionDocument: () => AgentSessionDocument,
-  AgentSessionEventWebhookPayloadFragmentDoc: () => AgentSessionEventWebhookPayloadFragmentDoc,
-  AgentSessionExternalLinkFragmentDoc: () => AgentSessionExternalLinkFragmentDoc,
-  AgentSessionFragmentDoc: () => AgentSessionFragmentDoc,
-  AgentSessionPayloadFragmentDoc: () => AgentSessionPayloadFragmentDoc,
-  AgentSessionStatus: () => AgentSessionStatus,
-  AgentSessionToPullRequestConnectionFragmentDoc: () => AgentSessionToPullRequestConnectionFragmentDoc,
-  AgentSessionToPullRequestFragmentDoc: () => AgentSessionToPullRequestFragmentDoc,
-  AgentSessionType: () => AgentSessionType,
-  AgentSessionUpdateExternalUrlDocument: () => AgentSessionUpdateExternalUrlDocument,
-  AgentSessionWebhookPayloadFragmentDoc: () => AgentSessionWebhookPayloadFragmentDoc,
-  AgentSession_ActivitiesDocument: () => AgentSession_ActivitiesDocument,
-  AgentSessionsDocument: () => AgentSessionsDocument,
-  AiConversationBasePartFragmentDoc: () => AiConversationBasePartFragmentDoc,
-  AiConversationBaseToolCallFragmentDoc: () => AiConversationBaseToolCallFragmentDoc,
-  AiConversationBaseWidgetFragmentDoc: () => AiConversationBaseWidgetFragmentDoc,
-  AiConversationClientPlatform: () => AiConversationClientPlatform,
-  AiConversationCodeIntelligenceToolCallArgsFragmentDoc: () => AiConversationCodeIntelligenceToolCallArgsFragmentDoc,
-  AiConversationCodeIntelligenceToolCallFragmentDoc: () => AiConversationCodeIntelligenceToolCallFragmentDoc,
-  AiConversationCreateEntityToolCallArgsFragmentDoc: () => AiConversationCreateEntityToolCallArgsFragmentDoc,
-  AiConversationCreateEntityToolCallFragmentDoc: () => AiConversationCreateEntityToolCallFragmentDoc,
-  AiConversationDeleteEntityToolCallArgsFragmentDoc: () => AiConversationDeleteEntityToolCallArgsFragmentDoc,
-  AiConversationDeleteEntityToolCallFragmentDoc: () => AiConversationDeleteEntityToolCallFragmentDoc,
-  AiConversationEntityCardWidgetArgsAction: () => AiConversationEntityCardWidgetArgsAction,
-  AiConversationEntityCardWidgetArgsFragmentDoc: () => AiConversationEntityCardWidgetArgsFragmentDoc,
-  AiConversationEntityCardWidgetArgsType: () => AiConversationEntityCardWidgetArgsType,
-  AiConversationEntityCardWidgetFragmentDoc: () => AiConversationEntityCardWidgetFragmentDoc,
-  AiConversationEntityListWidgetArgsAction: () => AiConversationEntityListWidgetArgsAction,
-  AiConversationEntityListWidgetArgsEntitiesFragmentDoc: () => AiConversationEntityListWidgetArgsEntitiesFragmentDoc,
-  AiConversationEntityListWidgetArgsEntitiesType: () => AiConversationEntityListWidgetArgsEntitiesType,
-  AiConversationEntityListWidgetArgsFragmentDoc: () => AiConversationEntityListWidgetArgsFragmentDoc,
-  AiConversationEntityListWidgetFragmentDoc: () => AiConversationEntityListWidgetFragmentDoc,
-  AiConversationErrorPartFragmentDoc: () => AiConversationErrorPartFragmentDoc,
-  AiConversationEventPartFragmentDoc: () => AiConversationEventPartFragmentDoc,
-  AiConversationGetMicrosoftTeamsConversationHistoryToolCallFragmentDoc: () => AiConversationGetMicrosoftTeamsConversationHistoryToolCallFragmentDoc,
-  AiConversationGetPullRequestCheckLogsToolCallArgsFragmentDoc: () => AiConversationGetPullRequestCheckLogsToolCallArgsFragmentDoc,
-  AiConversationGetPullRequestCheckLogsToolCallFragmentDoc: () => AiConversationGetPullRequestCheckLogsToolCallFragmentDoc,
-  AiConversationGetPullRequestDiffToolCallArgsFragmentDoc: () => AiConversationGetPullRequestDiffToolCallArgsFragmentDoc,
-  AiConversationGetPullRequestDiffToolCallFragmentDoc: () => AiConversationGetPullRequestDiffToolCallFragmentDoc,
-  AiConversationGetPullRequestFileToolCallArgsFragmentDoc: () => AiConversationGetPullRequestFileToolCallArgsFragmentDoc,
-  AiConversationGetPullRequestFileToolCallFragmentDoc: () => AiConversationGetPullRequestFileToolCallFragmentDoc,
-  AiConversationGetSlackConversationHistoryToolCallFragmentDoc: () => AiConversationGetSlackConversationHistoryToolCallFragmentDoc,
-  AiConversationHandoffToCodingSessionToolCallArgsFragmentDoc: () => AiConversationHandoffToCodingSessionToolCallArgsFragmentDoc,
-  AiConversationHandoffToCodingSessionToolCallFragmentDoc: () => AiConversationHandoffToCodingSessionToolCallFragmentDoc,
-  AiConversationInitialSource: () => AiConversationInitialSource,
-  AiConversationInvokeMcpToolToolCallArgsFragmentDoc: () => AiConversationInvokeMcpToolToolCallArgsFragmentDoc,
-  AiConversationInvokeMcpToolToolCallArgsServerFragmentDoc: () => AiConversationInvokeMcpToolToolCallArgsServerFragmentDoc,
-  AiConversationInvokeMcpToolToolCallArgsToolFragmentDoc: () => AiConversationInvokeMcpToolToolCallArgsToolFragmentDoc,
-  AiConversationInvokeMcpToolToolCallFragmentDoc: () => AiConversationInvokeMcpToolToolCallFragmentDoc,
-  AiConversationNavigateToPageToolCallArgsEntitiesFragmentDoc: () => AiConversationNavigateToPageToolCallArgsEntitiesFragmentDoc,
-  AiConversationNavigateToPageToolCallArgsFragmentDoc: () => AiConversationNavigateToPageToolCallArgsFragmentDoc,
-  AiConversationNavigateToPageToolCallFragmentDoc: () => AiConversationNavigateToPageToolCallFragmentDoc,
-  AiConversationNavigateToPageToolCallResultFragmentDoc: () => AiConversationNavigateToPageToolCallResultFragmentDoc,
-  AiConversationPartMetadataFragmentDoc: () => AiConversationPartMetadataFragmentDoc,
-  AiConversationPartPhase: () => AiConversationPartPhase,
-  AiConversationPartType: () => AiConversationPartType,
-  AiConversationPromptPartFragmentDoc: () => AiConversationPromptPartFragmentDoc,
-  AiConversationQueryActivityToolCallArgsFragmentDoc: () => AiConversationQueryActivityToolCallArgsFragmentDoc,
-  AiConversationQueryActivityToolCallFragmentDoc: () => AiConversationQueryActivityToolCallFragmentDoc,
-  AiConversationQueryUpdatesToolCallArgsFragmentDoc: () => AiConversationQueryUpdatesToolCallArgsFragmentDoc,
-  AiConversationQueryUpdatesToolCallArgsUpdateType: () => AiConversationQueryUpdatesToolCallArgsUpdateType,
-  AiConversationQueryUpdatesToolCallFragmentDoc: () => AiConversationQueryUpdatesToolCallFragmentDoc,
-  AiConversationQueryViewToolCallArgsFragmentDoc: () => AiConversationQueryViewToolCallArgsFragmentDoc,
-  AiConversationQueryViewToolCallArgsMode: () => AiConversationQueryViewToolCallArgsMode,
-  AiConversationQueryViewToolCallArgsViewFragmentDoc: () => AiConversationQueryViewToolCallArgsViewFragmentDoc,
-  AiConversationQueryViewToolCallFragmentDoc: () => AiConversationQueryViewToolCallFragmentDoc,
-  AiConversationReasoningPartFragmentDoc: () => AiConversationReasoningPartFragmentDoc,
-  AiConversationResearchToolCallArgsFragmentDoc: () => AiConversationResearchToolCallArgsFragmentDoc,
-  AiConversationResearchToolCallFragmentDoc: () => AiConversationResearchToolCallFragmentDoc,
-  AiConversationResearchToolCallResultFragmentDoc: () => AiConversationResearchToolCallResultFragmentDoc,
-  AiConversationRestoreEntityToolCallArgsFragmentDoc: () => AiConversationRestoreEntityToolCallArgsFragmentDoc,
-  AiConversationRestoreEntityToolCallFragmentDoc: () => AiConversationRestoreEntityToolCallFragmentDoc,
-  AiConversationRetrieveEntitiesToolCallArgsFragmentDoc: () => AiConversationRetrieveEntitiesToolCallArgsFragmentDoc,
-  AiConversationRetrieveEntitiesToolCallFragmentDoc: () => AiConversationRetrieveEntitiesToolCallFragmentDoc,
-  AiConversationRetryPullRequestCheckToolCallArgsFragmentDoc: () => AiConversationRetryPullRequestCheckToolCallArgsFragmentDoc,
-  AiConversationRetryPullRequestCheckToolCallFragmentDoc: () => AiConversationRetryPullRequestCheckToolCallFragmentDoc,
-  AiConversationSearchDocumentationToolCallFragmentDoc: () => AiConversationSearchDocumentationToolCallFragmentDoc,
-  AiConversationSearchEntitiesToolCallArgsFragmentDoc: () => AiConversationSearchEntitiesToolCallArgsFragmentDoc,
-  AiConversationSearchEntitiesToolCallFragmentDoc: () => AiConversationSearchEntitiesToolCallFragmentDoc,
-  AiConversationSearchEntitiesToolCallResultEntitiesFragmentDoc: () => AiConversationSearchEntitiesToolCallResultEntitiesFragmentDoc,
-  AiConversationSearchEntitiesToolCallResultFragmentDoc: () => AiConversationSearchEntitiesToolCallResultFragmentDoc,
-  AiConversationStatus: () => AiConversationStatus,
-  AiConversationSubscribeToEventToolCallArgsFragmentDoc: () => AiConversationSubscribeToEventToolCallArgsFragmentDoc,
-  AiConversationSubscribeToEventToolCallArgsKind: () => AiConversationSubscribeToEventToolCallArgsKind,
-  AiConversationSubscribeToEventToolCallArgsType: () => AiConversationSubscribeToEventToolCallArgsType,
-  AiConversationSubscribeToEventToolCallFragmentDoc: () => AiConversationSubscribeToEventToolCallFragmentDoc,
-  AiConversationSuggestValuesToolCallArgsFragmentDoc: () => AiConversationSuggestValuesToolCallArgsFragmentDoc,
-  AiConversationSuggestValuesToolCallFragmentDoc: () => AiConversationSuggestValuesToolCallFragmentDoc,
-  AiConversationTextPartFragmentDoc: () => AiConversationTextPartFragmentDoc,
-  AiConversationTool: () => AiConversationTool,
-  AiConversationToolCallPartFragmentDoc: () => AiConversationToolCallPartFragmentDoc,
-  AiConversationToolDisplayInfoFragmentDoc: () => AiConversationToolDisplayInfoFragmentDoc,
-  AiConversationTranscribeMediaToolCallFragmentDoc: () => AiConversationTranscribeMediaToolCallFragmentDoc,
-  AiConversationTranscribeVideoToolCallFragmentDoc: () => AiConversationTranscribeVideoToolCallFragmentDoc,
-  AiConversationUnsubscribeFromEventToolCallArgsFragmentDoc: () => AiConversationUnsubscribeFromEventToolCallArgsFragmentDoc,
-  AiConversationUnsubscribeFromEventToolCallFragmentDoc: () => AiConversationUnsubscribeFromEventToolCallFragmentDoc,
-  AiConversationUpdateEntityToolCallArgsFragmentDoc: () => AiConversationUpdateEntityToolCallArgsFragmentDoc,
-  AiConversationUpdateEntityToolCallFragmentDoc: () => AiConversationUpdateEntityToolCallFragmentDoc,
-  AiConversationWebSearchToolCallArgsFragmentDoc: () => AiConversationWebSearchToolCallArgsFragmentDoc,
-  AiConversationWebSearchToolCallFragmentDoc: () => AiConversationWebSearchToolCallFragmentDoc,
-  AiConversationWidgetDisplayInfoFragmentDoc: () => AiConversationWidgetDisplayInfoFragmentDoc,
-  AiConversationWidgetName: () => AiConversationWidgetName,
-  AiConversationWidgetPartFragmentDoc: () => AiConversationWidgetPartFragmentDoc,
-  AiPromptProgressStatus: () => AiPromptProgressStatus,
-  AiPromptRulesFragmentDoc: () => AiPromptRulesFragmentDoc,
-  AiPromptType: () => AiPromptType,
-  AirbyteIntegrationConnectDocument: () => AirbyteIntegrationConnectDocument,
-  AppUserNotificationWebhookPayloadFragmentDoc: () => AppUserNotificationWebhookPayloadFragmentDoc,
-  AppUserTeamAccessChangedWebhookPayloadFragmentDoc: () => AppUserTeamAccessChangedWebhookPayloadFragmentDoc,
-  ApplicationFragmentDoc: () => ApplicationFragmentDoc,
-  ApplicationInfoDocument: () => ApplicationInfoDocument,
-  ArchiveCustomerNeedDocument: () => ArchiveCustomerNeedDocument,
-  ArchiveCycleDocument: () => ArchiveCycleDocument,
-  ArchiveInitiativeDocument: () => ArchiveInitiativeDocument,
-  ArchiveInitiativeUpdateDocument: () => ArchiveInitiativeUpdateDocument,
-  ArchiveIntegrationDocument: () => ArchiveIntegrationDocument,
-  ArchiveIssueDocument: () => ArchiveIssueDocument,
-  ArchiveNotificationDocument: () => ArchiveNotificationDocument,
-  ArchivePayloadFragmentDoc: () => ArchivePayloadFragmentDoc,
-  ArchiveProjectDocument: () => ArchiveProjectDocument,
-  ArchiveProjectStatusDocument: () => ArchiveProjectStatusDocument,
-  ArchiveProjectUpdateDocument: () => ArchiveProjectUpdateDocument,
-  ArchiveReleaseDocument: () => ArchiveReleaseDocument,
-  ArchiveReleasePipelineDocument: () => ArchiveReleasePipelineDocument,
-  ArchiveReleaseStageDocument: () => ArchiveReleaseStageDocument,
-  ArchiveResponseFragmentDoc: () => ArchiveResponseFragmentDoc,
-  ArchiveRoadmapDocument: () => ArchiveRoadmapDocument,
-  ArchiveWorkflowStateDocument: () => ArchiveWorkflowStateDocument,
-  AsksChannelConnectPayloadFragmentDoc: () => AsksChannelConnectPayloadFragmentDoc,
-  AttachmentConnectionFragmentDoc: () => AttachmentConnectionFragmentDoc,
-  AttachmentDocument: () => AttachmentDocument,
-  AttachmentFragmentDoc: () => AttachmentFragmentDoc,
-  AttachmentIssueDocument: () => AttachmentIssueDocument,
-  AttachmentIssue_AttachmentsDocument: () => AttachmentIssue_AttachmentsDocument,
-  AttachmentIssue_BotActorDocument: () => AttachmentIssue_BotActorDocument,
-  AttachmentIssue_ChildrenDocument: () => AttachmentIssue_ChildrenDocument,
-  AttachmentIssue_CommentsDocument: () => AttachmentIssue_CommentsDocument,
-  AttachmentIssue_DocumentsDocument: () => AttachmentIssue_DocumentsDocument,
-  AttachmentIssue_FormerAttachmentsDocument: () => AttachmentIssue_FormerAttachmentsDocument,
-  AttachmentIssue_FormerNeedsDocument: () => AttachmentIssue_FormerNeedsDocument,
-  AttachmentIssue_HistoryDocument: () => AttachmentIssue_HistoryDocument,
-  AttachmentIssue_InverseRelationsDocument: () => AttachmentIssue_InverseRelationsDocument,
-  AttachmentIssue_LabelsDocument: () => AttachmentIssue_LabelsDocument,
-  AttachmentIssue_NeedsDocument: () => AttachmentIssue_NeedsDocument,
-  AttachmentIssue_RelationsDocument: () => AttachmentIssue_RelationsDocument,
-  AttachmentIssue_ReleasesDocument: () => AttachmentIssue_ReleasesDocument,
-  AttachmentIssue_SharedAccessDocument: () => AttachmentIssue_SharedAccessDocument,
-  AttachmentIssue_StateHistoryDocument: () => AttachmentIssue_StateHistoryDocument,
-  AttachmentIssue_SubscribersDocument: () => AttachmentIssue_SubscribersDocument,
-  AttachmentLinkDiscordDocument: () => AttachmentLinkDiscordDocument,
-  AttachmentLinkFrontDocument: () => AttachmentLinkFrontDocument,
-  AttachmentLinkGitHubIssueDocument: () => AttachmentLinkGitHubIssueDocument,
-  AttachmentLinkGitHubPrDocument: () => AttachmentLinkGitHubPrDocument,
-  AttachmentLinkGitLabMrDocument: () => AttachmentLinkGitLabMrDocument,
-  AttachmentLinkIntercomDocument: () => AttachmentLinkIntercomDocument,
-  AttachmentLinkJiraIssueDocument: () => AttachmentLinkJiraIssueDocument,
-  AttachmentLinkSalesforceDocument: () => AttachmentLinkSalesforceDocument,
-  AttachmentLinkSlackDocument: () => AttachmentLinkSlackDocument,
-  AttachmentLinkUrlDocument: () => AttachmentLinkUrlDocument,
-  AttachmentLinkZendeskDocument: () => AttachmentLinkZendeskDocument,
-  AttachmentPayloadFragmentDoc: () => AttachmentPayloadFragmentDoc,
-  AttachmentSourcesPayloadFragmentDoc: () => AttachmentSourcesPayloadFragmentDoc,
-  AttachmentSyncToSlackDocument: () => AttachmentSyncToSlackDocument,
-  AttachmentWebhookPayloadFragmentDoc: () => AttachmentWebhookPayloadFragmentDoc,
-  AttachmentsDocument: () => AttachmentsDocument,
-  AttachmentsForUrlDocument: () => AttachmentsForUrlDocument,
-  AuditEntriesDocument: () => AuditEntriesDocument,
-  AuditEntryConnectionFragmentDoc: () => AuditEntryConnectionFragmentDoc,
-  AuditEntryFragmentDoc: () => AuditEntryFragmentDoc,
-  AuditEntryTypeFragmentDoc: () => AuditEntryTypeFragmentDoc,
-  AuditEntryTypesDocument: () => AuditEntryTypesDocument,
-  AuditEntryWebhookPayloadFragmentDoc: () => AuditEntryWebhookPayloadFragmentDoc,
-  AuthIdentityProviderFragmentDoc: () => AuthIdentityProviderFragmentDoc,
-  AuthOrganizationFragmentDoc: () => AuthOrganizationFragmentDoc,
-  AuthResolverResponseFragmentDoc: () => AuthResolverResponseFragmentDoc,
-  AuthUserFragmentDoc: () => AuthUserFragmentDoc,
-  AuthenticationSessionResponseFragmentDoc: () => AuthenticationSessionResponseFragmentDoc,
-  AuthenticationSessionType: () => AuthenticationSessionType,
-  AuthenticationSessionsDocument: () => AuthenticationSessionsDocument,
-  AvailableUsersDocument: () => AvailableUsersDocument,
-  BaseWebhookPayloadFragmentDoc: () => BaseWebhookPayloadFragmentDoc,
-  CommentChildWebhookPayloadFragmentDoc: () => CommentChildWebhookPayloadFragmentDoc,
-  CommentConnectionFragmentDoc: () => CommentConnectionFragmentDoc,
-  CommentDocument: () => CommentDocument,
-  CommentFragmentDoc: () => CommentFragmentDoc,
-  CommentPayloadFragmentDoc: () => CommentPayloadFragmentDoc,
-  CommentResolveDocument: () => CommentResolveDocument,
-  CommentUnresolveDocument: () => CommentUnresolveDocument,
-  CommentWebhookPayloadFragmentDoc: () => CommentWebhookPayloadFragmentDoc,
-  Comment_BotActorDocument: () => Comment_BotActorDocument,
-  Comment_ChildrenDocument: () => Comment_ChildrenDocument,
-  Comment_CreatedIssuesDocument: () => Comment_CreatedIssuesDocument,
-  Comment_DocumentContentDocument: () => Comment_DocumentContentDocument,
-  Comment_DocumentContent_AiPromptRulesDocument: () => Comment_DocumentContent_AiPromptRulesDocument,
-  Comment_DocumentContent_WelcomeMessageDocument: () => Comment_DocumentContent_WelcomeMessageDocument,
-  Comment_ExternalThreadDocument: () => Comment_ExternalThreadDocument,
-  CommentsDocument: () => CommentsDocument,
-  ContactPayloadFragmentDoc: () => ContactPayloadFragmentDoc,
-  ContextViewType: () => ContextViewType,
-  CreateAgentActivityDocument: () => CreateAgentActivityDocument,
-  CreateAttachmentDocument: () => CreateAttachmentDocument,
-  CreateCommentDocument: () => CreateCommentDocument,
-  CreateContactDocument: () => CreateContactDocument,
-  CreateCsvExportReportDocument: () => CreateCsvExportReportDocument,
-  CreateCsvExportReportPayloadFragmentDoc: () => CreateCsvExportReportPayloadFragmentDoc,
-  CreateCustomViewDocument: () => CreateCustomViewDocument,
-  CreateCustomerDocument: () => CreateCustomerDocument,
-  CreateCustomerNeedDocument: () => CreateCustomerNeedDocument,
-  CreateCustomerStatusDocument: () => CreateCustomerStatusDocument,
-  CreateCustomerTierDocument: () => CreateCustomerTierDocument,
-  CreateCycleDocument: () => CreateCycleDocument,
-  CreateDocumentDocument: () => CreateDocumentDocument,
-  CreateEmailIntakeAddressDocument: () => CreateEmailIntakeAddressDocument,
-  CreateEmojiDocument: () => CreateEmojiDocument,
-  CreateEntityExternalLinkDocument: () => CreateEntityExternalLinkDocument,
-  CreateFavoriteDocument: () => CreateFavoriteDocument,
-  CreateGitAutomationStateDocument: () => CreateGitAutomationStateDocument,
-  CreateGitAutomationTargetBranchDocument: () => CreateGitAutomationTargetBranchDocument,
-  CreateInitiativeDocument: () => CreateInitiativeDocument,
-  CreateInitiativeRelationDocument: () => CreateInitiativeRelationDocument,
-  CreateInitiativeToProjectDocument: () => CreateInitiativeToProjectDocument,
-  CreateInitiativeUpdateDocument: () => CreateInitiativeUpdateDocument,
-  CreateInitiativeUpdateReminderDocument: () => CreateInitiativeUpdateReminderDocument,
-  CreateIntegrationGithubCommitDocument: () => CreateIntegrationGithubCommitDocument,
-  CreateIntegrationTemplateDocument: () => CreateIntegrationTemplateDocument,
-  CreateIntegrationsSettingsDocument: () => CreateIntegrationsSettingsDocument,
-  CreateIssueBatchDocument: () => CreateIssueBatchDocument,
-  CreateIssueDocument: () => CreateIssueDocument,
-  CreateIssueLabelDocument: () => CreateIssueLabelDocument,
-  CreateIssueRelationDocument: () => CreateIssueRelationDocument,
-  CreateIssueToReleaseDocument: () => CreateIssueToReleaseDocument,
-  CreateNotificationSubscriptionDocument: () => CreateNotificationSubscriptionDocument,
-  CreateOrganizationInviteDocument: () => CreateOrganizationInviteDocument,
-  CreateProjectDocument: () => CreateProjectDocument,
-  CreateProjectLabelDocument: () => CreateProjectLabelDocument,
-  CreateProjectMilestoneDocument: () => CreateProjectMilestoneDocument,
-  CreateProjectRelationDocument: () => CreateProjectRelationDocument,
-  CreateProjectStatusDocument: () => CreateProjectStatusDocument,
-  CreateProjectUpdateDocument: () => CreateProjectUpdateDocument,
-  CreateProjectUpdateReminderDocument: () => CreateProjectUpdateReminderDocument,
-  CreatePushSubscriptionDocument: () => CreatePushSubscriptionDocument,
-  CreateReactionDocument: () => CreateReactionDocument,
-  CreateReleaseDocument: () => CreateReleaseDocument,
-  CreateReleaseNoteDocument: () => CreateReleaseNoteDocument,
-  CreateReleasePipelineDocument: () => CreateReleasePipelineDocument,
-  CreateReleaseStageDocument: () => CreateReleaseStageDocument,
-  CreateRoadmapDocument: () => CreateRoadmapDocument,
-  CreateRoadmapToProjectDocument: () => CreateRoadmapToProjectDocument,
-  CreateTeamDocument: () => CreateTeamDocument,
-  CreateTeamMembershipDocument: () => CreateTeamMembershipDocument,
-  CreateTemplateDocument: () => CreateTemplateDocument,
-  CreateTimeScheduleDocument: () => CreateTimeScheduleDocument,
-  CreateTriageResponsibilityDocument: () => CreateTriageResponsibilityDocument,
-  CreateViewPreferencesDocument: () => CreateViewPreferencesDocument,
-  CreateWebhookDocument: () => CreateWebhookDocument,
-  CreateWorkflowStateDocument: () => CreateWorkflowStateDocument,
-  CustomResourceWebhookPayloadFragmentDoc: () => CustomResourceWebhookPayloadFragmentDoc,
-  CustomViewConnectionFragmentDoc: () => CustomViewConnectionFragmentDoc,
-  CustomViewDocument: () => CustomViewDocument,
-  CustomViewFragmentDoc: () => CustomViewFragmentDoc,
-  CustomViewHasSubscribersDocument: () => CustomViewHasSubscribersDocument,
-  CustomViewHasSubscribersPayloadFragmentDoc: () => CustomViewHasSubscribersPayloadFragmentDoc,
-  CustomViewNotificationSubscriptionFragmentDoc: () => CustomViewNotificationSubscriptionFragmentDoc,
-  CustomViewPayloadFragmentDoc: () => CustomViewPayloadFragmentDoc,
-  CustomViewSuggestionPayloadFragmentDoc: () => CustomViewSuggestionPayloadFragmentDoc,
-  CustomView_InitiativesDocument: () => CustomView_InitiativesDocument,
-  CustomView_IssuesDocument: () => CustomView_IssuesDocument,
-  CustomView_OrganizationViewPreferencesDocument: () => CustomView_OrganizationViewPreferencesDocument,
-  CustomView_OrganizationViewPreferences_PreferencesDocument: () => CustomView_OrganizationViewPreferences_PreferencesDocument,
-  CustomView_ProjectsDocument: () => CustomView_ProjectsDocument,
-  CustomView_UserViewPreferencesDocument: () => CustomView_UserViewPreferencesDocument,
-  CustomView_UserViewPreferences_PreferencesDocument: () => CustomView_UserViewPreferences_PreferencesDocument,
-  CustomView_ViewPreferencesValuesDocument: () => CustomView_ViewPreferencesValuesDocument,
-  CustomViewsDocument: () => CustomViewsDocument,
-  CustomerChildWebhookPayloadFragmentDoc: () => CustomerChildWebhookPayloadFragmentDoc,
-  CustomerConnectionFragmentDoc: () => CustomerConnectionFragmentDoc,
-  CustomerDocument: () => CustomerDocument,
-  CustomerFragmentDoc: () => CustomerFragmentDoc,
-  CustomerMergeDocument: () => CustomerMergeDocument,
-  CustomerNeedArchivePayloadFragmentDoc: () => CustomerNeedArchivePayloadFragmentDoc,
-  CustomerNeedChildWebhookPayloadFragmentDoc: () => CustomerNeedChildWebhookPayloadFragmentDoc,
-  CustomerNeedConnectionFragmentDoc: () => CustomerNeedConnectionFragmentDoc,
-  CustomerNeedCreateFromAttachmentDocument: () => CustomerNeedCreateFromAttachmentDocument,
-  CustomerNeedDocument: () => CustomerNeedDocument,
-  CustomerNeedFragmentDoc: () => CustomerNeedFragmentDoc,
-  CustomerNeedNotificationFragmentDoc: () => CustomerNeedNotificationFragmentDoc,
-  CustomerNeedPayloadFragmentDoc: () => CustomerNeedPayloadFragmentDoc,
-  CustomerNeedUpdatePayloadFragmentDoc: () => CustomerNeedUpdatePayloadFragmentDoc,
-  CustomerNeedWebhookPayloadFragmentDoc: () => CustomerNeedWebhookPayloadFragmentDoc,
-  CustomerNeed_ProjectAttachmentDocument: () => CustomerNeed_ProjectAttachmentDocument,
-  CustomerNeedsDocument: () => CustomerNeedsDocument,
-  CustomerNotificationFragmentDoc: () => CustomerNotificationFragmentDoc,
-  CustomerNotificationSubscriptionFragmentDoc: () => CustomerNotificationSubscriptionFragmentDoc,
-  CustomerPayloadFragmentDoc: () => CustomerPayloadFragmentDoc,
-  CustomerStatusChildWebhookPayloadFragmentDoc: () => CustomerStatusChildWebhookPayloadFragmentDoc,
-  CustomerStatusConnectionFragmentDoc: () => CustomerStatusConnectionFragmentDoc,
-  CustomerStatusDocument: () => CustomerStatusDocument,
-  CustomerStatusFragmentDoc: () => CustomerStatusFragmentDoc,
-  CustomerStatusPayloadFragmentDoc: () => CustomerStatusPayloadFragmentDoc,
-  CustomerStatusType: () => CustomerStatusType,
-  CustomerStatusesDocument: () => CustomerStatusesDocument,
-  CustomerTierChildWebhookPayloadFragmentDoc: () => CustomerTierChildWebhookPayloadFragmentDoc,
-  CustomerTierConnectionFragmentDoc: () => CustomerTierConnectionFragmentDoc,
-  CustomerTierDocument: () => CustomerTierDocument,
-  CustomerTierFragmentDoc: () => CustomerTierFragmentDoc,
-  CustomerTierPayloadFragmentDoc: () => CustomerTierPayloadFragmentDoc,
-  CustomerTiersDocument: () => CustomerTiersDocument,
-  CustomerUnsyncDocument: () => CustomerUnsyncDocument,
-  CustomerUpsertDocument: () => CustomerUpsertDocument,
-  CustomerVisibilityMode: () => CustomerVisibilityMode,
-  CustomerWebhookPayloadFragmentDoc: () => CustomerWebhookPayloadFragmentDoc,
-  CustomersDocument: () => CustomersDocument,
-  CycleArchivePayloadFragmentDoc: () => CycleArchivePayloadFragmentDoc,
-  CycleChildWebhookPayloadFragmentDoc: () => CycleChildWebhookPayloadFragmentDoc,
-  CycleConnectionFragmentDoc: () => CycleConnectionFragmentDoc,
-  CycleDocument: () => CycleDocument,
-  CycleFragmentDoc: () => CycleFragmentDoc,
-  CycleNotificationSubscriptionFragmentDoc: () => CycleNotificationSubscriptionFragmentDoc,
-  CyclePayloadFragmentDoc: () => CyclePayloadFragmentDoc,
-  CyclePeriod: () => CyclePeriod,
-  CycleShiftAllDocument: () => CycleShiftAllDocument,
-  CycleStartUpcomingCycleTodayDocument: () => CycleStartUpcomingCycleTodayDocument,
-  CycleWebhookPayloadFragmentDoc: () => CycleWebhookPayloadFragmentDoc,
-  Cycle_IssuesDocument: () => Cycle_IssuesDocument,
-  Cycle_UncompletedIssuesUponCloseDocument: () => Cycle_UncompletedIssuesUponCloseDocument,
-  CyclesDocument: () => CyclesDocument,
-  DateResolutionType: () => DateResolutionType,
-  Day: () => Day,
-  DeleteAttachmentDocument: () => DeleteAttachmentDocument,
-  DeleteCommentDocument: () => DeleteCommentDocument,
-  DeleteCustomViewDocument: () => DeleteCustomViewDocument,
-  DeleteCustomerDocument: () => DeleteCustomerDocument,
-  DeleteCustomerNeedDocument: () => DeleteCustomerNeedDocument,
-  DeleteCustomerStatusDocument: () => DeleteCustomerStatusDocument,
-  DeleteCustomerTierDocument: () => DeleteCustomerTierDocument,
-  DeleteDocumentDocument: () => DeleteDocumentDocument,
-  DeleteEmailIntakeAddressDocument: () => DeleteEmailIntakeAddressDocument,
-  DeleteEmojiDocument: () => DeleteEmojiDocument,
-  DeleteEntityExternalLinkDocument: () => DeleteEntityExternalLinkDocument,
-  DeleteFavoriteDocument: () => DeleteFavoriteDocument,
-  DeleteGitAutomationStateDocument: () => DeleteGitAutomationStateDocument,
-  DeleteGitAutomationTargetBranchDocument: () => DeleteGitAutomationTargetBranchDocument,
-  DeleteInitiativeDocument: () => DeleteInitiativeDocument,
-  DeleteInitiativeRelationDocument: () => DeleteInitiativeRelationDocument,
-  DeleteInitiativeToProjectDocument: () => DeleteInitiativeToProjectDocument,
-  DeleteIntegrationDocument: () => DeleteIntegrationDocument,
-  DeleteIntegrationIntercomDocument: () => DeleteIntegrationIntercomDocument,
-  DeleteIntegrationTemplateDocument: () => DeleteIntegrationTemplateDocument,
-  DeleteIssueDocument: () => DeleteIssueDocument,
-  DeleteIssueImportDocument: () => DeleteIssueImportDocument,
-  DeleteIssueLabelDocument: () => DeleteIssueLabelDocument,
-  DeleteIssueRelationDocument: () => DeleteIssueRelationDocument,
-  DeleteIssueToReleaseDocument: () => DeleteIssueToReleaseDocument,
-  DeleteNotificationSubscriptionDocument: () => DeleteNotificationSubscriptionDocument,
-  DeleteOrganizationCancelDocument: () => DeleteOrganizationCancelDocument,
-  DeleteOrganizationDocument: () => DeleteOrganizationDocument,
-  DeleteOrganizationDomainDocument: () => DeleteOrganizationDomainDocument,
-  DeleteOrganizationInviteDocument: () => DeleteOrganizationInviteDocument,
-  DeletePayloadFragmentDoc: () => DeletePayloadFragmentDoc,
-  DeleteProjectDocument: () => DeleteProjectDocument,
-  DeleteProjectLabelDocument: () => DeleteProjectLabelDocument,
-  DeleteProjectMilestoneDocument: () => DeleteProjectMilestoneDocument,
-  DeleteProjectRelationDocument: () => DeleteProjectRelationDocument,
-  DeleteProjectUpdateDocument: () => DeleteProjectUpdateDocument,
-  DeletePushSubscriptionDocument: () => DeletePushSubscriptionDocument,
-  DeleteReactionDocument: () => DeleteReactionDocument,
-  DeleteReleaseDocument: () => DeleteReleaseDocument,
-  DeleteReleaseNoteDocument: () => DeleteReleaseNoteDocument,
-  DeleteReleasePipelineDocument: () => DeleteReleasePipelineDocument,
-  DeleteRoadmapDocument: () => DeleteRoadmapDocument,
-  DeleteRoadmapToProjectDocument: () => DeleteRoadmapToProjectDocument,
-  DeleteTeamCyclesDocument: () => DeleteTeamCyclesDocument,
-  DeleteTeamDocument: () => DeleteTeamDocument,
-  DeleteTeamKeyDocument: () => DeleteTeamKeyDocument,
-  DeleteTeamMembershipDocument: () => DeleteTeamMembershipDocument,
-  DeleteTemplateDocument: () => DeleteTemplateDocument,
-  DeleteTimeScheduleDocument: () => DeleteTimeScheduleDocument,
-  DeleteTriageResponsibilityDocument: () => DeleteTriageResponsibilityDocument,
-  DeleteViewPreferencesDocument: () => DeleteViewPreferencesDocument,
-  DeleteWebhookDocument: () => DeleteWebhookDocument,
-  DocumentArchivePayloadFragmentDoc: () => DocumentArchivePayloadFragmentDoc,
-  DocumentChildWebhookPayloadFragmentDoc: () => DocumentChildWebhookPayloadFragmentDoc,
-  DocumentConnectionFragmentDoc: () => DocumentConnectionFragmentDoc,
-  DocumentContentChildWebhookPayloadFragmentDoc: () => DocumentContentChildWebhookPayloadFragmentDoc,
-  DocumentContentDraftFragmentDoc: () => DocumentContentDraftFragmentDoc,
-  DocumentContentFragmentDoc: () => DocumentContentFragmentDoc,
-  DocumentContentHistoryDocument: () => DocumentContentHistoryDocument,
-  DocumentContentHistoryPayloadFragmentDoc: () => DocumentContentHistoryPayloadFragmentDoc,
-  DocumentContentHistoryTypeFragmentDoc: () => DocumentContentHistoryTypeFragmentDoc,
-  DocumentDocument: () => DocumentDocument,
-  DocumentFragmentDoc: () => DocumentFragmentDoc,
-  DocumentNotificationFragmentDoc: () => DocumentNotificationFragmentDoc,
-  DocumentPayloadFragmentDoc: () => DocumentPayloadFragmentDoc,
-  DocumentSearchPayloadFragmentDoc: () => DocumentSearchPayloadFragmentDoc,
-  DocumentSearchResultFragmentDoc: () => DocumentSearchResultFragmentDoc,
-  DocumentWebhookPayloadFragmentDoc: () => DocumentWebhookPayloadFragmentDoc,
-  Document_CommentsDocument: () => Document_CommentsDocument,
-  DocumentsDocument: () => DocumentsDocument,
-  DraftConnectionFragmentDoc: () => DraftConnectionFragmentDoc,
-  DraftFragmentDoc: () => DraftFragmentDoc,
-  EmailIntakeAddressDocument: () => EmailIntakeAddressDocument,
-  EmailIntakeAddressFragmentDoc: () => EmailIntakeAddressFragmentDoc,
-  EmailIntakeAddressPayloadFragmentDoc: () => EmailIntakeAddressPayloadFragmentDoc,
-  EmailIntakeAddressRotateDocument: () => EmailIntakeAddressRotateDocument,
-  EmailIntakeAddressType: () => EmailIntakeAddressType,
-  EmailIntakeAddress_SesDomainIdentityDocument: () => EmailIntakeAddress_SesDomainIdentityDocument,
-  EmailTokenUserAccountAuthDocument: () => EmailTokenUserAccountAuthDocument,
-  EmailUnsubscribeDocument: () => EmailUnsubscribeDocument,
-  EmailUnsubscribePayloadFragmentDoc: () => EmailUnsubscribePayloadFragmentDoc,
-  EmailUserAccountAuthChallengeDocument: () => EmailUserAccountAuthChallengeDocument,
-  EmailUserAccountAuthChallengeResponseFragmentDoc: () => EmailUserAccountAuthChallengeResponseFragmentDoc,
-  EmojiConnectionFragmentDoc: () => EmojiConnectionFragmentDoc,
-  EmojiDocument: () => EmojiDocument,
-  EmojiFragmentDoc: () => EmojiFragmentDoc,
-  EmojiPayloadFragmentDoc: () => EmojiPayloadFragmentDoc,
-  EmojisDocument: () => EmojisDocument,
-  EntityExternalLinkConnectionFragmentDoc: () => EntityExternalLinkConnectionFragmentDoc,
-  EntityExternalLinkDocument: () => EntityExternalLinkDocument,
-  EntityExternalLinkFragmentDoc: () => EntityExternalLinkFragmentDoc,
-  EntityExternalLinkPayloadFragmentDoc: () => EntityExternalLinkPayloadFragmentDoc,
-  EntityFragmentDoc: () => EntityFragmentDoc,
-  EntityWebhookPayloadFragmentDoc: () => EntityWebhookPayloadFragmentDoc,
-  EventTrackingPayloadFragmentDoc: () => EventTrackingPayloadFragmentDoc,
-  ExternalEntityInfoFragmentDoc: () => ExternalEntityInfoFragmentDoc,
-  ExternalEntityInfoGithubMetadataFragmentDoc: () => ExternalEntityInfoGithubMetadataFragmentDoc,
-  ExternalEntityInfoJiraMetadataFragmentDoc: () => ExternalEntityInfoJiraMetadataFragmentDoc,
-  ExternalEntitySlackMetadataFragmentDoc: () => ExternalEntitySlackMetadataFragmentDoc,
-  ExternalSyncService: () => ExternalSyncService,
-  ExternalUserChildWebhookPayloadFragmentDoc: () => ExternalUserChildWebhookPayloadFragmentDoc,
-  ExternalUserConnectionFragmentDoc: () => ExternalUserConnectionFragmentDoc,
-  ExternalUserDocument: () => ExternalUserDocument,
-  ExternalUserFragmentDoc: () => ExternalUserFragmentDoc,
-  ExternalUsersDocument: () => ExternalUsersDocument,
-  FacetConnectionFragmentDoc: () => FacetConnectionFragmentDoc,
-  FacetFragmentDoc: () => FacetFragmentDoc,
-  FacetPageSource: () => FacetPageSource,
-  FavoriteConnectionFragmentDoc: () => FavoriteConnectionFragmentDoc,
-  FavoriteDocument: () => FavoriteDocument,
-  FavoriteFragmentDoc: () => FavoriteFragmentDoc,
-  FavoritePayloadFragmentDoc: () => FavoritePayloadFragmentDoc,
-  Favorite_ChildrenDocument: () => Favorite_ChildrenDocument,
-  FavoritesDocument: () => FavoritesDocument,
-  FeedSummarySchedule: () => FeedSummarySchedule,
-  FetchDataPayloadFragmentDoc: () => FetchDataPayloadFragmentDoc,
-  FileUploadDeletePayloadFragmentDoc: () => FileUploadDeletePayloadFragmentDoc,
-  FileUploadDocument: () => FileUploadDocument,
-  FrequencyResolutionType: () => FrequencyResolutionType,
-  FrontAttachmentPayloadFragmentDoc: () => FrontAttachmentPayloadFragmentDoc,
-  GitAutomationStateConnectionFragmentDoc: () => GitAutomationStateConnectionFragmentDoc,
-  GitAutomationStateFragmentDoc: () => GitAutomationStateFragmentDoc,
-  GitAutomationStatePayloadFragmentDoc: () => GitAutomationStatePayloadFragmentDoc,
-  GitAutomationStates: () => GitAutomationStates,
-  GitAutomationTargetBranchFragmentDoc: () => GitAutomationTargetBranchFragmentDoc,
-  GitAutomationTargetBranchPayloadFragmentDoc: () => GitAutomationTargetBranchPayloadFragmentDoc,
-  GitHubCommitIntegrationPayloadFragmentDoc: () => GitHubCommitIntegrationPayloadFragmentDoc,
-  GitHubEnterpriseServerInstallVerificationPayloadFragmentDoc: () => GitHubEnterpriseServerInstallVerificationPayloadFragmentDoc,
-  GitHubEnterpriseServerPayloadFragmentDoc: () => GitHubEnterpriseServerPayloadFragmentDoc,
-  GitHubIntegrationConnectDetailsFragmentDoc: () => GitHubIntegrationConnectDetailsFragmentDoc,
-  GitHubRemoveCodeAccessAction: () => GitHubRemoveCodeAccessAction,
-  GitLabIntegrationCreatePayloadFragmentDoc: () => GitLabIntegrationCreatePayloadFragmentDoc,
-  GitLabTestConnectionPayloadFragmentDoc: () => GitLabTestConnectionPayloadFragmentDoc,
-  GitLinkKind: () => GitLinkKind,
-  GithubOrgType: () => GithubOrgType,
-  GoogleUserAccountAuthDocument: () => GoogleUserAccountAuthDocument,
-  GuidanceRuleWebhookPayloadFragmentDoc: () => GuidanceRuleWebhookPayloadFragmentDoc,
-  IdentityProviderFragmentDoc: () => IdentityProviderFragmentDoc,
-  IdentityProviderType: () => IdentityProviderType,
-  ImageUploadFromUrlDocument: () => ImageUploadFromUrlDocument,
-  ImageUploadFromUrlPayloadFragmentDoc: () => ImageUploadFromUrlPayloadFragmentDoc,
-  ImportFileUploadDocument: () => ImportFileUploadDocument,
-  InitiativeArchivePayloadFragmentDoc: () => InitiativeArchivePayloadFragmentDoc,
-  InitiativeChildWebhookPayloadFragmentDoc: () => InitiativeChildWebhookPayloadFragmentDoc,
-  InitiativeConnectionFragmentDoc: () => InitiativeConnectionFragmentDoc,
-  InitiativeDocument: () => InitiativeDocument,
-  InitiativeFragmentDoc: () => InitiativeFragmentDoc,
-  InitiativeHistoryConnectionFragmentDoc: () => InitiativeHistoryConnectionFragmentDoc,
-  InitiativeHistoryFragmentDoc: () => InitiativeHistoryFragmentDoc,
-  InitiativeLabelChildWebhookPayloadFragmentDoc: () => InitiativeLabelChildWebhookPayloadFragmentDoc,
-  InitiativeLabelConnectionFragmentDoc: () => InitiativeLabelConnectionFragmentDoc,
-  InitiativeLabelFragmentDoc: () => InitiativeLabelFragmentDoc,
-  InitiativeLabelWebhookPayloadFragmentDoc: () => InitiativeLabelWebhookPayloadFragmentDoc,
-  InitiativeNotificationFragmentDoc: () => InitiativeNotificationFragmentDoc,
-  InitiativeNotificationSubscriptionFragmentDoc: () => InitiativeNotificationSubscriptionFragmentDoc,
-  InitiativePayloadFragmentDoc: () => InitiativePayloadFragmentDoc,
-  InitiativeRelationConnectionFragmentDoc: () => InitiativeRelationConnectionFragmentDoc,
-  InitiativeRelationDocument: () => InitiativeRelationDocument,
-  InitiativeRelationFragmentDoc: () => InitiativeRelationFragmentDoc,
-  InitiativeRelationPayloadFragmentDoc: () => InitiativeRelationPayloadFragmentDoc,
-  InitiativeRelationsDocument: () => InitiativeRelationsDocument,
-  InitiativeStatus: () => InitiativeStatus,
-  InitiativeTab: () => InitiativeTab,
-  InitiativeToProjectConnectionFragmentDoc: () => InitiativeToProjectConnectionFragmentDoc,
-  InitiativeToProjectDocument: () => InitiativeToProjectDocument,
-  InitiativeToProjectFragmentDoc: () => InitiativeToProjectFragmentDoc,
-  InitiativeToProjectPayloadFragmentDoc: () => InitiativeToProjectPayloadFragmentDoc,
-  InitiativeToProjectsDocument: () => InitiativeToProjectsDocument,
-  InitiativeUpdateArchivePayloadFragmentDoc: () => InitiativeUpdateArchivePayloadFragmentDoc,
-  InitiativeUpdateChildWebhookPayloadFragmentDoc: () => InitiativeUpdateChildWebhookPayloadFragmentDoc,
-  InitiativeUpdateConnectionFragmentDoc: () => InitiativeUpdateConnectionFragmentDoc,
-  InitiativeUpdateDocument: () => InitiativeUpdateDocument,
-  InitiativeUpdateFragmentDoc: () => InitiativeUpdateFragmentDoc,
-  InitiativeUpdateHealthType: () => InitiativeUpdateHealthType,
-  InitiativeUpdatePayloadFragmentDoc: () => InitiativeUpdatePayloadFragmentDoc,
-  InitiativeUpdateReminderPayloadFragmentDoc: () => InitiativeUpdateReminderPayloadFragmentDoc,
-  InitiativeUpdateWebhookPayloadFragmentDoc: () => InitiativeUpdateWebhookPayloadFragmentDoc,
-  InitiativeUpdate_CommentsDocument: () => InitiativeUpdate_CommentsDocument,
-  InitiativeUpdatesDocument: () => InitiativeUpdatesDocument,
-  InitiativeWebhookPayloadFragmentDoc: () => InitiativeWebhookPayloadFragmentDoc,
-  Initiative_DocumentContentDocument: () => Initiative_DocumentContentDocument,
-  Initiative_DocumentContent_AiPromptRulesDocument: () => Initiative_DocumentContent_AiPromptRulesDocument,
-  Initiative_DocumentContent_WelcomeMessageDocument: () => Initiative_DocumentContent_WelcomeMessageDocument,
-  Initiative_DocumentsDocument: () => Initiative_DocumentsDocument,
-  Initiative_HistoryDocument: () => Initiative_HistoryDocument,
-  Initiative_InitiativeUpdatesDocument: () => Initiative_InitiativeUpdatesDocument,
-  Initiative_LinksDocument: () => Initiative_LinksDocument,
-  Initiative_ProjectsDocument: () => Initiative_ProjectsDocument,
-  Initiative_SubInitiativesDocument: () => Initiative_SubInitiativesDocument,
-  InitiativesDocument: () => InitiativesDocument,
-  IntegrationActorWebhookPayloadFragmentDoc: () => IntegrationActorWebhookPayloadFragmentDoc,
-  IntegrationAsksConnectChannelDocument: () => IntegrationAsksConnectChannelDocument,
-  IntegrationChildWebhookPayloadFragmentDoc: () => IntegrationChildWebhookPayloadFragmentDoc,
-  IntegrationConnectionFragmentDoc: () => IntegrationConnectionFragmentDoc,
-  IntegrationDiscordDocument: () => IntegrationDiscordDocument,
-  IntegrationDocument: () => IntegrationDocument,
-  IntegrationFigmaDocument: () => IntegrationFigmaDocument,
-  IntegrationFragmentDoc: () => IntegrationFragmentDoc,
-  IntegrationFrontDocument: () => IntegrationFrontDocument,
-  IntegrationGitHubEnterpriseServerConnectDocument: () => IntegrationGitHubEnterpriseServerConnectDocument,
-  IntegrationGitHubPersonalDocument: () => IntegrationGitHubPersonalDocument,
-  IntegrationGithubConnectDocument: () => IntegrationGithubConnectDocument,
-  IntegrationGithubImportConnectDocument: () => IntegrationGithubImportConnectDocument,
-  IntegrationGithubImportRefreshDocument: () => IntegrationGithubImportRefreshDocument,
-  IntegrationGithubRemoveCodeAccessDocument: () => IntegrationGithubRemoveCodeAccessDocument,
-  IntegrationGithubRemoveCodeAccessPayloadFragmentDoc: () => IntegrationGithubRemoveCodeAccessPayloadFragmentDoc,
-  IntegrationGitlabConnectDocument: () => IntegrationGitlabConnectDocument,
-  IntegrationGitlabTestConnectionDocument: () => IntegrationGitlabTestConnectionDocument,
-  IntegrationGongDocument: () => IntegrationGongDocument,
-  IntegrationGoogleSheetsDocument: () => IntegrationGoogleSheetsDocument,
-  IntegrationHasScopesDocument: () => IntegrationHasScopesDocument,
-  IntegrationHasScopesPayloadFragmentDoc: () => IntegrationHasScopesPayloadFragmentDoc,
-  IntegrationIntercomDocument: () => IntegrationIntercomDocument,
-  IntegrationJiraPersonalDocument: () => IntegrationJiraPersonalDocument,
-  IntegrationLoomDocument: () => IntegrationLoomDocument,
-  IntegrationMicrosoftPersonalConnectDocument: () => IntegrationMicrosoftPersonalConnectDocument,
-  IntegrationMicrosoftTeamsDocument: () => IntegrationMicrosoftTeamsDocument,
-  IntegrationPayloadFragmentDoc: () => IntegrationPayloadFragmentDoc,
-  IntegrationRequestDocument: () => IntegrationRequestDocument,
-  IntegrationRequestPayloadFragmentDoc: () => IntegrationRequestPayloadFragmentDoc,
-  IntegrationSalesforceDocument: () => IntegrationSalesforceDocument,
-  IntegrationSentryConnectDocument: () => IntegrationSentryConnectDocument,
-  IntegrationService: () => IntegrationService,
-  IntegrationSlackAsksDocument: () => IntegrationSlackAsksDocument,
-  IntegrationSlackCustomViewNotificationsDocument: () => IntegrationSlackCustomViewNotificationsDocument,
-  IntegrationSlackCustomerChannelLinkDocument: () => IntegrationSlackCustomerChannelLinkDocument,
-  IntegrationSlackDocument: () => IntegrationSlackDocument,
-  IntegrationSlackImportEmojisDocument: () => IntegrationSlackImportEmojisDocument,
-  IntegrationSlackOrAsksUpdateSlackTeamNameDocument: () => IntegrationSlackOrAsksUpdateSlackTeamNameDocument,
-  IntegrationSlackOrgProjectUpdatesPostDocument: () => IntegrationSlackOrgProjectUpdatesPostDocument,
-  IntegrationSlackPersonalDocument: () => IntegrationSlackPersonalDocument,
-  IntegrationSlackPostDocument: () => IntegrationSlackPostDocument,
-  IntegrationSlackProjectPostDocument: () => IntegrationSlackProjectPostDocument,
-  IntegrationSlackWorkspaceNamePayloadFragmentDoc: () => IntegrationSlackWorkspaceNamePayloadFragmentDoc,
-  IntegrationTemplateConnectionFragmentDoc: () => IntegrationTemplateConnectionFragmentDoc,
-  IntegrationTemplateDocument: () => IntegrationTemplateDocument,
-  IntegrationTemplateFragmentDoc: () => IntegrationTemplateFragmentDoc,
-  IntegrationTemplatePayloadFragmentDoc: () => IntegrationTemplatePayloadFragmentDoc,
-  IntegrationTemplatesDocument: () => IntegrationTemplatesDocument,
-  IntegrationZendeskDocument: () => IntegrationZendeskDocument,
-  IntegrationsDocument: () => IntegrationsDocument,
-  IntegrationsSettingsDocument: () => IntegrationsSettingsDocument,
-  IntegrationsSettingsFragmentDoc: () => IntegrationsSettingsFragmentDoc,
-  IntegrationsSettingsPayloadFragmentDoc: () => IntegrationsSettingsPayloadFragmentDoc,
-  IssueAddLabelDocument: () => IssueAddLabelDocument,
-  IssueArchivePayloadFragmentDoc: () => IssueArchivePayloadFragmentDoc,
-  IssueAssignedToYouNotificationWebhookPayloadFragmentDoc: () => IssueAssignedToYouNotificationWebhookPayloadFragmentDoc,
-  IssueBatchPayloadFragmentDoc: () => IssueBatchPayloadFragmentDoc,
-  IssueChildWebhookPayloadFragmentDoc: () => IssueChildWebhookPayloadFragmentDoc,
-  IssueCommentMentionNotificationWebhookPayloadFragmentDoc: () => IssueCommentMentionNotificationWebhookPayloadFragmentDoc,
-  IssueCommentReactionNotificationWebhookPayloadFragmentDoc: () => IssueCommentReactionNotificationWebhookPayloadFragmentDoc,
-  IssueConnectionFragmentDoc: () => IssueConnectionFragmentDoc,
-  IssueDocument: () => IssueDocument,
-  IssueEmojiReactionNotificationWebhookPayloadFragmentDoc: () => IssueEmojiReactionNotificationWebhookPayloadFragmentDoc,
-  IssueExternalSyncDisableDocument: () => IssueExternalSyncDisableDocument,
-  IssueFigmaFileKeySearchDocument: () => IssueFigmaFileKeySearchDocument,
-  IssueFilterSuggestionDocument: () => IssueFilterSuggestionDocument,
-  IssueFilterSuggestionPayloadFragmentDoc: () => IssueFilterSuggestionPayloadFragmentDoc,
-  IssueFragmentDoc: () => IssueFragmentDoc,
-  IssueHistoryConnectionFragmentDoc: () => IssueHistoryConnectionFragmentDoc,
-  IssueHistoryFragmentDoc: () => IssueHistoryFragmentDoc,
-  IssueHistoryTriageRuleErrorFragmentDoc: () => IssueHistoryTriageRuleErrorFragmentDoc,
-  IssueHistoryTriageRuleMetadataFragmentDoc: () => IssueHistoryTriageRuleMetadataFragmentDoc,
-  IssueHistoryWorkflowMetadataFragmentDoc: () => IssueHistoryWorkflowMetadataFragmentDoc,
-  IssueImportCheckCsvDocument: () => IssueImportCheckCsvDocument,
-  IssueImportCheckPayloadFragmentDoc: () => IssueImportCheckPayloadFragmentDoc,
-  IssueImportCheckSyncDocument: () => IssueImportCheckSyncDocument,
-  IssueImportCreateAsanaDocument: () => IssueImportCreateAsanaDocument,
-  IssueImportCreateClubhouseDocument: () => IssueImportCreateClubhouseDocument,
-  IssueImportCreateCsvJiraDocument: () => IssueImportCreateCsvJiraDocument,
-  IssueImportCreateGithubDocument: () => IssueImportCreateGithubDocument,
-  IssueImportCreateJiraDocument: () => IssueImportCreateJiraDocument,
-  IssueImportDeletePayloadFragmentDoc: () => IssueImportDeletePayloadFragmentDoc,
-  IssueImportFragmentDoc: () => IssueImportFragmentDoc,
-  IssueImportJqlCheckDocument: () => IssueImportJqlCheckDocument,
-  IssueImportJqlCheckPayloadFragmentDoc: () => IssueImportJqlCheckPayloadFragmentDoc,
-  IssueImportPayloadFragmentDoc: () => IssueImportPayloadFragmentDoc,
-  IssueImportProcessDocument: () => IssueImportProcessDocument,
-  IssueImportSyncCheckPayloadFragmentDoc: () => IssueImportSyncCheckPayloadFragmentDoc,
-  IssueLabelChildWebhookPayloadFragmentDoc: () => IssueLabelChildWebhookPayloadFragmentDoc,
-  IssueLabelConnectionFragmentDoc: () => IssueLabelConnectionFragmentDoc,
-  IssueLabelDocument: () => IssueLabelDocument,
-  IssueLabelFragmentDoc: () => IssueLabelFragmentDoc,
-  IssueLabelPayloadFragmentDoc: () => IssueLabelPayloadFragmentDoc,
-  IssueLabelRestoreDocument: () => IssueLabelRestoreDocument,
-  IssueLabelRetireDocument: () => IssueLabelRetireDocument,
-  IssueLabelWebhookPayloadFragmentDoc: () => IssueLabelWebhookPayloadFragmentDoc,
-  IssueLabel_ChildrenDocument: () => IssueLabel_ChildrenDocument,
-  IssueLabel_IssuesDocument: () => IssueLabel_IssuesDocument,
-  IssueLabelsDocument: () => IssueLabelsDocument,
-  IssueMentionNotificationWebhookPayloadFragmentDoc: () => IssueMentionNotificationWebhookPayloadFragmentDoc,
-  IssueNewCommentNotificationWebhookPayloadFragmentDoc: () => IssueNewCommentNotificationWebhookPayloadFragmentDoc,
-  IssueNotificationFragmentDoc: () => IssueNotificationFragmentDoc,
-  IssuePayloadFragmentDoc: () => IssuePayloadFragmentDoc,
-  IssuePriorityValueFragmentDoc: () => IssuePriorityValueFragmentDoc,
-  IssuePriorityValuesDocument: () => IssuePriorityValuesDocument,
-  IssueRelationConnectionFragmentDoc: () => IssueRelationConnectionFragmentDoc,
-  IssueRelationDocument: () => IssueRelationDocument,
-  IssueRelationFragmentDoc: () => IssueRelationFragmentDoc,
-  IssueRelationHistoryPayloadFragmentDoc: () => IssueRelationHistoryPayloadFragmentDoc,
-  IssueRelationPayloadFragmentDoc: () => IssueRelationPayloadFragmentDoc,
-  IssueRelationType: () => IssueRelationType,
-  IssueRelationsDocument: () => IssueRelationsDocument,
-  IssueReminderDocument: () => IssueReminderDocument,
-  IssueRemoveLabelDocument: () => IssueRemoveLabelDocument,
-  IssueRepositorySuggestionsDocument: () => IssueRepositorySuggestionsDocument,
-  IssueSearchDocument: () => IssueSearchDocument,
-  IssueSearchPayloadFragmentDoc: () => IssueSearchPayloadFragmentDoc,
-  IssueSearchResultFragmentDoc: () => IssueSearchResultFragmentDoc,
-  IssueSharedAccessDisallowedField: () => IssueSharedAccessDisallowedField,
-  IssueSharedAccessFragmentDoc: () => IssueSharedAccessFragmentDoc,
-  IssueSharingPolicy: () => IssueSharingPolicy,
-  IssueSlaWebhookPayloadFragmentDoc: () => IssueSlaWebhookPayloadFragmentDoc,
-  IssueStateSpanConnectionFragmentDoc: () => IssueStateSpanConnectionFragmentDoc,
-  IssueStateSpanFragmentDoc: () => IssueStateSpanFragmentDoc,
-  IssueStatusChangedNotificationWebhookPayloadFragmentDoc: () => IssueStatusChangedNotificationWebhookPayloadFragmentDoc,
-  IssueSubscribeDocument: () => IssueSubscribeDocument,
-  IssueSuggestionState: () => IssueSuggestionState,
-  IssueSuggestionType: () => IssueSuggestionType,
-  IssueTitleSuggestionFromCustomerRequestDocument: () => IssueTitleSuggestionFromCustomerRequestDocument,
-  IssueTitleSuggestionFromCustomerRequestPayloadFragmentDoc: () => IssueTitleSuggestionFromCustomerRequestPayloadFragmentDoc,
-  IssueToReleaseConnectionFragmentDoc: () => IssueToReleaseConnectionFragmentDoc,
-  IssueToReleaseDeleteByIssueAndReleaseDocument: () => IssueToReleaseDeleteByIssueAndReleaseDocument,
-  IssueToReleaseDocument: () => IssueToReleaseDocument,
-  IssueToReleaseFragmentDoc: () => IssueToReleaseFragmentDoc,
-  IssueToReleasePayloadFragmentDoc: () => IssueToReleasePayloadFragmentDoc,
-  IssueToReleasesDocument: () => IssueToReleasesDocument,
-  IssueUnassignedFromYouNotificationWebhookPayloadFragmentDoc: () => IssueUnassignedFromYouNotificationWebhookPayloadFragmentDoc,
-  IssueUnsubscribeDocument: () => IssueUnsubscribeDocument,
-  IssueVcsBranchSearchDocument: () => IssueVcsBranchSearchDocument,
-  IssueVcsBranchSearch_AttachmentsDocument: () => IssueVcsBranchSearch_AttachmentsDocument,
-  IssueVcsBranchSearch_BotActorDocument: () => IssueVcsBranchSearch_BotActorDocument,
-  IssueVcsBranchSearch_ChildrenDocument: () => IssueVcsBranchSearch_ChildrenDocument,
-  IssueVcsBranchSearch_CommentsDocument: () => IssueVcsBranchSearch_CommentsDocument,
-  IssueVcsBranchSearch_DocumentsDocument: () => IssueVcsBranchSearch_DocumentsDocument,
-  IssueVcsBranchSearch_FormerAttachmentsDocument: () => IssueVcsBranchSearch_FormerAttachmentsDocument,
-  IssueVcsBranchSearch_FormerNeedsDocument: () => IssueVcsBranchSearch_FormerNeedsDocument,
-  IssueVcsBranchSearch_HistoryDocument: () => IssueVcsBranchSearch_HistoryDocument,
-  IssueVcsBranchSearch_InverseRelationsDocument: () => IssueVcsBranchSearch_InverseRelationsDocument,
-  IssueVcsBranchSearch_LabelsDocument: () => IssueVcsBranchSearch_LabelsDocument,
-  IssueVcsBranchSearch_NeedsDocument: () => IssueVcsBranchSearch_NeedsDocument,
-  IssueVcsBranchSearch_RelationsDocument: () => IssueVcsBranchSearch_RelationsDocument,
-  IssueVcsBranchSearch_ReleasesDocument: () => IssueVcsBranchSearch_ReleasesDocument,
-  IssueVcsBranchSearch_SharedAccessDocument: () => IssueVcsBranchSearch_SharedAccessDocument,
-  IssueVcsBranchSearch_StateHistoryDocument: () => IssueVcsBranchSearch_StateHistoryDocument,
-  IssueVcsBranchSearch_SubscribersDocument: () => IssueVcsBranchSearch_SubscribersDocument,
-  IssueWebhookPayloadFragmentDoc: () => IssueWebhookPayloadFragmentDoc,
-  IssueWithDescriptionChildWebhookPayloadFragmentDoc: () => IssueWithDescriptionChildWebhookPayloadFragmentDoc,
-  Issue_AttachmentsDocument: () => Issue_AttachmentsDocument,
-  Issue_BotActorDocument: () => Issue_BotActorDocument,
-  Issue_ChildrenDocument: () => Issue_ChildrenDocument,
-  Issue_CommentsDocument: () => Issue_CommentsDocument,
-  Issue_DocumentsDocument: () => Issue_DocumentsDocument,
-  Issue_FormerAttachmentsDocument: () => Issue_FormerAttachmentsDocument,
-  Issue_FormerNeedsDocument: () => Issue_FormerNeedsDocument,
-  Issue_HistoryDocument: () => Issue_HistoryDocument,
-  Issue_InverseRelationsDocument: () => Issue_InverseRelationsDocument,
-  Issue_LabelsDocument: () => Issue_LabelsDocument,
-  Issue_NeedsDocument: () => Issue_NeedsDocument,
-  Issue_RelationsDocument: () => Issue_RelationsDocument,
-  Issue_ReleasesDocument: () => Issue_ReleasesDocument,
-  Issue_SharedAccessDocument: () => Issue_SharedAccessDocument,
-  Issue_StateHistoryDocument: () => Issue_StateHistoryDocument,
-  Issue_SubscribersDocument: () => Issue_SubscribersDocument,
-  IssuesDocument: () => IssuesDocument,
-  JiraFetchProjectStatusesPayloadFragmentDoc: () => JiraFetchProjectStatusesPayloadFragmentDoc,
-  LabelNotificationSubscriptionFragmentDoc: () => LabelNotificationSubscriptionFragmentDoc,
-  LatestReleaseByAccessKeyDocument: () => LatestReleaseByAccessKeyDocument,
-  LatestReleaseByAccessKey_DocumentsDocument: () => LatestReleaseByAccessKey_DocumentsDocument,
-  LatestReleaseByAccessKey_HistoryDocument: () => LatestReleaseByAccessKey_HistoryDocument,
-  LatestReleaseByAccessKey_IssuesDocument: () => LatestReleaseByAccessKey_IssuesDocument,
-  LatestReleaseByAccessKey_LinksDocument: () => LatestReleaseByAccessKey_LinksDocument,
-  LogoutAllSessionsDocument: () => LogoutAllSessionsDocument,
-  LogoutDocument: () => LogoutDocument,
-  LogoutOtherSessionsDocument: () => LogoutOtherSessionsDocument,
-  LogoutResponseFragmentDoc: () => LogoutResponseFragmentDoc,
-  LogoutSessionDocument: () => LogoutSessionDocument,
-  MicrosoftTeamsChannelFragmentDoc: () => MicrosoftTeamsChannelFragmentDoc,
-  MicrosoftTeamsChannelsPayloadFragmentDoc: () => MicrosoftTeamsChannelsPayloadFragmentDoc,
-  MicrosoftTeamsTeamFragmentDoc: () => MicrosoftTeamsTeamFragmentDoc,
-  NodeFragmentDoc: () => NodeFragmentDoc,
-  NotificationArchiveAllDocument: () => NotificationArchiveAllDocument,
-  NotificationArchivePayloadFragmentDoc: () => NotificationArchivePayloadFragmentDoc,
-  NotificationBatchActionPayloadFragmentDoc: () => NotificationBatchActionPayloadFragmentDoc,
-  NotificationCategory: () => NotificationCategory,
-  NotificationCategoryPreferencesFragmentDoc: () => NotificationCategoryPreferencesFragmentDoc,
-  NotificationChannel: () => NotificationChannel,
-  NotificationChannelPreferencesFragmentDoc: () => NotificationChannelPreferencesFragmentDoc,
-  NotificationConnectionFragmentDoc: () => NotificationConnectionFragmentDoc,
-  NotificationDeliveryPreferencesChannelFragmentDoc: () => NotificationDeliveryPreferencesChannelFragmentDoc,
-  NotificationDeliveryPreferencesDayFragmentDoc: () => NotificationDeliveryPreferencesDayFragmentDoc,
-  NotificationDeliveryPreferencesFragmentDoc: () => NotificationDeliveryPreferencesFragmentDoc,
-  NotificationDeliveryPreferencesScheduleFragmentDoc: () => NotificationDeliveryPreferencesScheduleFragmentDoc,
-  NotificationDocument: () => NotificationDocument,
-  NotificationFragmentDoc: () => NotificationFragmentDoc,
-  NotificationMarkReadAllDocument: () => NotificationMarkReadAllDocument,
-  NotificationMarkUnreadAllDocument: () => NotificationMarkUnreadAllDocument,
-  NotificationPayloadFragmentDoc: () => NotificationPayloadFragmentDoc,
-  NotificationSnoozeAllDocument: () => NotificationSnoozeAllDocument,
-  NotificationSubscriptionConnectionFragmentDoc: () => NotificationSubscriptionConnectionFragmentDoc,
-  NotificationSubscriptionDocument: () => NotificationSubscriptionDocument,
-  NotificationSubscriptionFragmentDoc: () => NotificationSubscriptionFragmentDoc,
-  NotificationSubscriptionPayloadFragmentDoc: () => NotificationSubscriptionPayloadFragmentDoc,
-  NotificationSubscriptionsDocument: () => NotificationSubscriptionsDocument,
-  NotificationUnsnoozeAllDocument: () => NotificationUnsnoozeAllDocument,
-  NotificationsDocument: () => NotificationsDocument,
-  OAuthAppWebhookPayloadFragmentDoc: () => OAuthAppWebhookPayloadFragmentDoc,
-  OAuthApplicationArchivePayloadFragmentDoc: () => OAuthApplicationArchivePayloadFragmentDoc,
-  OAuthApplicationCreatePayloadFragmentDoc: () => OAuthApplicationCreatePayloadFragmentDoc,
-  OAuthApplicationDistribution: () => OAuthApplicationDistribution,
-  OAuthApplicationFragmentDoc: () => OAuthApplicationFragmentDoc,
-  OAuthApplicationPayloadFragmentDoc: () => OAuthApplicationPayloadFragmentDoc,
-  OAuthApplicationRotateSecretPayloadFragmentDoc: () => OAuthApplicationRotateSecretPayloadFragmentDoc,
-  OAuthApplicationRotateWebhookSecretPayloadFragmentDoc: () => OAuthApplicationRotateWebhookSecretPayloadFragmentDoc,
-  OAuthAuthorizationWebhookPayloadFragmentDoc: () => OAuthAuthorizationWebhookPayloadFragmentDoc,
-  OAuthClientApprovalStatus: () => OAuthClientApprovalStatus,
-  OauthClientActorWebhookPayloadFragmentDoc: () => OauthClientActorWebhookPayloadFragmentDoc,
-  OauthClientApprovalFragmentDoc: () => OauthClientApprovalFragmentDoc,
-  OauthClientApprovalNotificationFragmentDoc: () => OauthClientApprovalNotificationFragmentDoc,
-  OauthClientChildWebhookPayloadFragmentDoc: () => OauthClientChildWebhookPayloadFragmentDoc,
-  OrganizationAcceptedOrExpiredInviteDetailsPayloadFragmentDoc: () => OrganizationAcceptedOrExpiredInviteDetailsPayloadFragmentDoc,
-  OrganizationCancelDeletePayloadFragmentDoc: () => OrganizationCancelDeletePayloadFragmentDoc,
-  OrganizationDeleteChallengeDocument: () => OrganizationDeleteChallengeDocument,
-  OrganizationDeletePayloadFragmentDoc: () => OrganizationDeletePayloadFragmentDoc,
-  OrganizationDocument: () => OrganizationDocument,
-  OrganizationDomainAuthType: () => OrganizationDomainAuthType,
-  OrganizationDomainFragmentDoc: () => OrganizationDomainFragmentDoc,
-  OrganizationExistsDocument: () => OrganizationExistsDocument,
-  OrganizationExistsPayloadFragmentDoc: () => OrganizationExistsPayloadFragmentDoc,
-  OrganizationFragmentDoc: () => OrganizationFragmentDoc,
-  OrganizationInviteConnectionFragmentDoc: () => OrganizationInviteConnectionFragmentDoc,
-  OrganizationInviteDocument: () => OrganizationInviteDocument,
-  OrganizationInviteFragmentDoc: () => OrganizationInviteFragmentDoc,
-  OrganizationInviteFullDetailsPayloadFragmentDoc: () => OrganizationInviteFullDetailsPayloadFragmentDoc,
-  OrganizationInvitePayloadFragmentDoc: () => OrganizationInvitePayloadFragmentDoc,
-  OrganizationInviteStatus: () => OrganizationInviteStatus,
-  OrganizationInvitesDocument: () => OrganizationInvitesDocument,
-  OrganizationOriginWebhookPayloadFragmentDoc: () => OrganizationOriginWebhookPayloadFragmentDoc,
-  OrganizationPayloadFragmentDoc: () => OrganizationPayloadFragmentDoc,
-  OrganizationStartTrialDocument: () => OrganizationStartTrialDocument,
-  OrganizationStartTrialForPlanDocument: () => OrganizationStartTrialForPlanDocument,
-  OrganizationStartTrialPayloadFragmentDoc: () => OrganizationStartTrialPayloadFragmentDoc,
-  Organization_IntegrationsDocument: () => Organization_IntegrationsDocument,
-  Organization_LabelsDocument: () => Organization_LabelsDocument,
-  Organization_ProjectLabelsDocument: () => Organization_ProjectLabelsDocument,
-  Organization_SubscriptionDocument: () => Organization_SubscriptionDocument,
-  Organization_TeamsDocument: () => Organization_TeamsDocument,
-  Organization_TemplatesDocument: () => Organization_TemplatesDocument,
-  Organization_UsersDocument: () => Organization_UsersDocument,
-  OtherNotificationType: () => OtherNotificationType,
-  OtherNotificationWebhookPayloadFragmentDoc: () => OtherNotificationWebhookPayloadFragmentDoc,
-  PageInfoFragmentDoc: () => PageInfoFragmentDoc,
-  PaginationNulls: () => PaginationNulls,
-  PaginationOrderBy: () => PaginationOrderBy,
-  PaginationSortOrder: () => PaginationSortOrder,
-  PaidSubscriptionFragmentDoc: () => PaidSubscriptionFragmentDoc,
-  PasskeyLoginStartResponseFragmentDoc: () => PasskeyLoginStartResponseFragmentDoc,
-  PipelineTab: () => PipelineTab,
-  PostNotificationFragmentDoc: () => PostNotificationFragmentDoc,
-  PostType: () => PostType,
-  ProductIntelligenceScope: () => ProductIntelligenceScope,
-  ProjectAddLabelDocument: () => ProjectAddLabelDocument,
-  ProjectArchivePayloadFragmentDoc: () => ProjectArchivePayloadFragmentDoc,
-  ProjectAttachmentConnectionFragmentDoc: () => ProjectAttachmentConnectionFragmentDoc,
-  ProjectAttachmentFragmentDoc: () => ProjectAttachmentFragmentDoc,
-  ProjectChildWebhookPayloadFragmentDoc: () => ProjectChildWebhookPayloadFragmentDoc,
-  ProjectConnectionFragmentDoc: () => ProjectConnectionFragmentDoc,
-  ProjectDocument: () => ProjectDocument,
-  ProjectExternalSyncDisableDocument: () => ProjectExternalSyncDisableDocument,
-  ProjectFilterSuggestionDocument: () => ProjectFilterSuggestionDocument,
-  ProjectFilterSuggestionPayloadFragmentDoc: () => ProjectFilterSuggestionPayloadFragmentDoc,
-  ProjectFragmentDoc: () => ProjectFragmentDoc,
-  ProjectHistoryConnectionFragmentDoc: () => ProjectHistoryConnectionFragmentDoc,
-  ProjectHistoryFragmentDoc: () => ProjectHistoryFragmentDoc,
-  ProjectLabelChildWebhookPayloadFragmentDoc: () => ProjectLabelChildWebhookPayloadFragmentDoc,
-  ProjectLabelConnectionFragmentDoc: () => ProjectLabelConnectionFragmentDoc,
-  ProjectLabelDocument: () => ProjectLabelDocument,
-  ProjectLabelFragmentDoc: () => ProjectLabelFragmentDoc,
-  ProjectLabelPayloadFragmentDoc: () => ProjectLabelPayloadFragmentDoc,
-  ProjectLabelRestoreDocument: () => ProjectLabelRestoreDocument,
-  ProjectLabelRetireDocument: () => ProjectLabelRetireDocument,
-  ProjectLabelWebhookPayloadFragmentDoc: () => ProjectLabelWebhookPayloadFragmentDoc,
-  ProjectLabel_ChildrenDocument: () => ProjectLabel_ChildrenDocument,
-  ProjectLabel_ProjectsDocument: () => ProjectLabel_ProjectsDocument,
-  ProjectLabelsDocument: () => ProjectLabelsDocument,
-  ProjectMilestoneChildWebhookPayloadFragmentDoc: () => ProjectMilestoneChildWebhookPayloadFragmentDoc,
-  ProjectMilestoneConnectionFragmentDoc: () => ProjectMilestoneConnectionFragmentDoc,
-  ProjectMilestoneDocument: () => ProjectMilestoneDocument,
-  ProjectMilestoneFragmentDoc: () => ProjectMilestoneFragmentDoc,
-  ProjectMilestoneMoveIssueToTeamFragmentDoc: () => ProjectMilestoneMoveIssueToTeamFragmentDoc,
-  ProjectMilestoneMoveProjectTeamsFragmentDoc: () => ProjectMilestoneMoveProjectTeamsFragmentDoc,
-  ProjectMilestonePayloadFragmentDoc: () => ProjectMilestonePayloadFragmentDoc,
-  ProjectMilestoneStatus: () => ProjectMilestoneStatus,
-  ProjectMilestone_DocumentContentDocument: () => ProjectMilestone_DocumentContentDocument,
-  ProjectMilestone_DocumentContent_AiPromptRulesDocument: () => ProjectMilestone_DocumentContent_AiPromptRulesDocument,
-  ProjectMilestone_DocumentContent_WelcomeMessageDocument: () => ProjectMilestone_DocumentContent_WelcomeMessageDocument,
-  ProjectMilestone_IssuesDocument: () => ProjectMilestone_IssuesDocument,
-  ProjectMilestonesDocument: () => ProjectMilestonesDocument,
-  ProjectNotificationFragmentDoc: () => ProjectNotificationFragmentDoc,
-  ProjectNotificationSubscriptionFragmentDoc: () => ProjectNotificationSubscriptionFragmentDoc,
-  ProjectPayloadFragmentDoc: () => ProjectPayloadFragmentDoc,
-  ProjectRelationConnectionFragmentDoc: () => ProjectRelationConnectionFragmentDoc,
-  ProjectRelationDocument: () => ProjectRelationDocument,
-  ProjectRelationFragmentDoc: () => ProjectRelationFragmentDoc,
-  ProjectRelationPayloadFragmentDoc: () => ProjectRelationPayloadFragmentDoc,
-  ProjectRelationsDocument: () => ProjectRelationsDocument,
-  ProjectRemoveLabelDocument: () => ProjectRemoveLabelDocument,
-  ProjectSearchPayloadFragmentDoc: () => ProjectSearchPayloadFragmentDoc,
-  ProjectSearchResultFragmentDoc: () => ProjectSearchResultFragmentDoc,
-  ProjectStatusArchivePayloadFragmentDoc: () => ProjectStatusArchivePayloadFragmentDoc,
-  ProjectStatusChildWebhookPayloadFragmentDoc: () => ProjectStatusChildWebhookPayloadFragmentDoc,
-  ProjectStatusConnectionFragmentDoc: () => ProjectStatusConnectionFragmentDoc,
-  ProjectStatusCountPayloadFragmentDoc: () => ProjectStatusCountPayloadFragmentDoc,
-  ProjectStatusDocument: () => ProjectStatusDocument,
-  ProjectStatusFragmentDoc: () => ProjectStatusFragmentDoc,
-  ProjectStatusPayloadFragmentDoc: () => ProjectStatusPayloadFragmentDoc,
-  ProjectStatusType: () => ProjectStatusType,
-  ProjectStatusesDocument: () => ProjectStatusesDocument,
-  ProjectTab: () => ProjectTab,
-  ProjectUpdateArchivePayloadFragmentDoc: () => ProjectUpdateArchivePayloadFragmentDoc,
-  ProjectUpdateChildWebhookPayloadFragmentDoc: () => ProjectUpdateChildWebhookPayloadFragmentDoc,
-  ProjectUpdateConnectionFragmentDoc: () => ProjectUpdateConnectionFragmentDoc,
-  ProjectUpdateDocument: () => ProjectUpdateDocument,
-  ProjectUpdateFragmentDoc: () => ProjectUpdateFragmentDoc,
-  ProjectUpdateHealthType: () => ProjectUpdateHealthType,
-  ProjectUpdatePayloadFragmentDoc: () => ProjectUpdatePayloadFragmentDoc,
-  ProjectUpdateReminderFrequency: () => ProjectUpdateReminderFrequency,
-  ProjectUpdateReminderPayloadFragmentDoc: () => ProjectUpdateReminderPayloadFragmentDoc,
-  ProjectUpdateWebhookPayloadFragmentDoc: () => ProjectUpdateWebhookPayloadFragmentDoc,
-  ProjectUpdate_CommentsDocument: () => ProjectUpdate_CommentsDocument,
-  ProjectUpdatesDocument: () => ProjectUpdatesDocument,
-  ProjectWebhookPayloadFragmentDoc: () => ProjectWebhookPayloadFragmentDoc,
-  Project_AttachmentsDocument: () => Project_AttachmentsDocument,
-  Project_CommentsDocument: () => Project_CommentsDocument,
-  Project_DocumentContentDocument: () => Project_DocumentContentDocument,
-  Project_DocumentContent_AiPromptRulesDocument: () => Project_DocumentContent_AiPromptRulesDocument,
-  Project_DocumentContent_WelcomeMessageDocument: () => Project_DocumentContent_WelcomeMessageDocument,
-  Project_DocumentsDocument: () => Project_DocumentsDocument,
-  Project_ExternalLinksDocument: () => Project_ExternalLinksDocument,
-  Project_HistoryDocument: () => Project_HistoryDocument,
-  Project_InitiativeToProjectsDocument: () => Project_InitiativeToProjectsDocument,
-  Project_InitiativesDocument: () => Project_InitiativesDocument,
-  Project_InverseRelationsDocument: () => Project_InverseRelationsDocument,
-  Project_IssuesDocument: () => Project_IssuesDocument,
-  Project_LabelsDocument: () => Project_LabelsDocument,
-  Project_MembersDocument: () => Project_MembersDocument,
-  Project_NeedsDocument: () => Project_NeedsDocument,
-  Project_ProjectMilestonesDocument: () => Project_ProjectMilestonesDocument,
-  Project_ProjectUpdatesDocument: () => Project_ProjectUpdatesDocument,
-  Project_RelationsDocument: () => Project_RelationsDocument,
-  Project_TeamsDocument: () => Project_TeamsDocument,
-  ProjectsDocument: () => ProjectsDocument,
-  PullRequestCheckPresentation: () => PullRequestCheckPresentation,
-  PullRequestMergeMethod: () => PullRequestMergeMethod,
-  PullRequestNotificationFragmentDoc: () => PullRequestNotificationFragmentDoc,
-  PullRequestReviewTool: () => PullRequestReviewTool,
-  PullRequestStatus: () => PullRequestStatus,
-  PushSubscriptionFragmentDoc: () => PushSubscriptionFragmentDoc,
-  PushSubscriptionPayloadFragmentDoc: () => PushSubscriptionPayloadFragmentDoc,
-  PushSubscriptionTestDocument: () => PushSubscriptionTestDocument,
-  PushSubscriptionTestPayloadFragmentDoc: () => PushSubscriptionTestPayloadFragmentDoc,
-  PushSubscriptionType: () => PushSubscriptionType,
-  RateLimitPayloadFragmentDoc: () => RateLimitPayloadFragmentDoc,
-  RateLimitResultPayloadFragmentDoc: () => RateLimitResultPayloadFragmentDoc,
-  RateLimitStatusDocument: () => RateLimitStatusDocument,
-  ReactionFragmentDoc: () => ReactionFragmentDoc,
-  ReactionPayloadFragmentDoc: () => ReactionPayloadFragmentDoc,
-  ReactionWebhookPayloadFragmentDoc: () => ReactionWebhookPayloadFragmentDoc,
-  RecentReleasesByAccessKeyDocument: () => RecentReleasesByAccessKeyDocument,
-  RefreshGoogleSheetsDataDocument: () => RefreshGoogleSheetsDataDocument,
-  ReleaseArchivePayloadFragmentDoc: () => ReleaseArchivePayloadFragmentDoc,
-  ReleaseChannel: () => ReleaseChannel,
-  ReleaseCompleteByAccessKeyDocument: () => ReleaseCompleteByAccessKeyDocument,
-  ReleaseCompleteDocument: () => ReleaseCompleteDocument,
-  ReleaseConnectionFragmentDoc: () => ReleaseConnectionFragmentDoc,
-  ReleaseDocument: () => ReleaseDocument,
-  ReleaseFragmentDoc: () => ReleaseFragmentDoc,
-  ReleaseHistoryConnectionFragmentDoc: () => ReleaseHistoryConnectionFragmentDoc,
-  ReleaseHistoryFragmentDoc: () => ReleaseHistoryFragmentDoc,
-  ReleaseNoteConnectionFragmentDoc: () => ReleaseNoteConnectionFragmentDoc,
-  ReleaseNoteDocument: () => ReleaseNoteDocument,
-  ReleaseNoteFragmentDoc: () => ReleaseNoteFragmentDoc,
-  ReleaseNoteGenerationStatus: () => ReleaseNoteGenerationStatus,
-  ReleaseNotePayloadFragmentDoc: () => ReleaseNotePayloadFragmentDoc,
-  ReleaseNoteWebhookPayloadFragmentDoc: () => ReleaseNoteWebhookPayloadFragmentDoc,
-  ReleaseNote_DocumentContentDocument: () => ReleaseNote_DocumentContentDocument,
-  ReleaseNote_DocumentContent_AiPromptRulesDocument: () => ReleaseNote_DocumentContent_AiPromptRulesDocument,
-  ReleaseNote_DocumentContent_WelcomeMessageDocument: () => ReleaseNote_DocumentContent_WelcomeMessageDocument,
-  ReleaseNotesDocument: () => ReleaseNotesDocument,
-  ReleasePayloadFragmentDoc: () => ReleasePayloadFragmentDoc,
-  ReleasePipelineArchivePayloadFragmentDoc: () => ReleasePipelineArchivePayloadFragmentDoc,
-  ReleasePipelineByAccessKeyDocument: () => ReleasePipelineByAccessKeyDocument,
-  ReleasePipelineByAccessKey_ReleasesDocument: () => ReleasePipelineByAccessKey_ReleasesDocument,
-  ReleasePipelineByAccessKey_StagesDocument: () => ReleasePipelineByAccessKey_StagesDocument,
-  ReleasePipelineByAccessKey_TeamsDocument: () => ReleasePipelineByAccessKey_TeamsDocument,
-  ReleasePipelineChildWebhookPayloadFragmentDoc: () => ReleasePipelineChildWebhookPayloadFragmentDoc,
-  ReleasePipelineConnectionFragmentDoc: () => ReleasePipelineConnectionFragmentDoc,
-  ReleasePipelineDocument: () => ReleasePipelineDocument,
-  ReleasePipelineFragmentDoc: () => ReleasePipelineFragmentDoc,
-  ReleasePipelinePayloadFragmentDoc: () => ReleasePipelinePayloadFragmentDoc,
-  ReleasePipelineType: () => ReleasePipelineType,
-  ReleasePipeline_ReleasesDocument: () => ReleasePipeline_ReleasesDocument,
-  ReleasePipeline_StagesDocument: () => ReleasePipeline_StagesDocument,
-  ReleasePipeline_TeamsDocument: () => ReleasePipeline_TeamsDocument,
-  ReleasePipelinesDocument: () => ReleasePipelinesDocument,
-  ReleaseSearchDocument: () => ReleaseSearchDocument,
-  ReleaseStageArchivePayloadFragmentDoc: () => ReleaseStageArchivePayloadFragmentDoc,
-  ReleaseStageChildWebhookPayloadFragmentDoc: () => ReleaseStageChildWebhookPayloadFragmentDoc,
-  ReleaseStageConnectionFragmentDoc: () => ReleaseStageConnectionFragmentDoc,
-  ReleaseStageDocument: () => ReleaseStageDocument,
-  ReleaseStageFragmentDoc: () => ReleaseStageFragmentDoc,
-  ReleaseStagePayloadFragmentDoc: () => ReleaseStagePayloadFragmentDoc,
-  ReleaseStageType: () => ReleaseStageType,
-  ReleaseStage_ReleasesDocument: () => ReleaseStage_ReleasesDocument,
-  ReleaseStagesDocument: () => ReleaseStagesDocument,
-  ReleaseSyncByAccessKeyDocument: () => ReleaseSyncByAccessKeyDocument,
-  ReleaseSyncDocument: () => ReleaseSyncDocument,
-  ReleaseUpdateByPipelineByAccessKeyDocument: () => ReleaseUpdateByPipelineByAccessKeyDocument,
-  ReleaseUpdateByPipelineDocument: () => ReleaseUpdateByPipelineDocument,
-  ReleaseWebhookPayloadFragmentDoc: () => ReleaseWebhookPayloadFragmentDoc,
-  Release_DocumentsDocument: () => Release_DocumentsDocument,
-  Release_HistoryDocument: () => Release_HistoryDocument,
-  Release_IssuesDocument: () => Release_IssuesDocument,
-  Release_LinksDocument: () => Release_LinksDocument,
-  ReleasesDocument: () => ReleasesDocument,
-  RepositorySuggestionFragmentDoc: () => RepositorySuggestionFragmentDoc,
-  RepositorySuggestionsPayloadFragmentDoc: () => RepositorySuggestionsPayloadFragmentDoc,
-  ResendOrganizationInviteByEmailDocument: () => ResendOrganizationInviteByEmailDocument,
-  ResendOrganizationInviteDocument: () => ResendOrganizationInviteDocument,
-  RoadmapArchivePayloadFragmentDoc: () => RoadmapArchivePayloadFragmentDoc,
-  RoadmapConnectionFragmentDoc: () => RoadmapConnectionFragmentDoc,
-  RoadmapDocument: () => RoadmapDocument,
-  RoadmapFragmentDoc: () => RoadmapFragmentDoc,
-  RoadmapPayloadFragmentDoc: () => RoadmapPayloadFragmentDoc,
-  RoadmapToProjectConnectionFragmentDoc: () => RoadmapToProjectConnectionFragmentDoc,
-  RoadmapToProjectDocument: () => RoadmapToProjectDocument,
-  RoadmapToProjectFragmentDoc: () => RoadmapToProjectFragmentDoc,
-  RoadmapToProjectPayloadFragmentDoc: () => RoadmapToProjectPayloadFragmentDoc,
-  RoadmapToProjectsDocument: () => RoadmapToProjectsDocument,
-  Roadmap_ProjectsDocument: () => Roadmap_ProjectsDocument,
-  RoadmapsDocument: () => RoadmapsDocument,
-  RotateSecretWebhookDocument: () => RotateSecretWebhookDocument,
-  SLADayCountType: () => SLADayCountType,
-  SamlTokenUserAccountAuthDocument: () => SamlTokenUserAccountAuthDocument,
-  SearchDocumentsDocument: () => SearchDocumentsDocument,
-  SearchDocuments_ArchivePayloadDocument: () => SearchDocuments_ArchivePayloadDocument,
-  SearchIssuesDocument: () => SearchIssuesDocument,
-  SearchIssues_ArchivePayloadDocument: () => SearchIssues_ArchivePayloadDocument,
-  SearchProjectsDocument: () => SearchProjectsDocument,
-  SearchProjects_ArchivePayloadDocument: () => SearchProjects_ArchivePayloadDocument,
-  SemanticSearchDocument: () => SemanticSearchDocument,
-  SemanticSearchPayloadFragmentDoc: () => SemanticSearchPayloadFragmentDoc,
-  SemanticSearchResultFragmentDoc: () => SemanticSearchResultFragmentDoc,
-  SemanticSearchResultType: () => SemanticSearchResultType,
-  SendStrategy: () => SendStrategy,
-  SesDomainIdentityDnsRecordFragmentDoc: () => SesDomainIdentityDnsRecordFragmentDoc,
-  SesDomainIdentityFragmentDoc: () => SesDomainIdentityFragmentDoc,
-  SlaConfigurationFragmentDoc: () => SlaConfigurationFragmentDoc,
-  SlaConfigurationsDocument: () => SlaConfigurationsDocument,
-  SlaStatus: () => SlaStatus,
-  SlackAsksTeamSettingsFragmentDoc: () => SlackAsksTeamSettingsFragmentDoc,
-  SlackChannelConnectPayloadFragmentDoc: () => SlackChannelConnectPayloadFragmentDoc,
-  SlackChannelNameMappingFragmentDoc: () => SlackChannelNameMappingFragmentDoc,
-  SlackChannelType: () => SlackChannelType,
-  SsoUrlFromEmailDocument: () => SsoUrlFromEmailDocument,
-  SsoUrlFromEmailResponseFragmentDoc: () => SsoUrlFromEmailResponseFragmentDoc,
-  SubscriptionFragmentDoc: () => SubscriptionFragmentDoc,
-  SuccessPayloadFragmentDoc: () => SuccessPayloadFragmentDoc,
-  SummaryFragmentDoc: () => SummaryFragmentDoc,
-  SummaryGenerationStatus: () => SummaryGenerationStatus,
-  SuspendUserDocument: () => SuspendUserDocument,
-  SyncedExternalThreadFragmentDoc: () => SyncedExternalThreadFragmentDoc,
-  TeamArchivePayloadFragmentDoc: () => TeamArchivePayloadFragmentDoc,
-  TeamChildWebhookPayloadFragmentDoc: () => TeamChildWebhookPayloadFragmentDoc,
-  TeamConnectionFragmentDoc: () => TeamConnectionFragmentDoc,
-  TeamDocument: () => TeamDocument,
-  TeamFragmentDoc: () => TeamFragmentDoc,
-  TeamMembershipConnectionFragmentDoc: () => TeamMembershipConnectionFragmentDoc,
-  TeamMembershipDocument: () => TeamMembershipDocument,
-  TeamMembershipFragmentDoc: () => TeamMembershipFragmentDoc,
-  TeamMembershipPayloadFragmentDoc: () => TeamMembershipPayloadFragmentDoc,
-  TeamMembershipsDocument: () => TeamMembershipsDocument,
-  TeamNotificationSubscriptionFragmentDoc: () => TeamNotificationSubscriptionFragmentDoc,
-  TeamOriginWebhookPayloadFragmentDoc: () => TeamOriginWebhookPayloadFragmentDoc,
-  TeamPayloadFragmentDoc: () => TeamPayloadFragmentDoc,
-  TeamPinnedResourceFragmentDoc: () => TeamPinnedResourceFragmentDoc,
-  TeamResourceSectionFragmentDoc: () => TeamResourceSectionFragmentDoc,
-  TeamRetirementSubTeamHandling: () => TeamRetirementSubTeamHandling,
-  TeamRoleType: () => TeamRoleType,
-  TeamVisibility: () => TeamVisibility,
-  TeamWithParentWebhookPayloadFragmentDoc: () => TeamWithParentWebhookPayloadFragmentDoc,
-  Team_CyclesDocument: () => Team_CyclesDocument,
-  Team_GitAutomationStatesDocument: () => Team_GitAutomationStatesDocument,
-  Team_IssuesDocument: () => Team_IssuesDocument,
-  Team_LabelsDocument: () => Team_LabelsDocument,
-  Team_MembersDocument: () => Team_MembersDocument,
-  Team_MembershipsDocument: () => Team_MembershipsDocument,
-  Team_ProjectsDocument: () => Team_ProjectsDocument,
-  Team_ReleasePipelinesDocument: () => Team_ReleasePipelinesDocument,
-  Team_StatesDocument: () => Team_StatesDocument,
-  Team_TemplatesDocument: () => Team_TemplatesDocument,
-  Team_WebhooksDocument: () => Team_WebhooksDocument,
-  TeamsDocument: () => TeamsDocument,
-  TemplateConnectionFragmentDoc: () => TemplateConnectionFragmentDoc,
-  TemplateDocument: () => TemplateDocument,
-  TemplateFragmentDoc: () => TemplateFragmentDoc,
-  TemplatePayloadFragmentDoc: () => TemplatePayloadFragmentDoc,
-  TemplatesDocument: () => TemplatesDocument,
-  TemplatesForIntegrationDocument: () => TemplatesForIntegrationDocument,
-  TimeScheduleConnectionFragmentDoc: () => TimeScheduleConnectionFragmentDoc,
-  TimeScheduleDocument: () => TimeScheduleDocument,
-  TimeScheduleEntryFragmentDoc: () => TimeScheduleEntryFragmentDoc,
-  TimeScheduleFragmentDoc: () => TimeScheduleFragmentDoc,
-  TimeSchedulePayloadFragmentDoc: () => TimeSchedulePayloadFragmentDoc,
-  TimeScheduleRefreshIntegrationScheduleDocument: () => TimeScheduleRefreshIntegrationScheduleDocument,
-  TimeScheduleUpsertExternalDocument: () => TimeScheduleUpsertExternalDocument,
-  TimeSchedulesDocument: () => TimeSchedulesDocument,
-  TrackAnonymousEventDocument: () => TrackAnonymousEventDocument,
-  TriageResponsibilitiesDocument: () => TriageResponsibilitiesDocument,
-  TriageResponsibilityAction: () => TriageResponsibilityAction,
-  TriageResponsibilityConnectionFragmentDoc: () => TriageResponsibilityConnectionFragmentDoc,
-  TriageResponsibilityDocument: () => TriageResponsibilityDocument,
-  TriageResponsibilityFragmentDoc: () => TriageResponsibilityFragmentDoc,
-  TriageResponsibilityManualSelectionFragmentDoc: () => TriageResponsibilityManualSelectionFragmentDoc,
-  TriageResponsibilityPayloadFragmentDoc: () => TriageResponsibilityPayloadFragmentDoc,
-  TriageResponsibility_ManualSelectionDocument: () => TriageResponsibility_ManualSelectionDocument,
-  TriageRuleErrorType: () => TriageRuleErrorType,
-  TypedDocumentString: () => TypedDocumentString,
-  UnarchiveCustomerNeedDocument: () => UnarchiveCustomerNeedDocument,
-  UnarchiveDocumentDocument: () => UnarchiveDocumentDocument,
-  UnarchiveInitiativeDocument: () => UnarchiveInitiativeDocument,
-  UnarchiveInitiativeUpdateDocument: () => UnarchiveInitiativeUpdateDocument,
-  UnarchiveIssueDocument: () => UnarchiveIssueDocument,
-  UnarchiveNotificationDocument: () => UnarchiveNotificationDocument,
-  UnarchiveProjectDocument: () => UnarchiveProjectDocument,
-  UnarchiveProjectStatusDocument: () => UnarchiveProjectStatusDocument,
-  UnarchiveProjectUpdateDocument: () => UnarchiveProjectUpdateDocument,
-  UnarchiveReleaseDocument: () => UnarchiveReleaseDocument,
-  UnarchiveReleasePipelineDocument: () => UnarchiveReleasePipelineDocument,
-  UnarchiveReleaseStageDocument: () => UnarchiveReleaseStageDocument,
-  UnarchiveRoadmapDocument: () => UnarchiveRoadmapDocument,
-  UnarchiveTeamDocument: () => UnarchiveTeamDocument,
-  UnsuspendUserDocument: () => UnsuspendUserDocument,
-  UpdateAgentSessionDocument: () => UpdateAgentSessionDocument,
-  UpdateAttachmentDocument: () => UpdateAttachmentDocument,
-  UpdateCommentDocument: () => UpdateCommentDocument,
-  UpdateCustomViewDocument: () => UpdateCustomViewDocument,
-  UpdateCustomerDocument: () => UpdateCustomerDocument,
-  UpdateCustomerNeedDocument: () => UpdateCustomerNeedDocument,
-  UpdateCustomerStatusDocument: () => UpdateCustomerStatusDocument,
-  UpdateCustomerTierDocument: () => UpdateCustomerTierDocument,
-  UpdateCycleDocument: () => UpdateCycleDocument,
-  UpdateDocumentDocument: () => UpdateDocumentDocument,
-  UpdateEmailIntakeAddressDocument: () => UpdateEmailIntakeAddressDocument,
-  UpdateEntityExternalLinkDocument: () => UpdateEntityExternalLinkDocument,
-  UpdateFavoriteDocument: () => UpdateFavoriteDocument,
-  UpdateGitAutomationStateDocument: () => UpdateGitAutomationStateDocument,
-  UpdateGitAutomationTargetBranchDocument: () => UpdateGitAutomationTargetBranchDocument,
-  UpdateInitiativeDocument: () => UpdateInitiativeDocument,
-  UpdateInitiativeRelationDocument: () => UpdateInitiativeRelationDocument,
-  UpdateInitiativeToProjectDocument: () => UpdateInitiativeToProjectDocument,
-  UpdateInitiativeUpdateDocument: () => UpdateInitiativeUpdateDocument,
-  UpdateIntegrationIntercomSettingsDocument: () => UpdateIntegrationIntercomSettingsDocument,
-  UpdateIntegrationsSettingsDocument: () => UpdateIntegrationsSettingsDocument,
-  UpdateIssueBatchDocument: () => UpdateIssueBatchDocument,
-  UpdateIssueDocument: () => UpdateIssueDocument,
-  UpdateIssueImportDocument: () => UpdateIssueImportDocument,
-  UpdateIssueLabelDocument: () => UpdateIssueLabelDocument,
-  UpdateIssueRelationDocument: () => UpdateIssueRelationDocument,
-  UpdateNotificationCategoryChannelSubscriptionDocument: () => UpdateNotificationCategoryChannelSubscriptionDocument,
-  UpdateNotificationDocument: () => UpdateNotificationDocument,
-  UpdateNotificationSubscriptionDocument: () => UpdateNotificationSubscriptionDocument,
-  UpdateOrganizationDocument: () => UpdateOrganizationDocument,
-  UpdateOrganizationInviteDocument: () => UpdateOrganizationInviteDocument,
-  UpdateProjectDocument: () => UpdateProjectDocument,
-  UpdateProjectLabelDocument: () => UpdateProjectLabelDocument,
-  UpdateProjectMilestoneDocument: () => UpdateProjectMilestoneDocument,
-  UpdateProjectRelationDocument: () => UpdateProjectRelationDocument,
-  UpdateProjectStatusDocument: () => UpdateProjectStatusDocument,
-  UpdateProjectUpdateDocument: () => UpdateProjectUpdateDocument,
-  UpdateReleaseDocument: () => UpdateReleaseDocument,
-  UpdateReleaseNoteDocument: () => UpdateReleaseNoteDocument,
-  UpdateReleasePipelineDocument: () => UpdateReleasePipelineDocument,
-  UpdateReleaseStageDocument: () => UpdateReleaseStageDocument,
-  UpdateRoadmapDocument: () => UpdateRoadmapDocument,
-  UpdateRoadmapToProjectDocument: () => UpdateRoadmapToProjectDocument,
-  UpdateTeamDocument: () => UpdateTeamDocument,
-  UpdateTeamMembershipDocument: () => UpdateTeamMembershipDocument,
-  UpdateTemplateDocument: () => UpdateTemplateDocument,
-  UpdateTimeScheduleDocument: () => UpdateTimeScheduleDocument,
-  UpdateTriageResponsibilityDocument: () => UpdateTriageResponsibilityDocument,
-  UpdateUserDocument: () => UpdateUserDocument,
-  UpdateUserFlagDocument: () => UpdateUserFlagDocument,
-  UpdateUserSettingsDocument: () => UpdateUserSettingsDocument,
-  UpdateViewPreferencesDocument: () => UpdateViewPreferencesDocument,
-  UpdateWebhookDocument: () => UpdateWebhookDocument,
-  UpdateWorkflowStateDocument: () => UpdateWorkflowStateDocument,
-  UploadFileFragmentDoc: () => UploadFileFragmentDoc,
-  UploadFileHeaderFragmentDoc: () => UploadFileHeaderFragmentDoc,
-  UploadPayloadFragmentDoc: () => UploadPayloadFragmentDoc,
-  UsageAlertFragmentDoc: () => UsageAlertFragmentDoc,
-  UsageAlertNotificationFragmentDoc: () => UsageAlertNotificationFragmentDoc,
-  UserActorWebhookPayloadFragmentDoc: () => UserActorWebhookPayloadFragmentDoc,
-  UserAdminPayloadFragmentDoc: () => UserAdminPayloadFragmentDoc,
-  UserChangeRoleDocument: () => UserChangeRoleDocument,
-  UserChildWebhookPayloadFragmentDoc: () => UserChildWebhookPayloadFragmentDoc,
-  UserConnectionFragmentDoc: () => UserConnectionFragmentDoc,
-  UserContextViewType: () => UserContextViewType,
-  UserDiscordConnectDocument: () => UserDiscordConnectDocument,
-  UserDocument: () => UserDocument,
-  UserExternalUserDisconnectDocument: () => UserExternalUserDisconnectDocument,
-  UserFlagType: () => UserFlagType,
-  UserFlagUpdateOperation: () => UserFlagUpdateOperation,
-  UserFragmentDoc: () => UserFragmentDoc,
-  UserNotificationSubscriptionFragmentDoc: () => UserNotificationSubscriptionFragmentDoc,
-  UserPayloadFragmentDoc: () => UserPayloadFragmentDoc,
-  UserRevokeAllSessionsDocument: () => UserRevokeAllSessionsDocument,
-  UserRevokeSessionDocument: () => UserRevokeSessionDocument,
-  UserRoleType: () => UserRoleType,
-  UserSessionsDocument: () => UserSessionsDocument,
-  UserSettingsCustomSidebarThemeFragmentDoc: () => UserSettingsCustomSidebarThemeFragmentDoc,
-  UserSettingsCustomThemeFragmentDoc: () => UserSettingsCustomThemeFragmentDoc,
-  UserSettingsDocument: () => UserSettingsDocument,
-  UserSettingsFlagPayloadFragmentDoc: () => UserSettingsFlagPayloadFragmentDoc,
-  UserSettingsFlagsResetDocument: () => UserSettingsFlagsResetDocument,
-  UserSettingsFlagsResetPayloadFragmentDoc: () => UserSettingsFlagsResetPayloadFragmentDoc,
-  UserSettingsFragmentDoc: () => UserSettingsFragmentDoc,
-  UserSettingsPayloadFragmentDoc: () => UserSettingsPayloadFragmentDoc,
-  UserSettingsThemeDeviceType: () => UserSettingsThemeDeviceType,
-  UserSettingsThemeFragmentDoc: () => UserSettingsThemeFragmentDoc,
-  UserSettingsThemeMode: () => UserSettingsThemeMode,
-  UserSettingsThemePreset: () => UserSettingsThemePreset,
-  UserSettings_NotificationCategoryPreferencesDocument: () => UserSettings_NotificationCategoryPreferencesDocument,
-  UserSettings_NotificationCategoryPreferences_AppsAndIntegrationsDocument: () => UserSettings_NotificationCategoryPreferences_AppsAndIntegrationsDocument,
-  UserSettings_NotificationCategoryPreferences_AssignmentsDocument: () => UserSettings_NotificationCategoryPreferences_AssignmentsDocument,
-  UserSettings_NotificationCategoryPreferences_BillingDocument: () => UserSettings_NotificationCategoryPreferences_BillingDocument,
-  UserSettings_NotificationCategoryPreferences_CommentsAndRepliesDocument: () => UserSettings_NotificationCategoryPreferences_CommentsAndRepliesDocument,
-  UserSettings_NotificationCategoryPreferences_CustomersDocument: () => UserSettings_NotificationCategoryPreferences_CustomersDocument,
-  UserSettings_NotificationCategoryPreferences_DocumentChangesDocument: () => UserSettings_NotificationCategoryPreferences_DocumentChangesDocument,
-  UserSettings_NotificationCategoryPreferences_FeedDocument: () => UserSettings_NotificationCategoryPreferences_FeedDocument,
-  UserSettings_NotificationCategoryPreferences_MentionsDocument: () => UserSettings_NotificationCategoryPreferences_MentionsDocument,
-  UserSettings_NotificationCategoryPreferences_PostsAndUpdatesDocument: () => UserSettings_NotificationCategoryPreferences_PostsAndUpdatesDocument,
-  UserSettings_NotificationCategoryPreferences_ReactionsDocument: () => UserSettings_NotificationCategoryPreferences_ReactionsDocument,
-  UserSettings_NotificationCategoryPreferences_RemindersDocument: () => UserSettings_NotificationCategoryPreferences_RemindersDocument,
-  UserSettings_NotificationCategoryPreferences_ReviewsDocument: () => UserSettings_NotificationCategoryPreferences_ReviewsDocument,
-  UserSettings_NotificationCategoryPreferences_StatusChangesDocument: () => UserSettings_NotificationCategoryPreferences_StatusChangesDocument,
-  UserSettings_NotificationCategoryPreferences_SubscriptionsDocument: () => UserSettings_NotificationCategoryPreferences_SubscriptionsDocument,
-  UserSettings_NotificationCategoryPreferences_SystemDocument: () => UserSettings_NotificationCategoryPreferences_SystemDocument,
-  UserSettings_NotificationCategoryPreferences_TriageDocument: () => UserSettings_NotificationCategoryPreferences_TriageDocument,
-  UserSettings_NotificationChannelPreferencesDocument: () => UserSettings_NotificationChannelPreferencesDocument,
-  UserSettings_NotificationDeliveryPreferencesDocument: () => UserSettings_NotificationDeliveryPreferencesDocument,
-  UserSettings_NotificationDeliveryPreferences_MobileDocument: () => UserSettings_NotificationDeliveryPreferences_MobileDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_ScheduleDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_ScheduleDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_FridayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_FridayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_MondayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_MondayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_SaturdayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_SaturdayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_SundayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_SundayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_ThursdayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_ThursdayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_TuesdayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_TuesdayDocument,
-  UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_WednesdayDocument: () => UserSettings_NotificationDeliveryPreferences_Mobile_Schedule_WednesdayDocument,
-  UserSettings_ThemeDocument: () => UserSettings_ThemeDocument,
-  UserSettings_Theme_CustomDocument: () => UserSettings_Theme_CustomDocument,
-  UserSettings_Theme_Custom_SidebarDocument: () => UserSettings_Theme_Custom_SidebarDocument,
-  UserUnlinkFromIdentityProviderDocument: () => UserUnlinkFromIdentityProviderDocument,
-  UserWebhookPayloadFragmentDoc: () => UserWebhookPayloadFragmentDoc,
-  User_AssignedIssuesDocument: () => User_AssignedIssuesDocument,
-  User_CreatedIssuesDocument: () => User_CreatedIssuesDocument,
-  User_DelegatedIssuesDocument: () => User_DelegatedIssuesDocument,
-  User_DraftsDocument: () => User_DraftsDocument,
-  User_TeamMembershipsDocument: () => User_TeamMembershipsDocument,
-  User_TeamsDocument: () => User_TeamsDocument,
-  UsersDocument: () => UsersDocument,
-  VerifyGitHubEnterpriseServerInstallationDocument: () => VerifyGitHubEnterpriseServerInstallationDocument,
-  ViewPreferencesFragmentDoc: () => ViewPreferencesFragmentDoc,
-  ViewPreferencesInitiativeLabelGroupColumnFragmentDoc: () => ViewPreferencesInitiativeLabelGroupColumnFragmentDoc,
-  ViewPreferencesPayloadFragmentDoc: () => ViewPreferencesPayloadFragmentDoc,
-  ViewPreferencesProjectLabelGroupColumnFragmentDoc: () => ViewPreferencesProjectLabelGroupColumnFragmentDoc,
-  ViewPreferencesType: () => ViewPreferencesType,
-  ViewPreferencesValuesFragmentDoc: () => ViewPreferencesValuesFragmentDoc,
-  ViewType: () => ViewType,
-  ViewerDocument: () => ViewerDocument,
-  Viewer_AssignedIssuesDocument: () => Viewer_AssignedIssuesDocument,
-  Viewer_CreatedIssuesDocument: () => Viewer_CreatedIssuesDocument,
-  Viewer_DelegatedIssuesDocument: () => Viewer_DelegatedIssuesDocument,
-  Viewer_DraftsDocument: () => Viewer_DraftsDocument,
-  Viewer_TeamMembershipsDocument: () => Viewer_TeamMembershipsDocument,
-  Viewer_TeamsDocument: () => Viewer_TeamsDocument,
-  WebhookConnectionFragmentDoc: () => WebhookConnectionFragmentDoc,
-  WebhookDocument: () => WebhookDocument,
-  WebhookFailureEventFragmentDoc: () => WebhookFailureEventFragmentDoc,
-  WebhookFragmentDoc: () => WebhookFragmentDoc,
-  WebhookPayloadFragmentDoc: () => WebhookPayloadFragmentDoc,
-  WebhookRotateSecretPayloadFragmentDoc: () => WebhookRotateSecretPayloadFragmentDoc,
-  WebhooksDocument: () => WebhooksDocument,
-  WelcomeMessageFragmentDoc: () => WelcomeMessageFragmentDoc,
-  WelcomeMessageNotificationFragmentDoc: () => WelcomeMessageNotificationFragmentDoc,
-  WorkflowCronJobDefinitionFragmentDoc: () => WorkflowCronJobDefinitionFragmentDoc,
-  WorkflowDefinitionFragmentDoc: () => WorkflowDefinitionFragmentDoc,
-  WorkflowStateArchivePayloadFragmentDoc: () => WorkflowStateArchivePayloadFragmentDoc,
-  WorkflowStateChildWebhookPayloadFragmentDoc: () => WorkflowStateChildWebhookPayloadFragmentDoc,
-  WorkflowStateConnectionFragmentDoc: () => WorkflowStateConnectionFragmentDoc,
-  WorkflowStateDocument: () => WorkflowStateDocument,
-  WorkflowStateFragmentDoc: () => WorkflowStateFragmentDoc,
-  WorkflowStatePayloadFragmentDoc: () => WorkflowStatePayloadFragmentDoc,
-  WorkflowState_IssuesDocument: () => WorkflowState_IssuesDocument,
-  WorkflowStatesDocument: () => WorkflowStatesDocument,
-  WorkflowTrigger: () => WorkflowTrigger,
-  WorkflowTriggerType: () => WorkflowTriggerType,
-  WorkflowType: () => WorkflowType
-});
-var AgentActivitySignal = /* @__PURE__ */ function(AgentActivitySignal$1) {
-  AgentActivitySignal$1["Auth"] = "auth";
-  AgentActivitySignal$1["Continue"] = "continue";
-  AgentActivitySignal$1["Select"] = "select";
-  AgentActivitySignal$1["Stop"] = "stop";
-  return AgentActivitySignal$1;
-}({});
-var AgentActivityType = /* @__PURE__ */ function(AgentActivityType$1) {
-  AgentActivityType$1["Action"] = "action";
-  AgentActivityType$1["Elicitation"] = "elicitation";
-  AgentActivityType$1["Error"] = "error";
-  AgentActivityType$1["Prompt"] = "prompt";
-  AgentActivityType$1["Response"] = "response";
-  AgentActivityType$1["Thought"] = "thought";
-  return AgentActivityType$1;
-}({});
-var AgentSessionStatus = /* @__PURE__ */ function(AgentSessionStatus$1) {
-  AgentSessionStatus$1["Active"] = "active";
-  AgentSessionStatus$1["AwaitingInput"] = "awaitingInput";
-  AgentSessionStatus$1["Complete"] = "complete";
-  AgentSessionStatus$1["Error"] = "error";
-  AgentSessionStatus$1["Pending"] = "pending";
-  AgentSessionStatus$1["Stale"] = "stale";
-  return AgentSessionStatus$1;
-}({});
-var AgentSessionType = /* @__PURE__ */ function(AgentSessionType$1) {
-  AgentSessionType$1["CommentThread"] = "commentThread";
-  return AgentSessionType$1;
-}({});
-var AiConversationClientPlatform = /* @__PURE__ */ function(AiConversationClientPlatform$1) {
-  AiConversationClientPlatform$1["Desktop"] = "desktop";
-  AiConversationClientPlatform$1["Mobile"] = "mobile";
-  AiConversationClientPlatform$1["Web"] = "web";
-  return AiConversationClientPlatform$1;
-}({});
-var AiConversationEntityCardWidgetArgsAction = /* @__PURE__ */ function(AiConversationEntityCardWidgetArgsAction$1) {
-  AiConversationEntityCardWidgetArgsAction$1["Created"] = "created";
-  AiConversationEntityCardWidgetArgsAction$1["Updated"] = "updated";
-  return AiConversationEntityCardWidgetArgsAction$1;
-}({});
-var AiConversationEntityCardWidgetArgsType = /* @__PURE__ */ function(AiConversationEntityCardWidgetArgsType$1) {
-  AiConversationEntityCardWidgetArgsType$1["AiPrompt"] = "AiPrompt";
-  AiConversationEntityCardWidgetArgsType$1["CustomView"] = "CustomView";
-  AiConversationEntityCardWidgetArgsType$1["Customer"] = "Customer";
-  AiConversationEntityCardWidgetArgsType$1["CustomerNeed"] = "CustomerNeed";
-  AiConversationEntityCardWidgetArgsType$1["Dashboard"] = "Dashboard";
-  AiConversationEntityCardWidgetArgsType$1["Document"] = "Document";
-  AiConversationEntityCardWidgetArgsType$1["Initiative"] = "Initiative";
-  AiConversationEntityCardWidgetArgsType$1["InitiativeUpdate"] = "InitiativeUpdate";
-  AiConversationEntityCardWidgetArgsType$1["Issue"] = "Issue";
-  AiConversationEntityCardWidgetArgsType$1["IssueDraft"] = "IssueDraft";
-  AiConversationEntityCardWidgetArgsType$1["Project"] = "Project";
-  AiConversationEntityCardWidgetArgsType$1["ProjectUpdate"] = "ProjectUpdate";
-  AiConversationEntityCardWidgetArgsType$1["PullRequest"] = "PullRequest";
-  AiConversationEntityCardWidgetArgsType$1["Release"] = "Release";
-  AiConversationEntityCardWidgetArgsType$1["ReleasePipeline"] = "ReleasePipeline";
-  AiConversationEntityCardWidgetArgsType$1["Team"] = "Team";
-  AiConversationEntityCardWidgetArgsType$1["Template"] = "Template";
-  AiConversationEntityCardWidgetArgsType$1["WorkflowDefinition"] = "WorkflowDefinition";
-  return AiConversationEntityCardWidgetArgsType$1;
-}({});
-var AiConversationEntityListWidgetArgsAction = /* @__PURE__ */ function(AiConversationEntityListWidgetArgsAction$1) {
-  AiConversationEntityListWidgetArgsAction$1["Created"] = "created";
-  AiConversationEntityListWidgetArgsAction$1["Updated"] = "updated";
-  return AiConversationEntityListWidgetArgsAction$1;
-}({});
-var AiConversationEntityListWidgetArgsEntitiesType = /* @__PURE__ */ function(AiConversationEntityListWidgetArgsEntitiesType$1) {
-  AiConversationEntityListWidgetArgsEntitiesType$1["AiPrompt"] = "AiPrompt";
-  AiConversationEntityListWidgetArgsEntitiesType$1["CustomView"] = "CustomView";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Customer"] = "Customer";
-  AiConversationEntityListWidgetArgsEntitiesType$1["CustomerNeed"] = "CustomerNeed";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Dashboard"] = "Dashboard";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Document"] = "Document";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Initiative"] = "Initiative";
-  AiConversationEntityListWidgetArgsEntitiesType$1["InitiativeUpdate"] = "InitiativeUpdate";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Issue"] = "Issue";
-  AiConversationEntityListWidgetArgsEntitiesType$1["IssueDraft"] = "IssueDraft";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Project"] = "Project";
-  AiConversationEntityListWidgetArgsEntitiesType$1["ProjectUpdate"] = "ProjectUpdate";
-  AiConversationEntityListWidgetArgsEntitiesType$1["PullRequest"] = "PullRequest";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Release"] = "Release";
-  AiConversationEntityListWidgetArgsEntitiesType$1["ReleasePipeline"] = "ReleasePipeline";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Team"] = "Team";
-  AiConversationEntityListWidgetArgsEntitiesType$1["Template"] = "Template";
-  AiConversationEntityListWidgetArgsEntitiesType$1["WorkflowDefinition"] = "WorkflowDefinition";
-  return AiConversationEntityListWidgetArgsEntitiesType$1;
-}({});
-var AiConversationInitialSource = /* @__PURE__ */ function(AiConversationInitialSource$1) {
-  AiConversationInitialSource$1["Comment"] = "comment";
-  AiConversationInitialSource$1["DirectChat"] = "directChat";
-  AiConversationInitialSource$1["Mcp"] = "mcp";
-  AiConversationInitialSource$1["MicrosoftTeams"] = "microsoftTeams";
-  AiConversationInitialSource$1["PullRequestComment"] = "pullRequestComment";
-  AiConversationInitialSource$1["Slack"] = "slack";
-  AiConversationInitialSource$1["Workflow"] = "workflow";
-  return AiConversationInitialSource$1;
-}({});
-var AiConversationPartPhase = /* @__PURE__ */ function(AiConversationPartPhase$1) {
-  AiConversationPartPhase$1["Answer"] = "answer";
-  AiConversationPartPhase$1["Commentary"] = "commentary";
-  return AiConversationPartPhase$1;
-}({});
-var AiConversationPartType = /* @__PURE__ */ function(AiConversationPartType$1) {
-  AiConversationPartType$1["Error"] = "error";
-  AiConversationPartType$1["Event"] = "event";
-  AiConversationPartType$1["Prompt"] = "prompt";
-  AiConversationPartType$1["Reasoning"] = "reasoning";
-  AiConversationPartType$1["Text"] = "text";
-  AiConversationPartType$1["ToolCall"] = "toolCall";
-  AiConversationPartType$1["Widget"] = "widget";
-  AiConversationPartType$1["WidgetPlaceholder"] = "widgetPlaceholder";
-  return AiConversationPartType$1;
-}({});
-var AiConversationQueryUpdatesToolCallArgsUpdateType = /* @__PURE__ */ function(AiConversationQueryUpdatesToolCallArgsUpdateType$1) {
-  AiConversationQueryUpdatesToolCallArgsUpdateType$1["InitiativeUpdate"] = "InitiativeUpdate";
-  AiConversationQueryUpdatesToolCallArgsUpdateType$1["ProjectUpdate"] = "ProjectUpdate";
-  return AiConversationQueryUpdatesToolCallArgsUpdateType$1;
-}({});
-var AiConversationQueryViewToolCallArgsMode = /* @__PURE__ */ function(AiConversationQueryViewToolCallArgsMode$1) {
-  AiConversationQueryViewToolCallArgsMode$1["Insight"] = "insight";
-  AiConversationQueryViewToolCallArgsMode$1["List"] = "list";
-  return AiConversationQueryViewToolCallArgsMode$1;
-}({});
-var AiConversationStatus = /* @__PURE__ */ function(AiConversationStatus$1) {
-  AiConversationStatus$1["Active"] = "active";
-  AiConversationStatus$1["AwaitingInput"] = "awaitingInput";
-  AiConversationStatus$1["Complete"] = "complete";
-  AiConversationStatus$1["Error"] = "error";
-  AiConversationStatus$1["Pending"] = "pending";
-  AiConversationStatus$1["Waiting"] = "waiting";
-  return AiConversationStatus$1;
-}({});
-var AiConversationSubscribeToEventToolCallArgsKind = /* @__PURE__ */ function(AiConversationSubscribeToEventToolCallArgsKind$1) {
-  AiConversationSubscribeToEventToolCallArgsKind$1["Timer"] = "timer";
-  AiConversationSubscribeToEventToolCallArgsKind$1["Trigger"] = "trigger";
-  return AiConversationSubscribeToEventToolCallArgsKind$1;
-}({});
-var AiConversationSubscribeToEventToolCallArgsType = /* @__PURE__ */ function(AiConversationSubscribeToEventToolCallArgsType$1) {
-  AiConversationSubscribeToEventToolCallArgsType$1["Once"] = "once";
-  AiConversationSubscribeToEventToolCallArgsType$1["Recurring"] = "recurring";
-  return AiConversationSubscribeToEventToolCallArgsType$1;
-}({});
-var AiConversationTool = /* @__PURE__ */ function(AiConversationTool$1) {
-  AiConversationTool$1["CodeIntelligence"] = "CodeIntelligence";
-  AiConversationTool$1["CreateEntity"] = "CreateEntity";
-  AiConversationTool$1["DeleteEntity"] = "DeleteEntity";
-  AiConversationTool$1["GetMicrosoftTeamsConversationHistory"] = "GetMicrosoftTeamsConversationHistory";
-  AiConversationTool$1["GetPullRequestCheckLogs"] = "GetPullRequestCheckLogs";
-  AiConversationTool$1["GetPullRequestDiff"] = "GetPullRequestDiff";
-  AiConversationTool$1["GetPullRequestFile"] = "GetPullRequestFile";
-  AiConversationTool$1["GetSlackConversationHistory"] = "GetSlackConversationHistory";
-  AiConversationTool$1["HandoffToCodingSession"] = "HandoffToCodingSession";
-  AiConversationTool$1["InvokeMcpTool"] = "InvokeMcpTool";
-  AiConversationTool$1["NavigateToPage"] = "NavigateToPage";
-  AiConversationTool$1["QueryActivity"] = "QueryActivity";
-  AiConversationTool$1["QueryUpdates"] = "QueryUpdates";
-  AiConversationTool$1["QueryView"] = "QueryView";
-  AiConversationTool$1["Research"] = "Research";
-  AiConversationTool$1["RestoreEntity"] = "RestoreEntity";
-  AiConversationTool$1["RetrieveEntities"] = "RetrieveEntities";
-  AiConversationTool$1["RetryPullRequestCheck"] = "RetryPullRequestCheck";
-  AiConversationTool$1["SearchDocumentation"] = "SearchDocumentation";
-  AiConversationTool$1["SearchEntities"] = "SearchEntities";
-  AiConversationTool$1["SubscribeToEvent"] = "SubscribeToEvent";
-  AiConversationTool$1["SuggestValues"] = "SuggestValues";
-  AiConversationTool$1["TranscribeMedia"] = "TranscribeMedia";
-  AiConversationTool$1["TranscribeVideo"] = "TranscribeVideo";
-  AiConversationTool$1["UnsubscribeFromEvent"] = "UnsubscribeFromEvent";
-  AiConversationTool$1["UpdateEntity"] = "UpdateEntity";
-  AiConversationTool$1["WebSearch"] = "WebSearch";
-  return AiConversationTool$1;
-}({});
-var AiConversationWidgetName = /* @__PURE__ */ function(AiConversationWidgetName$1) {
-  AiConversationWidgetName$1["EntityCard"] = "EntityCard";
-  AiConversationWidgetName$1["EntityList"] = "EntityList";
-  return AiConversationWidgetName$1;
-}({});
-var AiPromptProgressStatus = /* @__PURE__ */ function(AiPromptProgressStatus$1) {
-  AiPromptProgressStatus$1["Canceled"] = "canceled";
-  AiPromptProgressStatus$1["Created"] = "created";
-  AiPromptProgressStatus$1["Failed"] = "failed";
-  AiPromptProgressStatus$1["Finished"] = "finished";
-  AiPromptProgressStatus$1["InProgress"] = "inProgress";
-  return AiPromptProgressStatus$1;
-}({});
-var AiPromptType = /* @__PURE__ */ function(AiPromptType$1) {
-  AiPromptType$1["AgentGuidance"] = "agentGuidance";
-  AiPromptType$1["AiConversation"] = "aiConversation";
-  AiPromptType$1["CodeIntelligence"] = "codeIntelligence";
-  AiPromptType$1["GongIssueIntake"] = "gongIssueIntake";
-  AiPromptType$1["InitiativeUpdates"] = "initiativeUpdates";
-  AiPromptType$1["IntercomIssueIntake"] = "intercomIssueIntake";
-  AiPromptType$1["InternalResearch"] = "internalResearch";
-  AiPromptType$1["MicrosoftTeamsIssueIntake"] = "microsoftTeamsIssueIntake";
-  AiPromptType$1["ProductIntelligence"] = "productIntelligence";
-  AiPromptType$1["ProjectUpdates"] = "projectUpdates";
-  AiPromptType$1["SlackIssueIntake"] = "slackIssueIntake";
-  AiPromptType$1["ZendeskIssueIntake"] = "zendeskIssueIntake";
-  return AiPromptType$1;
-}({});
-var AuthenticationSessionType = /* @__PURE__ */ function(AuthenticationSessionType$1) {
-  AuthenticationSessionType$1["Android"] = "android";
-  AuthenticationSessionType$1["Desktop"] = "desktop";
-  AuthenticationSessionType$1["Ios"] = "ios";
-  AuthenticationSessionType$1["Web"] = "web";
-  return AuthenticationSessionType$1;
-}({});
-var ContextViewType = /* @__PURE__ */ function(ContextViewType$1) {
-  ContextViewType$1["ActiveCycle"] = "activeCycle";
-  ContextViewType$1["ActiveIssues"] = "activeIssues";
-  ContextViewType$1["Backlog"] = "backlog";
-  ContextViewType$1["Triage"] = "triage";
-  ContextViewType$1["UpcomingCycle"] = "upcomingCycle";
-  return ContextViewType$1;
-}({});
-var CustomerStatusType = /* @__PURE__ */ function(CustomerStatusType$1) {
-  CustomerStatusType$1["Active"] = "active";
-  CustomerStatusType$1["Inactive"] = "inactive";
-  return CustomerStatusType$1;
-}({});
-var CustomerVisibilityMode = /* @__PURE__ */ function(CustomerVisibilityMode$1) {
-  CustomerVisibilityMode$1["LinearOnly"] = "LinearOnly";
-  CustomerVisibilityMode$1["SlackMembers"] = "SlackMembers";
-  CustomerVisibilityMode$1["SlackMembersAndGuests"] = "SlackMembersAndGuests";
-  return CustomerVisibilityMode$1;
-}({});
-var CyclePeriod = /* @__PURE__ */ function(CyclePeriod$1) {
-  CyclePeriod$1["After"] = "after";
-  CyclePeriod$1["Before"] = "before";
-  CyclePeriod$1["During"] = "during";
-  return CyclePeriod$1;
-}({});
-var DateResolutionType = /* @__PURE__ */ function(DateResolutionType$1) {
-  DateResolutionType$1["HalfYear"] = "halfYear";
-  DateResolutionType$1["Month"] = "month";
-  DateResolutionType$1["Quarter"] = "quarter";
-  DateResolutionType$1["Year"] = "year";
-  return DateResolutionType$1;
-}({});
-var Day = /* @__PURE__ */ function(Day$1) {
-  Day$1["Friday"] = "Friday";
-  Day$1["Monday"] = "Monday";
-  Day$1["Saturday"] = "Saturday";
-  Day$1["Sunday"] = "Sunday";
-  Day$1["Thursday"] = "Thursday";
-  Day$1["Tuesday"] = "Tuesday";
-  Day$1["Wednesday"] = "Wednesday";
-  return Day$1;
-}({});
-var EmailIntakeAddressType = /* @__PURE__ */ function(EmailIntakeAddressType$1) {
-  EmailIntakeAddressType$1["Asks"] = "asks";
-  EmailIntakeAddressType$1["AsksWeb"] = "asksWeb";
-  EmailIntakeAddressType$1["Team"] = "team";
-  EmailIntakeAddressType$1["Template"] = "template";
-  return EmailIntakeAddressType$1;
-}({});
-var ExternalSyncService = /* @__PURE__ */ function(ExternalSyncService$1) {
-  ExternalSyncService$1["Github"] = "github";
-  ExternalSyncService$1["Jira"] = "jira";
-  ExternalSyncService$1["Slack"] = "slack";
-  return ExternalSyncService$1;
-}({});
-var FacetPageSource = /* @__PURE__ */ function(FacetPageSource$1) {
-  FacetPageSource$1["Feed"] = "feed";
-  FacetPageSource$1["Projects"] = "projects";
-  FacetPageSource$1["TeamIssues"] = "teamIssues";
-  return FacetPageSource$1;
-}({});
-var FeedSummarySchedule = /* @__PURE__ */ function(FeedSummarySchedule$1) {
-  FeedSummarySchedule$1["Daily"] = "daily";
-  FeedSummarySchedule$1["Never"] = "never";
-  FeedSummarySchedule$1["Weekly"] = "weekly";
-  return FeedSummarySchedule$1;
-}({});
-var FrequencyResolutionType = /* @__PURE__ */ function(FrequencyResolutionType$1) {
-  FrequencyResolutionType$1["Daily"] = "daily";
-  FrequencyResolutionType$1["Weekly"] = "weekly";
-  return FrequencyResolutionType$1;
-}({});
-var GitAutomationStates = /* @__PURE__ */ function(GitAutomationStates$1) {
-  GitAutomationStates$1["Draft"] = "draft";
-  GitAutomationStates$1["Merge"] = "merge";
-  GitAutomationStates$1["Mergeable"] = "mergeable";
-  GitAutomationStates$1["Review"] = "review";
-  GitAutomationStates$1["Start"] = "start";
-  return GitAutomationStates$1;
-}({});
-var GitHubRemoveCodeAccessAction = /* @__PURE__ */ function(GitHubRemoveCodeAccessAction$1) {
-  GitHubRemoveCodeAccessAction$1["Done"] = "Done";
-  GitHubRemoveCodeAccessAction$1["InstallBasicApp"] = "InstallBasicApp";
-  return GitHubRemoveCodeAccessAction$1;
-}({});
-var GitLinkKind = /* @__PURE__ */ function(GitLinkKind$1) {
-  GitLinkKind$1["Closes"] = "closes";
-  GitLinkKind$1["Contributes"] = "contributes";
-  GitLinkKind$1["Links"] = "links";
-  return GitLinkKind$1;
-}({});
-var GithubOrgType = /* @__PURE__ */ function(GithubOrgType$1) {
-  GithubOrgType$1["Organization"] = "organization";
-  GithubOrgType$1["User"] = "user";
-  return GithubOrgType$1;
-}({});
-var IdentityProviderType = /* @__PURE__ */ function(IdentityProviderType$1) {
-  IdentityProviderType$1["General"] = "general";
-  IdentityProviderType$1["WebForms"] = "webForms";
-  return IdentityProviderType$1;
-}({});
-var InitiativeStatus = /* @__PURE__ */ function(InitiativeStatus$1) {
-  InitiativeStatus$1["Active"] = "Active";
-  InitiativeStatus$1["Completed"] = "Completed";
-  InitiativeStatus$1["Planned"] = "Planned";
-  return InitiativeStatus$1;
-}({});
-var InitiativeTab = /* @__PURE__ */ function(InitiativeTab$1) {
-  InitiativeTab$1["Overview"] = "overview";
-  InitiativeTab$1["Projects"] = "projects";
-  InitiativeTab$1["Updates"] = "updates";
-  return InitiativeTab$1;
-}({});
-var InitiativeUpdateHealthType = /* @__PURE__ */ function(InitiativeUpdateHealthType$1) {
-  InitiativeUpdateHealthType$1["AtRisk"] = "atRisk";
-  InitiativeUpdateHealthType$1["OffTrack"] = "offTrack";
-  InitiativeUpdateHealthType$1["OnTrack"] = "onTrack";
-  return InitiativeUpdateHealthType$1;
-}({});
-var IntegrationService = /* @__PURE__ */ function(IntegrationService$1) {
-  IntegrationService$1["Airbyte"] = "airbyte";
-  IntegrationService$1["AsksWeb"] = "asksWeb";
-  IntegrationService$1["Discord"] = "discord";
-  IntegrationService$1["Email"] = "email";
-  IntegrationService$1["Figma"] = "figma";
-  IntegrationService$1["FigmaPlugin"] = "figmaPlugin";
-  IntegrationService$1["Front"] = "front";
-  IntegrationService$1["Github"] = "github";
-  IntegrationService$1["GithubCodeAccessPersonal"] = "githubCodeAccessPersonal";
-  IntegrationService$1["GithubCommit"] = "githubCommit";
-  IntegrationService$1["GithubEnterpriseServer"] = "githubEnterpriseServer";
-  IntegrationService$1["GithubImport"] = "githubImport";
-  IntegrationService$1["GithubPersonal"] = "githubPersonal";
-  IntegrationService$1["Gitlab"] = "gitlab";
-  IntegrationService$1["Gong"] = "gong";
-  IntegrationService$1["GoogleCalendarPersonal"] = "googleCalendarPersonal";
-  IntegrationService$1["GoogleSheets"] = "googleSheets";
-  IntegrationService$1["Intercom"] = "intercom";
-  IntegrationService$1["Jira"] = "jira";
-  IntegrationService$1["JiraPersonal"] = "jiraPersonal";
-  IntegrationService$1["LaunchDarkly"] = "launchDarkly";
-  IntegrationService$1["LaunchDarklyPersonal"] = "launchDarklyPersonal";
-  IntegrationService$1["Loom"] = "loom";
-  IntegrationService$1["McpServer"] = "mcpServer";
-  IntegrationService$1["McpServerPersonal"] = "mcpServerPersonal";
-  IntegrationService$1["MicrosoftPersonal"] = "microsoftPersonal";
-  IntegrationService$1["MicrosoftTeams"] = "microsoftTeams";
-  IntegrationService$1["MicrosoftTeamsProjectPost"] = "microsoftTeamsProjectPost";
-  IntegrationService$1["Notion"] = "notion";
-  IntegrationService$1["Opsgenie"] = "opsgenie";
-  IntegrationService$1["PagerDuty"] = "pagerDuty";
-  IntegrationService$1["Salesforce"] = "salesforce";
-  IntegrationService$1["Sentry"] = "sentry";
-  IntegrationService$1["Slack"] = "slack";
-  IntegrationService$1["SlackAsks"] = "slackAsks";
-  IntegrationService$1["SlackCustomViewNotifications"] = "slackCustomViewNotifications";
-  IntegrationService$1["SlackInitiativePost"] = "slackInitiativePost";
-  IntegrationService$1["SlackOrgInitiativeUpdatesPost"] = "slackOrgInitiativeUpdatesPost";
-  IntegrationService$1["SlackOrgProjectUpdatesPost"] = "slackOrgProjectUpdatesPost";
-  IntegrationService$1["SlackPersonal"] = "slackPersonal";
-  IntegrationService$1["SlackPost"] = "slackPost";
-  IntegrationService$1["SlackProjectPost"] = "slackProjectPost";
-  IntegrationService$1["SlackProjectUpdatesPost"] = "slackProjectUpdatesPost";
-  IntegrationService$1["Zendesk"] = "zendesk";
-  return IntegrationService$1;
-}({});
-var IssueRelationType = /* @__PURE__ */ function(IssueRelationType$1) {
-  IssueRelationType$1["Blocks"] = "blocks";
-  IssueRelationType$1["Duplicate"] = "duplicate";
-  IssueRelationType$1["Related"] = "related";
-  IssueRelationType$1["Similar"] = "similar";
-  return IssueRelationType$1;
-}({});
-var IssueSharedAccessDisallowedField = /* @__PURE__ */ function(IssueSharedAccessDisallowedField$1) {
-  IssueSharedAccessDisallowedField$1["CycleId"] = "cycleId";
-  IssueSharedAccessDisallowedField$1["ProjectId"] = "projectId";
-  IssueSharedAccessDisallowedField$1["ProjectMilestoneId"] = "projectMilestoneId";
-  IssueSharedAccessDisallowedField$1["TeamId"] = "teamId";
-  return IssueSharedAccessDisallowedField$1;
-}({});
-var IssueSharingPolicy = /* @__PURE__ */ function(IssueSharingPolicy$1) {
-  IssueSharingPolicy$1["AdminsOnly"] = "adminsOnly";
-  IssueSharingPolicy$1["AllMembers"] = "allMembers";
-  IssueSharingPolicy$1["Disabled"] = "disabled";
-  return IssueSharingPolicy$1;
-}({});
-var IssueSuggestionState = /* @__PURE__ */ function(IssueSuggestionState$1) {
-  IssueSuggestionState$1["Accepted"] = "accepted";
-  IssueSuggestionState$1["Active"] = "active";
-  IssueSuggestionState$1["Dismissed"] = "dismissed";
-  IssueSuggestionState$1["Stale"] = "stale";
-  return IssueSuggestionState$1;
-}({});
-var IssueSuggestionType = /* @__PURE__ */ function(IssueSuggestionType$1) {
-  IssueSuggestionType$1["Assignee"] = "assignee";
-  IssueSuggestionType$1["Label"] = "label";
-  IssueSuggestionType$1["Project"] = "project";
-  IssueSuggestionType$1["RelatedIssue"] = "relatedIssue";
-  IssueSuggestionType$1["SimilarIssue"] = "similarIssue";
-  IssueSuggestionType$1["Team"] = "team";
-  return IssueSuggestionType$1;
-}({});
-var NotificationCategory = /* @__PURE__ */ function(NotificationCategory$1) {
-  NotificationCategory$1["AppsAndIntegrations"] = "appsAndIntegrations";
-  NotificationCategory$1["Assignments"] = "assignments";
-  NotificationCategory$1["Billing"] = "billing";
-  NotificationCategory$1["CommentsAndReplies"] = "commentsAndReplies";
-  NotificationCategory$1["Customers"] = "customers";
-  NotificationCategory$1["DocumentChanges"] = "documentChanges";
-  NotificationCategory$1["Feed"] = "feed";
-  NotificationCategory$1["Mentions"] = "mentions";
-  NotificationCategory$1["PostsAndUpdates"] = "postsAndUpdates";
-  NotificationCategory$1["Reactions"] = "reactions";
-  NotificationCategory$1["Reminders"] = "reminders";
-  NotificationCategory$1["Reviews"] = "reviews";
-  NotificationCategory$1["StatusChanges"] = "statusChanges";
-  NotificationCategory$1["Subscriptions"] = "subscriptions";
-  NotificationCategory$1["System"] = "system";
-  NotificationCategory$1["Triage"] = "triage";
-  return NotificationCategory$1;
-}({});
-var NotificationChannel = /* @__PURE__ */ function(NotificationChannel$1) {
-  NotificationChannel$1["Desktop"] = "desktop";
-  NotificationChannel$1["Email"] = "email";
-  NotificationChannel$1["Mobile"] = "mobile";
-  NotificationChannel$1["Slack"] = "slack";
-  return NotificationChannel$1;
-}({});
-var OAuthApplicationDistribution = /* @__PURE__ */ function(OAuthApplicationDistribution$1) {
-  OAuthApplicationDistribution$1["Private"] = "private";
-  OAuthApplicationDistribution$1["Public"] = "public";
-  return OAuthApplicationDistribution$1;
-}({});
-var OAuthClientApprovalStatus = /* @__PURE__ */ function(OAuthClientApprovalStatus$1) {
-  OAuthClientApprovalStatus$1["Approved"] = "approved";
-  OAuthClientApprovalStatus$1["Denied"] = "denied";
-  OAuthClientApprovalStatus$1["Requested"] = "requested";
-  return OAuthClientApprovalStatus$1;
-}({});
-var OrganizationDomainAuthType = /* @__PURE__ */ function(OrganizationDomainAuthType$1) {
-  OrganizationDomainAuthType$1["General"] = "general";
-  OrganizationDomainAuthType$1["Saml"] = "saml";
-  return OrganizationDomainAuthType$1;
-}({});
-var OrganizationInviteStatus = /* @__PURE__ */ function(OrganizationInviteStatus$1) {
-  OrganizationInviteStatus$1["Accepted"] = "accepted";
-  OrganizationInviteStatus$1["Expired"] = "expired";
-  OrganizationInviteStatus$1["Pending"] = "pending";
-  return OrganizationInviteStatus$1;
-}({});
-var OtherNotificationType = /* @__PURE__ */ function(OtherNotificationType$1) {
-  OtherNotificationType$1["CustomerAddedAsOwner"] = "customerAddedAsOwner";
-  OtherNotificationType$1["CustomerNeedCreated"] = "customerNeedCreated";
-  OtherNotificationType$1["CustomerNeedMarkedAsImportant"] = "customerNeedMarkedAsImportant";
-  OtherNotificationType$1["CustomerNeedResolved"] = "customerNeedResolved";
-  OtherNotificationType$1["DocumentCommentMention"] = "documentCommentMention";
-  OtherNotificationType$1["DocumentCommentReaction"] = "documentCommentReaction";
-  OtherNotificationType$1["DocumentContentChange"] = "documentContentChange";
-  OtherNotificationType$1["DocumentDeleted"] = "documentDeleted";
-  OtherNotificationType$1["DocumentMention"] = "documentMention";
-  OtherNotificationType$1["DocumentMoved"] = "documentMoved";
-  OtherNotificationType$1["DocumentNewComment"] = "documentNewComment";
-  OtherNotificationType$1["DocumentReminder"] = "documentReminder";
-  OtherNotificationType$1["DocumentRestored"] = "documentRestored";
-  OtherNotificationType$1["DocumentSubscribed"] = "documentSubscribed";
-  OtherNotificationType$1["DocumentThreadResolved"] = "documentThreadResolved";
-  OtherNotificationType$1["DocumentUnsubscribed"] = "documentUnsubscribed";
-  OtherNotificationType$1["FeedSummaryGenerated"] = "feedSummaryGenerated";
-  OtherNotificationType$1["InitiativeAddedAsOwner"] = "initiativeAddedAsOwner";
-  OtherNotificationType$1["InitiativeCommentMention"] = "initiativeCommentMention";
-  OtherNotificationType$1["InitiativeCommentReaction"] = "initiativeCommentReaction";
-  OtherNotificationType$1["InitiativeDescriptionContentChange"] = "initiativeDescriptionContentChange";
-  OtherNotificationType$1["InitiativeMention"] = "initiativeMention";
-  OtherNotificationType$1["InitiativeNewComment"] = "initiativeNewComment";
-  OtherNotificationType$1["InitiativeReminder"] = "initiativeReminder";
-  OtherNotificationType$1["InitiativeThreadResolved"] = "initiativeThreadResolved";
-  OtherNotificationType$1["InitiativeUpdateCommentMention"] = "initiativeUpdateCommentMention";
-  OtherNotificationType$1["InitiativeUpdateCommentReaction"] = "initiativeUpdateCommentReaction";
-  OtherNotificationType$1["InitiativeUpdateCreated"] = "initiativeUpdateCreated";
-  OtherNotificationType$1["InitiativeUpdateMention"] = "initiativeUpdateMention";
-  OtherNotificationType$1["InitiativeUpdateNewComment"] = "initiativeUpdateNewComment";
-  OtherNotificationType$1["InitiativeUpdatePrompt"] = "initiativeUpdatePrompt";
-  OtherNotificationType$1["InitiativeUpdateReaction"] = "initiativeUpdateReaction";
-  OtherNotificationType$1["IssueAddedToTriage"] = "issueAddedToTriage";
-  OtherNotificationType$1["IssueAddedToView"] = "issueAddedToView";
-  OtherNotificationType$1["IssueBlocking"] = "issueBlocking";
-  OtherNotificationType$1["IssueCreated"] = "issueCreated";
-  OtherNotificationType$1["IssueDue"] = "issueDue";
-  OtherNotificationType$1["IssuePriorityUrgent"] = "issuePriorityUrgent";
-  OtherNotificationType$1["IssueReminder"] = "issueReminder";
-  OtherNotificationType$1["IssueReopened"] = "issueReopened";
-  OtherNotificationType$1["IssueSlaBreached"] = "issueSlaBreached";
-  OtherNotificationType$1["IssueSlaHighRisk"] = "issueSlaHighRisk";
-  OtherNotificationType$1["IssueStatusChangedAll"] = "issueStatusChangedAll";
-  OtherNotificationType$1["IssueSubscribed"] = "issueSubscribed";
-  OtherNotificationType$1["IssueThreadResolved"] = "issueThreadResolved";
-  OtherNotificationType$1["IssueUnblocked"] = "issueUnblocked";
-  OtherNotificationType$1["IssueUnsubscribed"] = "issueUnsubscribed";
-  OtherNotificationType$1["OauthClientApprovalCreated"] = "oauthClientApprovalCreated";
-  OtherNotificationType$1["ProjectAddedAsLead"] = "projectAddedAsLead";
-  OtherNotificationType$1["ProjectAddedAsMember"] = "projectAddedAsMember";
-  OtherNotificationType$1["ProjectCommentMention"] = "projectCommentMention";
-  OtherNotificationType$1["ProjectCommentReaction"] = "projectCommentReaction";
-  OtherNotificationType$1["ProjectDescriptionContentChange"] = "projectDescriptionContentChange";
-  OtherNotificationType$1["ProjectMention"] = "projectMention";
-  OtherNotificationType$1["ProjectMilestoneCommentMention"] = "projectMilestoneCommentMention";
-  OtherNotificationType$1["ProjectMilestoneCommentReaction"] = "projectMilestoneCommentReaction";
-  OtherNotificationType$1["ProjectMilestoneDescriptionContentChange"] = "projectMilestoneDescriptionContentChange";
-  OtherNotificationType$1["ProjectMilestoneMention"] = "projectMilestoneMention";
-  OtherNotificationType$1["ProjectMilestoneNewComment"] = "projectMilestoneNewComment";
-  OtherNotificationType$1["ProjectMilestoneThreadResolved"] = "projectMilestoneThreadResolved";
-  OtherNotificationType$1["ProjectNewComment"] = "projectNewComment";
-  OtherNotificationType$1["ProjectReminder"] = "projectReminder";
-  OtherNotificationType$1["ProjectThreadResolved"] = "projectThreadResolved";
-  OtherNotificationType$1["ProjectUpdateCommentMention"] = "projectUpdateCommentMention";
-  OtherNotificationType$1["ProjectUpdateCommentReaction"] = "projectUpdateCommentReaction";
-  OtherNotificationType$1["ProjectUpdateCreated"] = "projectUpdateCreated";
-  OtherNotificationType$1["ProjectUpdateMention"] = "projectUpdateMention";
-  OtherNotificationType$1["ProjectUpdateNewComment"] = "projectUpdateNewComment";
-  OtherNotificationType$1["ProjectUpdatePrompt"] = "projectUpdatePrompt";
-  OtherNotificationType$1["ProjectUpdateReaction"] = "projectUpdateReaction";
-  OtherNotificationType$1["PullRequestApproved"] = "pullRequestApproved";
-  OtherNotificationType$1["PullRequestChangesRequested"] = "pullRequestChangesRequested";
-  OtherNotificationType$1["PullRequestChecksFailed"] = "pullRequestChecksFailed";
-  OtherNotificationType$1["PullRequestCommentMention"] = "pullRequestCommentMention";
-  OtherNotificationType$1["PullRequestCommented"] = "pullRequestCommented";
-  OtherNotificationType$1["PullRequestMention"] = "pullRequestMention";
-  OtherNotificationType$1["PullRequestRemovedFromMergeQueue"] = "pullRequestRemovedFromMergeQueue";
-  OtherNotificationType$1["PullRequestReviewRequested"] = "pullRequestReviewRequested";
-  OtherNotificationType$1["PullRequestReviewRerequested"] = "pullRequestReviewRerequested";
-  OtherNotificationType$1["System"] = "system";
-  OtherNotificationType$1["TeamUpdateCommentMention"] = "teamUpdateCommentMention";
-  OtherNotificationType$1["TeamUpdateCommentReaction"] = "teamUpdateCommentReaction";
-  OtherNotificationType$1["TeamUpdateCreated"] = "teamUpdateCreated";
-  OtherNotificationType$1["TeamUpdateMention"] = "teamUpdateMention";
-  OtherNotificationType$1["TeamUpdateNewComment"] = "teamUpdateNewComment";
-  OtherNotificationType$1["TeamUpdateReaction"] = "teamUpdateReaction";
-  OtherNotificationType$1["TriageResponsibilityIssueAddedToTriage"] = "triageResponsibilityIssueAddedToTriage";
-  return OtherNotificationType$1;
-}({});
-var PaginationNulls = /* @__PURE__ */ function(PaginationNulls$1) {
-  PaginationNulls$1["First"] = "first";
-  PaginationNulls$1["Last"] = "last";
-  return PaginationNulls$1;
-}({});
-var PaginationOrderBy = /* @__PURE__ */ function(PaginationOrderBy$1) {
-  PaginationOrderBy$1["CreatedAt"] = "createdAt";
-  PaginationOrderBy$1["UpdatedAt"] = "updatedAt";
-  return PaginationOrderBy$1;
-}({});
-var PaginationSortOrder = /* @__PURE__ */ function(PaginationSortOrder$1) {
-  PaginationSortOrder$1["Ascending"] = "Ascending";
-  PaginationSortOrder$1["Descending"] = "Descending";
-  return PaginationSortOrder$1;
-}({});
-var PipelineTab = /* @__PURE__ */ function(PipelineTab$1) {
-  PipelineTab$1["ReleaseNotes"] = "releaseNotes";
-  PipelineTab$1["Releases"] = "releases";
-  return PipelineTab$1;
-}({});
-var PostType = /* @__PURE__ */ function(PostType$1) {
-  PostType$1["Summary"] = "summary";
-  PostType$1["Update"] = "update";
-  return PostType$1;
-}({});
-var ProductIntelligenceScope = /* @__PURE__ */ function(ProductIntelligenceScope$1) {
-  ProductIntelligenceScope$1["None"] = "none";
-  ProductIntelligenceScope$1["Team"] = "team";
-  ProductIntelligenceScope$1["TeamHierarchy"] = "teamHierarchy";
-  ProductIntelligenceScope$1["Workspace"] = "workspace";
-  return ProductIntelligenceScope$1;
-}({});
-var ProjectMilestoneStatus = /* @__PURE__ */ function(ProjectMilestoneStatus$1) {
-  ProjectMilestoneStatus$1["Done"] = "done";
-  ProjectMilestoneStatus$1["Next"] = "next";
-  ProjectMilestoneStatus$1["Overdue"] = "overdue";
-  ProjectMilestoneStatus$1["Unstarted"] = "unstarted";
-  return ProjectMilestoneStatus$1;
-}({});
-var ProjectStatusType = /* @__PURE__ */ function(ProjectStatusType$1) {
-  ProjectStatusType$1["Backlog"] = "backlog";
-  ProjectStatusType$1["Canceled"] = "canceled";
-  ProjectStatusType$1["Completed"] = "completed";
-  ProjectStatusType$1["Paused"] = "paused";
-  ProjectStatusType$1["Planned"] = "planned";
-  ProjectStatusType$1["Started"] = "started";
-  return ProjectStatusType$1;
-}({});
-var ProjectTab = /* @__PURE__ */ function(ProjectTab$1) {
-  ProjectTab$1["Customers"] = "customers";
-  ProjectTab$1["Documents"] = "documents";
-  ProjectTab$1["Issues"] = "issues";
-  ProjectTab$1["Updates"] = "updates";
-  return ProjectTab$1;
-}({});
-var ProjectUpdateHealthType = /* @__PURE__ */ function(ProjectUpdateHealthType$1) {
-  ProjectUpdateHealthType$1["AtRisk"] = "atRisk";
-  ProjectUpdateHealthType$1["OffTrack"] = "offTrack";
-  ProjectUpdateHealthType$1["OnTrack"] = "onTrack";
-  return ProjectUpdateHealthType$1;
-}({});
-var ProjectUpdateReminderFrequency = /* @__PURE__ */ function(ProjectUpdateReminderFrequency$1) {
-  ProjectUpdateReminderFrequency$1["Month"] = "month";
-  ProjectUpdateReminderFrequency$1["Never"] = "never";
-  ProjectUpdateReminderFrequency$1["TwoWeeks"] = "twoWeeks";
-  ProjectUpdateReminderFrequency$1["Week"] = "week";
-  return ProjectUpdateReminderFrequency$1;
-}({});
-var PullRequestCheckPresentation = /* @__PURE__ */ function(PullRequestCheckPresentation$1) {
-  PullRequestCheckPresentation$1["ExternalOnly"] = "externalOnly";
-  PullRequestCheckPresentation$1["JobLogs"] = "jobLogs";
-  PullRequestCheckPresentation$1["Markdown"] = "markdown";
-  PullRequestCheckPresentation$1["RunLogs"] = "runLogs";
-  return PullRequestCheckPresentation$1;
-}({});
-var PullRequestMergeMethod = /* @__PURE__ */ function(PullRequestMergeMethod$1) {
-  PullRequestMergeMethod$1["Merge"] = "MERGE";
-  PullRequestMergeMethod$1["Rebase"] = "REBASE";
-  PullRequestMergeMethod$1["Squash"] = "SQUASH";
-  return PullRequestMergeMethod$1;
-}({});
-var PullRequestReviewTool = /* @__PURE__ */ function(PullRequestReviewTool$1) {
-  PullRequestReviewTool$1["Graphite"] = "graphite";
-  PullRequestReviewTool$1["Source"] = "source";
-  return PullRequestReviewTool$1;
-}({});
-var PullRequestStatus = /* @__PURE__ */ function(PullRequestStatus$1) {
-  PullRequestStatus$1["Approved"] = "approved";
-  PullRequestStatus$1["Closed"] = "closed";
-  PullRequestStatus$1["Draft"] = "draft";
-  PullRequestStatus$1["InReview"] = "inReview";
-  PullRequestStatus$1["Merged"] = "merged";
-  PullRequestStatus$1["Open"] = "open";
-  return PullRequestStatus$1;
-}({});
-var PushSubscriptionType = /* @__PURE__ */ function(PushSubscriptionType$1) {
-  PushSubscriptionType$1["Apple"] = "apple";
-  PushSubscriptionType$1["AppleDevelopment"] = "appleDevelopment";
-  PushSubscriptionType$1["Firebase"] = "firebase";
-  PushSubscriptionType$1["Web"] = "web";
-  return PushSubscriptionType$1;
-}({});
-var ReleaseChannel = /* @__PURE__ */ function(ReleaseChannel$1) {
-  ReleaseChannel$1["Beta"] = "beta";
-  ReleaseChannel$1["Development"] = "development";
-  ReleaseChannel$1["Internal"] = "internal";
-  ReleaseChannel$1["PreRelease"] = "preRelease";
-  ReleaseChannel$1["PrivateBeta"] = "privateBeta";
-  ReleaseChannel$1["Public"] = "public";
-  return ReleaseChannel$1;
-}({});
-var ReleaseNoteGenerationStatus = /* @__PURE__ */ function(ReleaseNoteGenerationStatus$1) {
-  ReleaseNoteGenerationStatus$1["Completed"] = "completed";
-  ReleaseNoteGenerationStatus$1["Pending"] = "pending";
-  return ReleaseNoteGenerationStatus$1;
-}({});
-var ReleasePipelineType = /* @__PURE__ */ function(ReleasePipelineType$1) {
-  ReleasePipelineType$1["Continuous"] = "continuous";
-  ReleasePipelineType$1["Scheduled"] = "scheduled";
-  return ReleasePipelineType$1;
-}({});
-var ReleaseStageType = /* @__PURE__ */ function(ReleaseStageType$1) {
-  ReleaseStageType$1["Canceled"] = "canceled";
-  ReleaseStageType$1["Completed"] = "completed";
-  ReleaseStageType$1["Planned"] = "planned";
-  ReleaseStageType$1["Started"] = "started";
-  return ReleaseStageType$1;
-}({});
-var SLADayCountType = /* @__PURE__ */ function(SLADayCountType$1) {
-  SLADayCountType$1["All"] = "all";
-  SLADayCountType$1["OnlyBusinessDays"] = "onlyBusinessDays";
-  return SLADayCountType$1;
-}({});
-var SemanticSearchResultType = /* @__PURE__ */ function(SemanticSearchResultType$1) {
-  SemanticSearchResultType$1["Document"] = "document";
-  SemanticSearchResultType$1["Initiative"] = "initiative";
-  SemanticSearchResultType$1["Issue"] = "issue";
-  SemanticSearchResultType$1["Project"] = "project";
-  return SemanticSearchResultType$1;
-}({});
-var SendStrategy = /* @__PURE__ */ function(SendStrategy$1) {
-  SendStrategy$1["Desktop"] = "desktop";
-  SendStrategy$1["DesktopAndPush"] = "desktopAndPush";
-  SendStrategy$1["DesktopThenPush"] = "desktopThenPush";
-  SendStrategy$1["Push"] = "push";
-  return SendStrategy$1;
-}({});
-var SlaStatus = /* @__PURE__ */ function(SlaStatus$1) {
-  SlaStatus$1["Breached"] = "Breached";
-  SlaStatus$1["Completed"] = "Completed";
-  SlaStatus$1["Failed"] = "Failed";
-  SlaStatus$1["HighRisk"] = "HighRisk";
-  SlaStatus$1["LowRisk"] = "LowRisk";
-  SlaStatus$1["MediumRisk"] = "MediumRisk";
-  return SlaStatus$1;
-}({});
-var SlackChannelType = /* @__PURE__ */ function(SlackChannelType$1) {
-  SlackChannelType$1["DirectMessage"] = "DirectMessage";
-  SlackChannelType$1["MultiPersonDirectMessage"] = "MultiPersonDirectMessage";
-  SlackChannelType$1["Private"] = "Private";
-  SlackChannelType$1["PrivateGroup"] = "PrivateGroup";
-  SlackChannelType$1["Public"] = "Public";
-  return SlackChannelType$1;
-}({});
-var SummaryGenerationStatus = /* @__PURE__ */ function(SummaryGenerationStatus$1) {
-  SummaryGenerationStatus$1["Completed"] = "completed";
-  SummaryGenerationStatus$1["Failed"] = "failed";
-  SummaryGenerationStatus$1["Pending"] = "pending";
-  return SummaryGenerationStatus$1;
-}({});
-var TeamRetirementSubTeamHandling = /* @__PURE__ */ function(TeamRetirementSubTeamHandling$1) {
-  TeamRetirementSubTeamHandling$1["Retire"] = "retire";
-  TeamRetirementSubTeamHandling$1["Unnest"] = "unnest";
-  return TeamRetirementSubTeamHandling$1;
-}({});
-var TeamRoleType = /* @__PURE__ */ function(TeamRoleType$1) {
-  TeamRoleType$1["Member"] = "member";
-  TeamRoleType$1["Owner"] = "owner";
-  return TeamRoleType$1;
-}({});
-var TeamVisibility = /* @__PURE__ */ function(TeamVisibility$1) {
-  TeamVisibility$1["Private"] = "private";
-  TeamVisibility$1["Protected"] = "protected";
-  TeamVisibility$1["Public"] = "public";
-  return TeamVisibility$1;
-}({});
-var TriageResponsibilityAction = /* @__PURE__ */ function(TriageResponsibilityAction$1) {
-  TriageResponsibilityAction$1["Assign"] = "assign";
-  TriageResponsibilityAction$1["Notify"] = "notify";
-  return TriageResponsibilityAction$1;
-}({});
-var TriageRuleErrorType = /* @__PURE__ */ function(TriageRuleErrorType$1) {
-  TriageRuleErrorType$1["CodingAgentQuotaExceeded"] = "codingAgentQuotaExceeded";
-  TriageRuleErrorType$1["Cycle"] = "cycle";
-  TriageRuleErrorType$1["Default"] = "default";
-  TriageRuleErrorType$1["LabelGroupConflict"] = "labelGroupConflict";
-  return TriageRuleErrorType$1;
-}({});
-var UserContextViewType = /* @__PURE__ */ function(UserContextViewType$1) {
-  UserContextViewType$1["Assigned"] = "assigned";
-  return UserContextViewType$1;
-}({});
-var UserFlagType = /* @__PURE__ */ function(UserFlagType$1) {
-  UserFlagType$1["AgentCodeIntelligencePromoDismissed"] = "agentCodeIntelligencePromoDismissed";
-  UserFlagType$1["AgentCodeIntelligenceSplashAnimationSeen"] = "agentCodeIntelligenceSplashAnimationSeen";
-  UserFlagType$1["AgentExamplesDismissed"] = "agentExamplesDismissed";
-  UserFlagType$1["AgentHomeHeadlineSeen"] = "agentHomeHeadlineSeen";
-  UserFlagType$1["AgentHomePageNotice"] = "agentHomePageNotice";
-  UserFlagType$1["All"] = "all";
-  UserFlagType$1["AnalyticsWelcomeDismissed"] = "analyticsWelcomeDismissed";
-  UserFlagType$1["CanPlaySnake"] = "canPlaySnake";
-  UserFlagType$1["CanPlayTetris"] = "canPlayTetris";
-  UserFlagType$1["CommandMenuClearShortcutTip"] = "commandMenuClearShortcutTip";
-  UserFlagType$1["CompletedOnboarding"] = "completedOnboarding";
-  UserFlagType$1["CycleWelcomeDismissed"] = "cycleWelcomeDismissed";
-  UserFlagType$1["DesktopDownloadToastDismissed"] = "desktopDownloadToastDismissed";
-  UserFlagType$1["DesktopInstalled"] = "desktopInstalled";
-  UserFlagType$1["DesktopTabsOnboardingDismissed"] = "desktopTabsOnboardingDismissed";
-  UserFlagType$1["DueDateShortcutMigration"] = "dueDateShortcutMigration";
-  UserFlagType$1["EditorSlashCommandUsed"] = "editorSlashCommandUsed";
-  UserFlagType$1["EmptyActiveIssuesDismissed"] = "emptyActiveIssuesDismissed";
-  UserFlagType$1["EmptyBacklogDismissed"] = "emptyBacklogDismissed";
-  UserFlagType$1["EmptyCustomViewsDismissed"] = "emptyCustomViewsDismissed";
-  UserFlagType$1["EmptyMyIssuesDismissed"] = "emptyMyIssuesDismissed";
-  UserFlagType$1["EmptyParagraphSlashCommandTip"] = "emptyParagraphSlashCommandTip";
-  UserFlagType$1["FigmaPluginBannerDismissed"] = "figmaPluginBannerDismissed";
-  UserFlagType$1["FigmaPromptDismissed"] = "figmaPromptDismissed";
-  UserFlagType$1["HelpIslandFeatureInsightsDismissed"] = "helpIslandFeatureInsightsDismissed";
-  UserFlagType$1["ImportBannerDismissed"] = "importBannerDismissed";
-  UserFlagType$1["InitiativesBannerDismissed"] = "initiativesBannerDismissed";
-  UserFlagType$1["InsightsHelpDismissed"] = "insightsHelpDismissed";
-  UserFlagType$1["InsightsWelcomeDismissed"] = "insightsWelcomeDismissed";
-  UserFlagType$1["IssueLabelSuggestionUsed"] = "issueLabelSuggestionUsed";
-  UserFlagType$1["IssueMovePromptCompleted"] = "issueMovePromptCompleted";
-  UserFlagType$1["JoinTeamIntroductionDismissed"] = "joinTeamIntroductionDismissed";
-  UserFlagType$1["ListSelectionTip"] = "listSelectionTip";
-  UserFlagType$1["MigrateThemePreference"] = "migrateThemePreference";
-  UserFlagType$1["MilestoneOnboardingIsSeenAndDismissed"] = "milestoneOnboardingIsSeenAndDismissed";
-  UserFlagType$1["ProjectBacklogWelcomeDismissed"] = "projectBacklogWelcomeDismissed";
-  UserFlagType$1["ProjectBoardOnboardingIsSeenAndDismissed"] = "projectBoardOnboardingIsSeenAndDismissed";
-  UserFlagType$1["ProjectUpdatesWelcomeDismissed"] = "projectUpdatesWelcomeDismissed";
-  UserFlagType$1["ProjectWelcomeDismissed"] = "projectWelcomeDismissed";
-  UserFlagType$1["PulseWelcomeDismissed"] = "pulseWelcomeDismissed";
-  UserFlagType$1["RewindBannerDismissed"] = "rewindBannerDismissed";
-  UserFlagType$1["SlackAgentPromoFromCreateNewIssueShown"] = "slackAgentPromoFromCreateNewIssueShown";
-  UserFlagType$1["SlackBotWelcomeMessageShown"] = "slackBotWelcomeMessageShown";
-  UserFlagType$1["SlackCommentReactionTipShown"] = "slackCommentReactionTipShown";
-  UserFlagType$1["SlackProjectChannelsPromoDismissed"] = "slackProjectChannelsPromoDismissed";
-  UserFlagType$1["SlackProjectChannelsPromoShown"] = "slackProjectChannelsPromoShown";
-  UserFlagType$1["TeamsBotWelcomeMessageShown"] = "teamsBotWelcomeMessageShown";
-  UserFlagType$1["TeamsPageIntroductionDismissed"] = "teamsPageIntroductionDismissed";
-  UserFlagType$1["ThreadedCommentsNudgeIsSeen"] = "threadedCommentsNudgeIsSeen";
-  UserFlagType$1["TriageWelcomeDismissed"] = "triageWelcomeDismissed";
-  UserFlagType$1["TryCodexDismissed"] = "tryCodexDismissed";
-  UserFlagType$1["TryCursorDismissed"] = "tryCursorDismissed";
-  UserFlagType$1["TryCyclesDismissed"] = "tryCyclesDismissed";
-  UserFlagType$1["TryGithubDismissed"] = "tryGithubDismissed";
-  UserFlagType$1["TryInvitePeopleDismissed"] = "tryInvitePeopleDismissed";
-  UserFlagType$1["TryRoadmapsDismissed"] = "tryRoadmapsDismissed";
-  UserFlagType$1["TryTriageDismissed"] = "tryTriageDismissed";
-  UserFlagType$1["UpdatedSlackThreadSyncIntegration"] = "updatedSlackThreadSyncIntegration";
-  return UserFlagType$1;
-}({});
-var UserFlagUpdateOperation = /* @__PURE__ */ function(UserFlagUpdateOperation$1) {
-  UserFlagUpdateOperation$1["Clear"] = "clear";
-  UserFlagUpdateOperation$1["Decr"] = "decr";
-  UserFlagUpdateOperation$1["Incr"] = "incr";
-  UserFlagUpdateOperation$1["Lock"] = "lock";
-  return UserFlagUpdateOperation$1;
-}({});
-var UserRoleType = /* @__PURE__ */ function(UserRoleType$1) {
-  UserRoleType$1["Admin"] = "admin";
-  UserRoleType$1["App"] = "app";
-  UserRoleType$1["Guest"] = "guest";
-  UserRoleType$1["Owner"] = "owner";
-  UserRoleType$1["User"] = "user";
-  return UserRoleType$1;
-}({});
-var UserSettingsThemeDeviceType = /* @__PURE__ */ function(UserSettingsThemeDeviceType$1) {
-  UserSettingsThemeDeviceType$1["Desktop"] = "desktop";
-  UserSettingsThemeDeviceType$1["MobileWeb"] = "mobileWeb";
-  return UserSettingsThemeDeviceType$1;
-}({});
-var UserSettingsThemeMode = /* @__PURE__ */ function(UserSettingsThemeMode$1) {
-  UserSettingsThemeMode$1["Dark"] = "dark";
-  UserSettingsThemeMode$1["Light"] = "light";
-  return UserSettingsThemeMode$1;
-}({});
-var UserSettingsThemePreset = /* @__PURE__ */ function(UserSettingsThemePreset$1) {
-  UserSettingsThemePreset$1["ClassicDark"] = "classicDark";
-  UserSettingsThemePreset$1["Custom"] = "custom";
-  UserSettingsThemePreset$1["Dark"] = "dark";
-  UserSettingsThemePreset$1["Light"] = "light";
-  UserSettingsThemePreset$1["MagicBlue"] = "magicBlue";
-  UserSettingsThemePreset$1["PureLight"] = "pureLight";
-  UserSettingsThemePreset$1["System"] = "system";
-  return UserSettingsThemePreset$1;
-}({});
-var ViewPreferencesType = /* @__PURE__ */ function(ViewPreferencesType$1) {
-  ViewPreferencesType$1["Organization"] = "organization";
-  ViewPreferencesType$1["User"] = "user";
-  return ViewPreferencesType$1;
-}({});
-var ViewType = /* @__PURE__ */ function(ViewType$1) {
-  ViewType$1["ActiveIssues"] = "activeIssues";
-  ViewType$1["Agents"] = "agents";
-  ViewType$1["AllIssues"] = "allIssues";
-  ViewType$1["Archive"] = "archive";
-  ViewType$1["Backlog"] = "backlog";
-  ViewType$1["Board"] = "board";
-  ViewType$1["CompletedCycle"] = "completedCycle";
-  ViewType$1["ContinuousPipelineReleases"] = "continuousPipelineReleases";
-  ViewType$1["CreatedReviews"] = "createdReviews";
-  ViewType$1["CustomView"] = "customView";
-  ViewType$1["CustomViews"] = "customViews";
-  ViewType$1["Customer"] = "customer";
-  ViewType$1["Customers"] = "customers";
-  ViewType$1["Cycle"] = "cycle";
-  ViewType$1["Dashboards"] = "dashboards";
-  ViewType$1["EmbeddedCustomerNeeds"] = "embeddedCustomerNeeds";
-  ViewType$1["FeedAll"] = "feedAll";
-  ViewType$1["FeedCreated"] = "feedCreated";
-  ViewType$1["FeedFollowing"] = "feedFollowing";
-  ViewType$1["FeedPopular"] = "feedPopular";
-  ViewType$1["Focus"] = "focus";
-  ViewType$1["Inbox"] = "inbox";
-  ViewType$1["Initiative"] = "initiative";
-  ViewType$1["InitiativeOverview"] = "initiativeOverview";
-  ViewType$1["InitiativeOverviewSubInitiatives"] = "initiativeOverviewSubInitiatives";
-  ViewType$1["Initiatives"] = "initiatives";
-  ViewType$1["InitiativesCompleted"] = "initiativesCompleted";
-  ViewType$1["InitiativesPlanned"] = "initiativesPlanned";
-  ViewType$1["IssueIdentifiers"] = "issueIdentifiers";
-  ViewType$1["Label"] = "label";
-  ViewType$1["MyIssues"] = "myIssues";
-  ViewType$1["MyIssuesActivity"] = "myIssuesActivity";
-  ViewType$1["MyIssuesCreatedByMe"] = "myIssuesCreatedByMe";
-  ViewType$1["MyIssuesSharedWithMe"] = "myIssuesSharedWithMe";
-  ViewType$1["MyIssuesSubscribedTo"] = "myIssuesSubscribedTo";
-  ViewType$1["MyReviews"] = "myReviews";
-  ViewType$1["Project"] = "project";
-  ViewType$1["ProjectCustomerNeeds"] = "projectCustomerNeeds";
-  ViewType$1["ProjectDocuments"] = "projectDocuments";
-  ViewType$1["ProjectLabel"] = "projectLabel";
-  ViewType$1["Projects"] = "projects";
-  ViewType$1["ProjectsAll"] = "projectsAll";
-  ViewType$1["ProjectsBacklog"] = "projectsBacklog";
-  ViewType$1["ProjectsClosed"] = "projectsClosed";
-  ViewType$1["QuickView"] = "quickView";
-  ViewType$1["Release"] = "release";
-  ViewType$1["ReleaseOverviewIssues"] = "releaseOverviewIssues";
-  ViewType$1["ReleasePipelines"] = "releasePipelines";
-  ViewType$1["Reviews"] = "reviews";
-  ViewType$1["Roadmap"] = "roadmap";
-  ViewType$1["RoadmapAll"] = "roadmapAll";
-  ViewType$1["RoadmapBacklog"] = "roadmapBacklog";
-  ViewType$1["RoadmapClosed"] = "roadmapClosed";
-  ViewType$1["Roadmaps"] = "roadmaps";
-  ViewType$1["ScheduledPipelineReleases"] = "scheduledPipelineReleases";
-  ViewType$1["Search"] = "search";
-  ViewType$1["SplitSearch"] = "splitSearch";
-  ViewType$1["SubIssues"] = "subIssues";
-  ViewType$1["Teams"] = "teams";
-  ViewType$1["Triage"] = "triage";
-  ViewType$1["UserProfile"] = "userProfile";
-  ViewType$1["UserProfileCreatedByUser"] = "userProfileCreatedByUser";
-  ViewType$1["WorkspaceMembers"] = "workspaceMembers";
-  return ViewType$1;
-}({});
-var WorkflowTrigger = /* @__PURE__ */ function(WorkflowTrigger$1) {
-  WorkflowTrigger$1["EntityCreated"] = "entityCreated";
-  WorkflowTrigger$1["EntityCreatedOrUpdated"] = "entityCreatedOrUpdated";
-  WorkflowTrigger$1["EntityRemoved"] = "entityRemoved";
-  WorkflowTrigger$1["EntityUnarchived"] = "entityUnarchived";
-  WorkflowTrigger$1["EntityUpdated"] = "entityUpdated";
-  return WorkflowTrigger$1;
-}({});
-var WorkflowTriggerType = /* @__PURE__ */ function(WorkflowTriggerType$1) {
-  WorkflowTriggerType$1["Issue"] = "issue";
-  WorkflowTriggerType$1["Project"] = "project";
-  WorkflowTriggerType$1["Release"] = "release";
-  WorkflowTriggerType$1["Schedule"] = "schedule";
-  return WorkflowTriggerType$1;
-}({});
-var WorkflowType = /* @__PURE__ */ function(WorkflowType$1) {
-  WorkflowType$1["Automation"] = "automation";
-  WorkflowType$1["Release"] = "release";
-  WorkflowType$1["Sla"] = "sla";
-  WorkflowType$1["Triage"] = "triage";
-  WorkflowType$1["TriageAutomation"] = "triageAutomation";
-  WorkflowType$1["ViewSubscription"] = "viewSubscription";
-  return WorkflowType$1;
-}({});
 var TypedDocumentString = class extends String {
   __apiType;
   value;
@@ -92886,7 +90674,74 @@ var LinearClient = class extends LinearSdk {
   }
 };
 
+// src/log.ts
+function logInfo(message, details = {}) {
+  const suffix = Object.entries(details).filter(([, value]) => value !== void 0).map(([key, value]) => `${key}=${value}`).join(", ");
+  console.info(`[linear] ${message}${suffix === "" ? "" : ` (${suffix})`}`);
+}
+function hasValue(value) {
+  return value != null && value !== "";
+}
+
 // src/comment.ts
+var COMMENT_DELTA_QUERY = `
+	query GetyLinearCommentDelta(
+		$after: String
+		$boundary: DateTimeOrDuration!
+		$first: Int!
+	) {
+		comments(
+			after: $after
+			filter: { updatedAt: { gte: $boundary } }
+			first: $first
+			includeArchived: true
+			orderBy: updatedAt
+		) {
+			nodes {
+				id
+				issueId
+				updatedAt
+			}
+			pageInfo {
+				endCursor
+				hasNextPage
+			}
+		}
+	}
+`;
+var ISSUE_COMMENTS_QUERY = `
+	query GetyLinearIssueComments(
+		$issueId: String!
+		$after: String
+		$first: Int!
+	) {
+		issue(id: $issueId) {
+			comments(
+				after: $after
+				first: $first
+				includeArchived: true
+				orderBy: createdAt
+			) {
+				nodes {
+					id
+					issueId
+					parentId
+					body
+					quotedText
+					archivedAt
+					createdAt
+					updatedAt
+					editedAt
+					resolvedAt
+				}
+				pageInfo {
+					endCursor
+					hasNextPage
+				}
+			}
+		}
+	}
+`;
 async function changedCommentIssues(client, state, signal, options) {
   const issueIds = /* @__PURE__ */ new Set();
   const boundary = commentBoundary(state, options);
@@ -92894,19 +90749,28 @@ async function changedCommentIssues(client, state, signal, options) {
   let maxUpdatedAt = state.comment_delta_max_updated_at;
   let commentCount = 0;
   let hasNextPage = true;
+  logInfo("comment delta started", {
+    boundary,
+    resume_after: after != null,
+    page_size: options.commentDeltaPageSize,
+    max_comments: options.maxCommentDeltasPerPoll
+  });
   while (hasNextPage && commentCount < options.maxCommentDeltasPerPoll) {
     signal.throwIfAborted();
     const first = Math.min(
       options.commentDeltaPageSize,
       options.maxCommentDeltasPerPoll - commentCount
     );
-    const connection = await client.comments({
-      after,
-      filter: { updatedAt: { gte: boundary } },
-      first,
-      includeArchived: true,
-      orderBy: _generated_documents_exports.PaginationOrderBy.UpdatedAt
+    logInfo("fetching comment delta page", {
+      after: after == null ? "no" : "yes",
+      first
     });
+    const response = await client.client.rawRequest(COMMENT_DELTA_QUERY, {
+      after,
+      boundary,
+      first
+    });
+    const connection = response.data?.comments ?? emptyCommentConnection();
     for (const comment of connection.nodes) {
       if (comment.issueId != null) {
         issueIds.add(comment.issueId);
@@ -92916,10 +90780,21 @@ async function changedCommentIssues(client, state, signal, options) {
     commentCount += connection.nodes.length;
     after = connection.pageInfo.endCursor ?? void 0;
     hasNextPage = connection.pageInfo.hasNextPage && after != null;
+    logInfo("comment delta page processed", {
+      comments: connection.nodes.length,
+      total_comments: commentCount,
+      affected_issues: issueIds.size,
+      has_next_page: hasNextPage
+    });
     if (connection.nodes.length === 0) {
       break;
     }
   }
+  logInfo("comment delta finished", {
+    comments: commentCount,
+    affected_issues: issueIds.size,
+    hit_limit: hasNextPage
+  });
   return {
     issueIds,
     commentCount,
@@ -92929,21 +90804,32 @@ async function changedCommentIssues(client, state, signal, options) {
     hitLimit: hasNextPage
   };
 }
-async function fetchIssueComments(issue, signal, options) {
-  const comments = [];
-  let after;
-  let hasNextPage = true;
+async function fetchIssueComments(issue, client, signal, options) {
+  const comments = [...issue.comments?.nodes ?? []];
+  let after = issue.comments?.pageInfo.endCursor ?? void 0;
+  let hasNextPage = issue.comments?.pageInfo.hasNextPage === true && after != null;
+  let pageCount = issue.comments == null ? 0 : 1;
   while (hasNextPage) {
     signal.throwIfAborted();
-    const connection = await issue.comments({
+    const response = await client.client.rawRequest(ISSUE_COMMENTS_QUERY, {
       after,
       first: options.issueCommentPageSize,
-      includeArchived: true,
-      orderBy: _generated_documents_exports.PaginationOrderBy.CreatedAt
+      issueId: issue.id
     });
+    const connection = response.data?.issue?.comments ?? emptyCommentConnection();
+    pageCount += 1;
     comments.push(...connection.nodes);
     after = connection.pageInfo.endCursor ?? void 0;
     hasNextPage = connection.pageInfo.hasNextPage && after != null;
+    if (hasNextPage || pageCount > 1) {
+      logInfo("issue comments page processed", {
+        issue: issue.identifier,
+        pages: pageCount,
+        page_comments: connection.nodes.length,
+        total_comments: comments.length,
+        has_next_page: hasNextPage
+      });
+    }
     if (connection.nodes.length === 0) {
       break;
     }
@@ -93025,7 +90911,7 @@ function commentBoundary(state, options) {
 function renderCommentBlock(comment, childrenByParentId, depth) {
   const headingLevel = Math.min(3 + depth, 6);
   const title = depth === 0 ? "Comment" : "Reply";
-  const body = markdownImagesToLinks(comment.body.trim());
+  const body = markdownImagesToLinks((comment.body ?? "").trim());
   const lines = [
     `${"#".repeat(headingLevel)} ${title}`,
     "",
@@ -93196,7 +91082,13 @@ function isEscaped(value, index) {
   return slashCount % 2 === 1;
 }
 function dateToIso(value) {
-  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    return Number.isNaN(new Date(value).getTime()) ? null : value;
+  }
+  return null;
 }
 function maxIsoDate(a, b) {
   if (a == null) {
@@ -93207,10 +91099,138 @@ function maxIsoDate(a, b) {
   }
   return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
+function emptyCommentConnection() {
+  return {
+    nodes: [],
+    pageInfo: {
+      hasNextPage: false
+    }
+  };
+}
 
 // src/issue.ts
 import { del, upsert } from "@gety-ai/connector-sdk";
 var DOC_TYPE = "linear:issue";
+var ISSUE_FIELDS = `
+	id
+	identifier
+	title
+	description
+	url
+	number
+	priority
+	priorityLabel
+	createdAt
+	updatedAt
+	archivedAt
+	trashed
+	state {
+		name
+	}
+	team {
+		name
+		key
+	}
+	assignee {
+		displayName
+		name
+	}
+	project {
+		name
+	}
+`;
+var COMMENT_FIELDS = `
+	id
+	issueId
+	parentId
+	body
+	quotedText
+	archivedAt
+	createdAt
+	updatedAt
+	editedAt
+	resolvedAt
+`;
+var ISSUE_PAGE_QUERY = `
+	query GetyLinearIssues(
+		$after: String
+		$filter: IssueFilter
+		$first: Int!
+		$includeComments: Boolean!
+		$commentFirst: Int!
+		$sort: [IssueSortInput!]
+	) {
+		issues(
+			after: $after
+			filter: $filter
+			first: $first
+			includeArchived: true
+			sort: $sort
+		) {
+			nodes {
+				${ISSUE_FIELDS}
+				comments(
+					first: $commentFirst
+					includeArchived: true
+					orderBy: createdAt
+				) @include(if: $includeComments) {
+					nodes {
+						${COMMENT_FIELDS}
+					}
+					pageInfo {
+						endCursor
+						hasNextPage
+					}
+				}
+			}
+			pageInfo {
+				endCursor
+				hasNextPage
+			}
+		}
+	}
+`;
+var ISSUE_QUERY = `
+	query GetyLinearIssue(
+		$id: String!
+		$includeComments: Boolean!
+		$commentFirst: Int!
+	) {
+		issue(id: $id) {
+			${ISSUE_FIELDS}
+			comments(
+				first: $commentFirst
+				includeArchived: true
+				orderBy: createdAt
+			) @include(if: $includeComments) {
+				nodes {
+					${COMMENT_FIELDS}
+				}
+				pageInfo {
+					endCursor
+					hasNextPage
+				}
+			}
+		}
+	}
+`;
+async function fetchIssuePage(client, variables, includeComments, commentFirst) {
+  const response = await client.client.rawRequest(ISSUE_PAGE_QUERY, {
+    ...variables,
+    commentFirst,
+    includeComments,
+    sort: [{ updatedAt: { order: "Ascending" } }]
+  });
+  return response.data?.issues ?? emptyIssueConnection();
+}
+async function fetchIssueById(client, id, includeComments, commentFirst) {
+  const response = await client.client.rawRequest(ISSUE_QUERY, {
+    commentFirst,
+    id,
+    includeComments
+  });
+  return response.data?.issue ?? null;
+}
 function issueDocId(issue) {
   return `linear:issue:${issue.id}`;
 }
@@ -93220,11 +91240,11 @@ function issueIsRemoved(issue) {
 function issueUpdatedAt(issue) {
   return dateToIso2(issue.updatedAt);
 }
-async function buildIssueUpdate(issue, comments, options) {
+function buildIssueUpdate(issue, comments, options) {
   if (issueIsRemoved(issue)) {
     return del(issueDocId(issue));
   }
-  const details = await issueDetails(issue);
+  const details = issueDetails(issue);
   const issueUpdatedAt2 = dateToIso2(issue.updatedAt) ?? (/* @__PURE__ */ new Date()).toISOString();
   const commentsUpdatedAt = options.renderComments ? latestCommentUpdatedAt(comments) : void 0;
   const docUpdatedAt = maxIsoDate2(issueUpdatedAt2, commentsUpdatedAt) ?? issueUpdatedAt2;
@@ -93242,8 +91262,8 @@ async function buildIssueUpdate(issue, comments, options) {
       issue_id: issue.id,
       identifier: issue.identifier,
       number: issue.number,
-      priority: issue.priority,
-      priority_label: issue.priorityLabel,
+      priority: issue.priority ?? void 0,
+      priority_label: issue.priorityLabel ?? void 0,
       state: details.stateName ?? void 0,
       team: details.teamName ?? void 0,
       team_key: details.teamKey ?? void 0,
@@ -93265,7 +91285,13 @@ function issueDateBoundary(value, options) {
   ).toISOString();
 }
 function dateToIso2(value) {
-  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    return Number.isNaN(new Date(value).getTime()) ? null : value;
+  }
+  return null;
 }
 function maxIsoDate2(a, b) {
   if (a == null) {
@@ -93276,23 +91302,14 @@ function maxIsoDate2(a, b) {
   }
   return new Date(b).getTime() > new Date(a).getTime() ? b : a;
 }
-async function issueDetails(issue) {
-  const [assignee, project, state, team] = await Promise.all([
-    resolveRelation(issue.assignee),
-    resolveRelation(issue.project),
-    resolveRelation(issue.state),
-    resolveRelation(issue.team)
-  ]);
+function issueDetails(issue) {
   return {
-    assigneeName: assignee?.displayName ?? assignee?.name ?? null,
-    projectName: project?.name ?? null,
-    stateName: state?.name ?? null,
-    teamName: team?.name ?? null,
-    teamKey: team?.key ?? null
+    assigneeName: issue.assignee?.displayName ?? issue.assignee?.name ?? null,
+    projectName: issue.project?.name ?? null,
+    stateName: issue.state?.name ?? null,
+    teamName: issue.team?.name ?? null,
+    teamKey: issue.team?.key ?? null
   };
-}
-async function resolveRelation(relation) {
-  return relation == null ? null : await relation;
 }
 function renderIssueMarkdown(issue, details, comments, options) {
   const description = issue.description?.trim();
@@ -93329,6 +91346,14 @@ function formatTeam(details) {
   }
   return details.teamName ?? details.teamKey;
 }
+function emptyIssueConnection() {
+  return {
+    nodes: [],
+    pageInfo: {
+      hasNextPage: false
+    }
+  };
+}
 
 // src/index.ts
 var DEFAULT_SYNC_OPTIONS = {
@@ -93350,6 +91375,16 @@ var LinearConnector = class extends Connector {
   async *poll() {
     const previousState = this.lastState ?? {};
     const rebuildAllIssues = this.shouldRebuildAllIssues(previousState);
+    logInfo("poll started", {
+      index_comments: this.indexComments,
+      rebuild_all_issues: rebuildAllIssues,
+      has_issue_cursor: hasValue(
+        previousState.last_issue_updated_at ?? previousState.last_updated_at
+      ),
+      has_comment_cursor: hasValue(
+        previousState.last_comment_updated_at ?? previousState.comment_delta_boundary ?? previousState.comment_delta_after
+      )
+    });
     const issueResult = await this.pollIssues(previousState, rebuildAllIssues);
     const commentDelta = this.indexComments ? await changedCommentIssues(
       this.client,
@@ -93357,11 +91392,23 @@ var LinearConnector = class extends Connector {
       this.signal,
       this.syncOptions
     ) : emptyCommentDelta(previousState);
+    if (!this.indexComments) {
+      logInfo("comment sync skipped", {
+        reason: "index_comments_disabled"
+      });
+    }
     const rebuiltFromComments = await this.rebuildCommentIssues(
       commentDelta.issueIds,
       issueResult.touchedIssueIds
     );
     const updates = [...issueResult.updates, ...rebuiltFromComments.updates];
+    logInfo("poll finished", {
+      issue_updates: issueResult.updates.length,
+      scanned_comments: commentDelta.commentCount,
+      rebuilt_issues: rebuiltFromComments.issueCount,
+      total_updates: updates.length,
+      hit_limit: issueResult.hitLimit || commentDelta.hitLimit
+    });
     yield {
       updates,
       state: {
@@ -93402,43 +91449,72 @@ var LinearConnector = class extends Connector {
     let issueCount = 0;
     let lastIssueUpdatedAt = previousState.last_issue_updated_at ?? previousState.last_updated_at;
     let hasNextPage = true;
+    logInfo("issue sync started", {
+      mode: rebuildAllIssues ? "full" : "incremental",
+      page_size: this.syncOptions.issuePageSize,
+      max_issues: this.syncOptions.maxIssuesPerPoll,
+      has_filter: filter != null
+    });
     while (hasNextPage && issueCount < this.syncOptions.maxIssuesPerPoll) {
       this.signal.throwIfAborted();
       const first = Math.min(
         this.syncOptions.issuePageSize,
         this.syncOptions.maxIssuesPerPoll - issueCount
       );
-      const connection = await this.client.issues({
-        after,
-        filter,
-        first,
-        includeArchived: true,
-        sort: {
-          updatedAt: {
-            order: _generated_documents_exports.PaginationSortOrder.Ascending
-          }
-        }
+      logInfo("fetching issue page", {
+        after: after == null ? "no" : "yes",
+        first
       });
+      const connection = await fetchIssuePage(
+        this.client,
+        { after, filter, first },
+        this.indexComments,
+        this.syncOptions.issueCommentPageSize
+      );
+      logInfo("issue page fetched", {
+        issues: connection.nodes.length,
+        has_next_page: connection.pageInfo.hasNextPage
+      });
+      const pageStartedAt = performance.now();
+      let extraCommentPageIssueCount = 0;
       for (const issue of connection.nodes) {
         touchedIssueIds.add(issue.id);
         const updatedAt = issueUpdatedAt(issue);
         if (updatedAt != null) {
           lastIssueUpdatedAt = maxIsoDate2(lastIssueUpdatedAt, updatedAt);
         }
-        const comments = this.indexComments && !issueIsRemoved(issue) ? await fetchIssueComments(issue, this.signal, this.syncOptions) : [];
-        updates.push(
-          await buildIssueUpdate(issue, comments, {
-            renderComments: this.indexComments
-          })
-        );
+        const comments = this.indexComments && !issueIsRemoved(issue) ? await fetchIssueComments(
+          issue,
+          this.client,
+          this.signal,
+          this.syncOptions
+        ) : [];
+        if (issue.comments?.pageInfo.hasNextPage === true) {
+          extraCommentPageIssueCount += 1;
+        }
+        updates.push(buildIssueUpdate(issue, comments, {
+          renderComments: this.indexComments
+        }));
       }
       issueCount += connection.nodes.length;
       after = connection.pageInfo.endCursor ?? void 0;
       hasNextPage = connection.pageInfo.hasNextPage && after != null;
+      logInfo("issue page processed", {
+        total_issues: issueCount,
+        total_updates: updates.length,
+        page_ms: Math.round(performance.now() - pageStartedAt),
+        extra_comment_page_issues: extraCommentPageIssueCount,
+        has_next_page: hasNextPage
+      });
       if (connection.nodes.length === 0) {
         break;
       }
     }
+    logInfo("issue sync finished", {
+      issues: issueCount,
+      updates: updates.length,
+      hit_limit: hasNextPage
+    });
     return {
       updates,
       touchedIssueIds,
@@ -93450,19 +91526,44 @@ var LinearConnector = class extends Connector {
   async rebuildCommentIssues(issueIds, alreadyTouched) {
     const updates = [];
     let issueCount = 0;
+    let skippedIssueCount = 0;
+    if (issueIds.size > 0) {
+      logInfo("comment issue rebuild started", {
+        affected_issues: issueIds.size,
+        already_touched_issues: alreadyTouched.size
+      });
+    }
     for (const issueId of issueIds) {
       if (alreadyTouched.has(issueId)) {
+        skippedIssueCount += 1;
         continue;
       }
       this.signal.throwIfAborted();
-      const issue = await this.client.issue(issueId);
-      const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(issue, this.signal, this.syncOptions);
-      updates.push(
-        await buildIssueUpdate(issue, comments, {
-          renderComments: this.indexComments
-        })
+      const issue = await fetchIssueById(
+        this.client,
+        issueId,
+        this.indexComments,
+        this.syncOptions.issueCommentPageSize
       );
+      if (issue == null) {
+        continue;
+      }
+      const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(
+        issue,
+        this.client,
+        this.signal,
+        this.syncOptions
+      );
+      updates.push(buildIssueUpdate(issue, comments, {
+        renderComments: this.indexComments
+      }));
       issueCount += 1;
+    }
+    if (issueIds.size > 0) {
+      logInfo("comment issue rebuild finished", {
+        rebuilt_issues: issueCount,
+        skipped_issues: skippedIssueCount
+      });
     }
     return { updates, issueCount };
   }

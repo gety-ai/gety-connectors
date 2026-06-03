@@ -1,23 +1,43 @@
 {
-  "imports": {
-    "@gety-ai/connector-sdk": "./dev/gety-connector-sdk/mod.ts",
-    "esbuild": "npm:esbuild@^0.24.2",
-    "@luca/esbuild-deno-loader": "jsr:@luca/esbuild-deno-loader@^0.11.1"
-  },
-  "tasks": {
-    "build": "deno run -A scripts/build.ts",
-    "dev": "deno run -A scripts/build.ts --watch",
-    "check": "deno check src/index.ts scripts/build.ts scripts/setup.ts",
-    "setup": "deno run -A scripts/setup.ts"
-  },
-  "fmt": {
-    "exclude": [
-      "dist/"
-    ]
-  },
-  "lint": {
-    "exclude": [
-      "dist/"
-    ]
-  }
+	"imports": {
+		"@gety-ai/connector-sdk": "./dev/gety-connector-sdk/mod.ts",
+		"esbuild": "npm:esbuild@^0.24.2",
+		"@luca/esbuild-deno-loader": "jsr:@luca/esbuild-deno-loader@^0.11.1"
+	},
+	"tasks": {
+		"build": "deno run -A scripts/build.ts",
+		"dev": "deno run -A scripts/build.ts --watch",
+		"check": "deno check src/index.ts scripts/build.ts scripts/setup.ts dev/gety-connector-sdk/mod.ts",
+		"setup": "deno run -A scripts/setup.ts",
+		"fix": "deno task fmt && deno task lint:fix",
+		"fmt": "deno fmt",
+		"fmt:check": "deno fmt --check",
+		"lint": "deno lint",
+		"lint:fix": "deno lint --fix",
+		"verify": "deno task fix && deno task check && deno task build"
+	},
+	"fmt": {
+		"useTabs": true,
+		"indentWidth": 2,
+		"singleQuote": true,
+		"lineWidth": 80,
+		"exclude": [
+			"dist/"
+		]
+	},
+	"lint": {
+		"include": [
+			"src/",
+			"scripts/",
+			"dev/"
+		],
+		"exclude": [
+			"dist/"
+		],
+		"rules": {
+			"tags": [
+				"recommended"
+			]
+		}
+	}
 }

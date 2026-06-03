@@ -14,6 +14,7 @@ import {
 	type User,
 	type WorkflowState,
 } from '@linear/sdk';
+import type { ManifestConfig } from './gen/manifest.d.ts';
 
 type LinearState = {
 	schema_version?: 1;
@@ -34,22 +35,10 @@ type IssueDetails = {
 
 type IssuesQueryVariables = NonNullable<Parameters<LinearClient['issues']>[0]>;
 
-const API_KEY_CONFIG_ID = 'api_key';
 const DOC_TYPE = 'linear:issue';
 const ISSUE_PAGE_SIZE = 50;
 const MAX_ISSUES_PER_POLL = 500;
 const INCREMENTAL_OVERLAP_MS = 1000;
-
-function readConfigString(
-	config: Record<string, unknown>,
-	field: string,
-): string {
-	const value = config[field];
-	if (typeof value !== 'string' || value.trim() === '') {
-		throw new Error(`Linear connector requires config field "${field}".`);
-	}
-	return value.trim();
-}
 
 function readState(value: unknown): LinearState {
 	if (value === null || typeof value !== 'object') {
@@ -217,10 +206,15 @@ function formatTeam(details: IssueDetails): string | null {
 	return details.teamName ?? details.teamKey;
 }
 
-export default class LinearConnector extends Connector {
+export default class LinearConnector
+	extends Connector<ManifestConfig, LinearState> {
+	private client!: LinearClient;
+
+	override onload(): void {
+		this.client = new LinearClient({ apiKey: this.config.api_key.trim() });
+	}
+
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const apiKey = readConfigString(this.config, API_KEY_CONFIG_ID);
-		const client = new LinearClient({ apiKey });
 		const previousState = readState(this.lastState);
 		const filter = buildIssueFilter(previousState);
 		const updates: DocUpdate[] = [];
@@ -234,7 +228,7 @@ export default class LinearConnector extends Connector {
 			this.signal.throwIfAborted();
 
 			const first = Math.min(ISSUE_PAGE_SIZE, MAX_ISSUES_PER_POLL - issueCount);
-			const connection = await client.issues({
+			const connection = await this.client.issues({
 				after,
 				filter,
 				first,

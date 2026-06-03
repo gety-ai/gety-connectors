@@ -92889,18 +92889,10 @@ var LinearClient = class extends LinearSdk {
 };
 
 // src/index.ts
-var API_KEY_CONFIG_ID = "api_key";
 var DOC_TYPE = "linear:issue";
 var ISSUE_PAGE_SIZE = 50;
 var MAX_ISSUES_PER_POLL = 500;
 var INCREMENTAL_OVERLAP_MS = 1e3;
-function readConfigString(config, field) {
-  const value = config[field];
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Linear connector requires config field "${field}".`);
-  }
-  return value.trim();
-}
 function readState(value) {
   if (value === null || typeof value !== "object") {
     return {};
@@ -93040,9 +93032,11 @@ function formatTeam(details) {
   return details.teamName ?? details.teamKey;
 }
 var LinearConnector = class extends Connector {
+  client;
+  onload() {
+    this.client = new LinearClient({ apiKey: this.config.api_key.trim() });
+  }
   async *poll() {
-    const apiKey = readConfigString(this.config, API_KEY_CONFIG_ID);
-    const client = new LinearClient({ apiKey });
     const previousState = readState(this.lastState);
     const filter = buildIssueFilter(previousState);
     const updates = [];
@@ -93053,7 +93047,7 @@ var LinearConnector = class extends Connector {
     while (hasNextPage && issueCount < MAX_ISSUES_PER_POLL) {
       this.signal.throwIfAborted();
       const first = Math.min(ISSUE_PAGE_SIZE, MAX_ISSUES_PER_POLL - issueCount);
-      const connection = await client.issues({
+      const connection = await this.client.issues({
         after,
         filter,
         first,

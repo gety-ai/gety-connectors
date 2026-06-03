@@ -1,0 +1,29 @@
+{
+  "id": "linear",
+  "name": "Linear",
+  "version": "0.1.0",
+  "min_app_version": "0.5.1",
+  "entry": "dist/main.js",
+  "description": "Indexes Linear issues as searchable markdown documents.",
+  "author": {
+    "name": "Gety"
+  },
+  "schedule": {
+    "interval": 3600
+  },
+  "config": {
+    "fields": [
+      {
+        "id": "api_key",
+        "title": "Linear API key",
+        "type": "password",
+        "description": "Create a personal API key in Linear settings.",
+        "required": true
+      }
+    ]
+  },
+  "doc_link": {
+    "kind": "url",
+    "field": "url"
+  }
+}

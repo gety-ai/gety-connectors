@@ -12,6 +12,8 @@ documents that link to <https://gety.ai/>.
 - `dist/main.js.map` is committed to make debugging the bundled entry easier.
 - `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
   and the build script do not require the npm SDK to be installed.
+- `src/gen/manifest.d.ts` is generated from `manifest.json` by
+  `deno task generate`, `deno task check`, or `deno task build`.
 
 ## Build
 

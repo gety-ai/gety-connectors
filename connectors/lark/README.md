@@ -1,5 +1,3 @@
-Clone 后跑 `deno task setup`。
-
 # Gety Sample Connector
 
 This is a minimal runnable Gety custom connector. It emits a small set of fixed
@@ -18,12 +16,16 @@ documents that link to <https://gety.ai/>.
 ## Build
 
 ```bash
-deno task check
+deno task verify
 deno task build
 ```
 
 The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
 runtime through its import map.
+
+`deno task verify` formats code, applies safe lint fixes, runs type checking,
+then builds. `deno task build` only regenerates `dist/main.js` and
+`dist/main.js.map` for fast local iteration.
 
 ## Install In Gety
 

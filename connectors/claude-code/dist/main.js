@@ -2,16 +2,9 @@
 import { Connector, upsert } from "@gety-ai/connector-sdk";
 var GETY_URL = "https://gety.ai/";
 var DOC_UPDATED_AT = "2026-05-12T00:00:00Z";
-function readRunCount(state) {
-  if (state === null || typeof state !== "object") {
-    return 0;
-  }
-  const maybeState = state;
-  return typeof maybeState.run_count === "number" ? maybeState.run_count : 0;
-}
 var GetySampleConnector = class extends Connector {
   async *poll() {
-    const nextRunCount = readRunCount(this.lastState) + 1;
+    const nextRunCount = (this.lastState?.run_count ?? 0) + 1;
     yield {
       updates: [
         upsert({

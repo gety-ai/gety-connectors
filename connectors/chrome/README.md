@@ -1,94 +1,86 @@
-# Gety Sample Connector
+# Google Chrome Connector for Gety
 
-This is a minimal runnable Gety custom connector. It emits a small set of fixed
-documents that link to <https://gety.ai/>.
+Indexes a local Google Chrome profile into Gety:
 
-## Files
+- **Bookmarks** — from the profile's `Bookmarks` JSON file, with folder
+  breadcrumbs (`Bookmarks bar / design`) as searchable context.
+- **Browsing history** — from the profile's `History` SQLite database (`urls`
+  table), with a configurable scope.
 
-- `manifest.json` declares the connector metadata and uses `dist/main.js` as the
-  Gety runtime entry.
-- `src/index.ts` contains the connector source code.
-- `dist/main.js` is the committed build output loaded by Gety.
-- `dist/main.js.map` is committed to make debugging the bundled entry easier.
-- `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
-  and the build script do not require the npm SDK to be installed.
-- `src/gen/manifest.d.ts` is generated from `manifest.json` by
-  `deno task generate`, `deno task check`, or `deno task build`.
+Each document links back to the page URL (`doc_link → metadata.url`), so opening
+a result launches it in the browser. Chrome does not store page body text, so
+documents are searchable by **title, URL, and bookmark folder** — not full page
+content.
+
+## Documents
+
+| Source   | `doc_type`        | `id`                         | `doc_updated_at`             | Link           |
+| -------- | ----------------- | ---------------------------- | ---------------------------- | -------------- |
+| Bookmark | `chrome:bookmark` | `chrome:bookmark:<guid>`     | `date_modified`/`date_added` | `metadata.url` |
+| History  | `chrome:history`  | `chrome:history:<sha1(url)>` | `last_visit_time`            | `metadata.url` |
+
+Timestamps are converted from Chrome's WebKit epoch (microseconds since
+1601-01-01) to RFC 3339. Non-`http(s)` URLs (e.g. `chrome://`) get no link.
+
+## Configuration
+
+| Field                  | Type     | Default  | Notes                                                 |
+| ---------------------- | -------- | -------- | ----------------------------------------------------- |
+| `index_bookmarks`      | checkbox | `true`   | Index the Bookmarks file.                             |
+| `index_history`        | checkbox | `true`   | Index the History database.                           |
+| `history_range`        | dropdown | required | `7d` · `30d` · `90d` · `365d` · `all` — how far back. |
+| `history_skip_non_web` | checkbox | `true`   | Skip non-`http(s)` history URLs.                      |
+
+The Chrome **Default** profile directory is detected from the host OS — there is
+no profile setting:
+
+| OS      | Profile directory                                     |
+| ------- | ----------------------------------------------------- |
+| Linux   | `~/.config/google-chrome/Default`                     |
+| macOS   | `~/Library/Application Support/Google/Chrome/Default` |
+| Windows | `%LOCALAPPDATA%\Google\Chrome\User Data\Default`      |
+
+`history_range` indexes only pages whose last visit falls within the window
+(`all` removes the window). Pages never actually loaded are skipped.
+
+## Sync behavior
+
+- **Incremental history** via a `last_visit_time` high-water-mark cursor: each
+  poll re-emits only pages visited since the last poll.
+- **Bookmarks** are re-scanned in full each poll (small) and upserted
+  idempotently.
+- **Deletes stay in sync**: the connector remembers indexed ids in state and
+  emits `del()` for bookmarks/history that disappear or fall out of scope.
+
+Chrome keeps the live `History` DB locked and may hold recent writes in a WAL,
+so each poll copies `History` (+ `-wal`/`-shm`) to a temp dir and reads the
+copy.
 
 ## Build
 
 ```bash
-deno task verify
-deno task build
+deno task verify   # fmt + lint + type-check + test + build
+deno task build    # just rebuild dist/main.js
 ```
 
-The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
-runtime through its import map.
+`src/index.ts` is the source; `dist/main.js` is the committed entry Gety loads.
+After editing source, rebuild and use **Restart** in Gety.
 
-`deno task verify` formats code, applies safe lint fixes, runs type checking,
-then builds. `deno task build` only regenerates `dist/main.js` and
-`dist/main.js.map` for fast local iteration.
-
-## Test
+## Local runner
 
 ```bash
-deno task test
-deno task verify
-```
-
-Unit tests use Deno's built-in test runner and cover stable connector behavior.
-They do not require network access.
-
-## Live Runner
-
-```bash
-cp .env.example .env
+cp .env.example .env       # sets GETY_CONFIG_HISTORY_RANGE (required)
 deno task runner -- --reset-state
+deno task runner -- --polls 2
 ```
 
-`dev/runner.ts` is a generic local runner for the Gety connector runtime
-contract. It is not sample-specific: it reads `manifest.json`, imports the
-manifest `entry` (`dist/main.js` by default), builds config values from `.env`,
-injects `config`, `lastState`, and `signal`, then runs `onLoad()` and `poll()`.
-Each poll cycle creates a fresh connector instance and runs `onLoad()`, matching
-Gety's one-shot Deno runner lifecycle.
+`history_range` is required, so set `GETY_CONFIG_HISTORY_RANGE` in `.env` (e.g.
+`90d`). Output is written under `dev/runs/<timestamp>/` (summary, state
+before/after, updates/deletes, and per-doc snapshots).
 
-Config environment variables are derived from manifest field IDs. For example, a
-field named `api_key` can be set as `GETY_CONFIG_API_KEY` or `API_KEY`, and a
-nested field named `auth.api_key` can be set as `GETY_CONFIG_AUTH_API_KEY` or
-`AUTH_API_KEY`. This sample connector has no config fields, so `.env.example`
-only documents that no values are required. Optional fields without `.env`
-values use the same implicit defaults as Gety's install form: strings become
-`""`, numbers become `0`, and checkboxes become `false`.
+## Install in Gety
 
-Runner output is written outside git:
-
-```text
-dev/runs/<timestamp>/
-  summary.json
-  state.before.json
-  state.after.json
-  updates.json
-  deletes.json
-  docs/
-    0001-<doc_type>__<doc_id>.md
-    0001-<doc_type>__<doc_id>.json
-```
-
-The persistent runner state lives at `dev/.runner/state.json`, so repeated runs
-exercise incremental sync. Use `--reset-state` to start from an empty state.
-Optional flags:
-
-```bash
-deno task runner -- --polls 3 --interval 60
-deno task runner -- --state dev/.runner/sample-state.json --out-dir dev/runs
-```
-
-## Install In Gety
-
-1. Open Gety's Custom Connectors settings page.
-2. Install from local folder and select this repository.
-3. Wait for the first poll to finish, then search for `Gety Sample Connector`.
-
-After changing `src/index.ts`, run `deno task build`, then use Restart in Gety
-to load the new `dist/main.js`.
+1. Open Gety's Custom Connectors settings.
+2. Install from this local folder.
+3. Choose a `history_range` (and toggle bookmarks/history if desired).
+4. Wait for the first poll, then search, e.g. `gety search <term>`.

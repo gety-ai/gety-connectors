@@ -1,36 +1,241 @@
 import assert from 'node:assert/strict';
-import { buildSamplePollResult } from './index.ts';
+import { join } from 'node:path';
+import {
+	bookmarkDocId,
+	type BookmarkEntry,
+	buildBookmarkDoc,
+	buildHistoryDoc,
+	computeDeletes,
+	defaultChromeProfileDir,
+	flattenBookmarks,
+	historyCutoffWebkitMicros,
+	historyDocId,
+	historyRangeToMaxAgeDays,
+	isWebUrl,
+	parseWebkitTimestamp,
+	sha1Hex,
+	webkitMicrosToRfc3339,
+} from './index.ts';
 
-Deno.test('buildSamplePollResult emits stable markdown docs', () => {
-	const result = buildSamplePollResult(3);
+const WEBKIT_UNIX_EPOCH = 11644473600000000n;
 
-	assert.equal(result.updates.length, 2);
-	assert.deepEqual(result.state, { run_count: 3 });
-
-	const [intro, notes] = result.updates;
-	assert.equal(intro.kind, 'upsert');
-	assert.equal(notes.kind, 'upsert');
-
-	if (intro.kind !== 'upsert' || notes.kind !== 'upsert') {
-		throw new Error('Expected sample updates to be upserts.');
-	}
-
-	assert.equal(intro.doc.id, 'gety-sample:introduction');
-	assert.equal(intro.doc.content_format, 'markdown');
-	assert.equal(intro.doc.doc_type, 'gety:sample');
-	assert.match(
-		intro.doc.content ?? '',
-		/This connector has completed 3 poll invocation\(s\)/,
+Deno.test('webkitMicrosToRfc3339 converts the Unix epoch and rejects non-positive', () => {
+	assert.equal(
+		webkitMicrosToRfc3339(WEBKIT_UNIX_EPOCH),
+		'1970-01-01T00:00:00.000Z',
 	);
-	assert.deepEqual(intro.doc.metadata, {
-		url: 'https://gety.ai/',
-		source: 'gety-sample-connector',
-		run_count: 3,
-	});
+	// A known visit captured from a real profile.
+	assert.equal(
+		webkitMicrosToRfc3339(13425461860083487n),
+		'2026-06-09T06:57:40.083Z',
+	);
+	assert.equal(webkitMicrosToRfc3339(0n), null);
+	assert.equal(webkitMicrosToRfc3339(-5n), null);
+});
 
-	assert.equal(notes.doc.id, 'gety-sample:development-notes');
-	assert.deepEqual(notes.doc.metadata, {
-		url: 'https://gety.ai/',
-		source: 'gety-sample-connector',
+Deno.test('parseWebkitTimestamp handles strings, empties, and junk', () => {
+	assert.equal(parseWebkitTimestamp('13377617858724128'), 13377617858724128n);
+	assert.equal(parseWebkitTimestamp(''), null);
+	assert.equal(parseWebkitTimestamp('0'), null);
+	assert.equal(parseWebkitTimestamp(undefined), null);
+	assert.equal(parseWebkitTimestamp(null), null);
+	assert.equal(parseWebkitTimestamp('not-a-number'), null);
+});
+
+Deno.test('isWebUrl only accepts http(s)', () => {
+	assert.equal(isWebUrl('https://example.com/'), true);
+	assert.equal(isWebUrl('http://example.com/'), true);
+	assert.equal(isWebUrl('chrome://bookmarks/'), false);
+	assert.equal(isWebUrl('file:///etc/hosts'), false);
+	assert.equal(isWebUrl(''), false);
+});
+
+Deno.test('defaultChromeProfileDir resolves per-OS paths', () => {
+	const home = '/home/tester';
+	assert.equal(
+		defaultChromeProfileDir('linux', home),
+		join(home, '.config', 'google-chrome', 'Default'),
+	);
+	assert.equal(
+		defaultChromeProfileDir('darwin', home),
+		join(home, 'Library', 'Application Support', 'Google', 'Chrome', 'Default'),
+	);
+	// Windows honors LOCALAPPDATA and falls back to AppData/Local.
+	assert.equal(
+		defaultChromeProfileDir(
+			'win32',
+			'C:/Users/me',
+			'C:/Users/me/AppData/Local',
+		),
+		join(
+			'C:/Users/me/AppData/Local',
+			'Google',
+			'Chrome',
+			'User Data',
+			'Default',
+		),
+	);
+	assert.equal(
+		defaultChromeProfileDir('win32', '/home/tester'),
+		join(
+			'/home/tester',
+			'AppData',
+			'Local',
+			'Google',
+			'Chrome',
+			'User Data',
+			'Default',
+		),
+	);
+});
+
+Deno.test('historyRangeToMaxAgeDays maps ranges', () => {
+	assert.equal(historyRangeToMaxAgeDays('7d'), 7);
+	assert.equal(historyRangeToMaxAgeDays('30d'), 30);
+	assert.equal(historyRangeToMaxAgeDays('90d'), 90);
+	assert.equal(historyRangeToMaxAgeDays('365d'), 365);
+	assert.equal(historyRangeToMaxAgeDays('all'), null);
+	// Unknown values fall back to 90 days.
+	assert.equal(historyRangeToMaxAgeDays('???'), 90);
+});
+
+Deno.test('historyCutoffWebkitMicros respects no-limit and computes a cutoff', () => {
+	assert.equal(historyCutoffWebkitMicros(null, 1_000_000), null);
+	// 0 days from the Unix epoch == the WebKit Unix-epoch offset.
+	assert.equal(historyCutoffWebkitMicros(0, 0), WEBKIT_UNIX_EPOCH);
+	// One day earlier than the Unix epoch clamps at 0 (no negative WebKit time).
+	assert.equal(
+		historyCutoffWebkitMicros(1, 0),
+		11644473600000000n - 86_400_000n * 1000n,
+	);
+});
+
+Deno.test('flattenBookmarks builds folder breadcrumbs and stable ids', () => {
+	const tree = {
+		roots: {
+			bookmark_bar: {
+				type: 'folder',
+				name: 'Bookmarks bar',
+				children: [
+					{
+						type: 'url',
+						name: 'Example',
+						url: 'https://example.com/',
+						guid: 'guid-1',
+						date_added: '13377617858724128',
+					},
+					{
+						type: 'folder',
+						name: 'design',
+						children: [
+							{
+								type: 'url',
+								name: 'Color',
+								url: 'https://color.example/',
+								guid: 'guid-2',
+								date_added: '13377617858724128',
+								date_modified: '13377617858724200',
+							},
+						],
+					},
+				],
+			},
+			other: { type: 'folder', name: 'Other bookmarks', children: [] },
+		},
+	};
+
+	const entries = flattenBookmarks(tree);
+	assert.equal(entries.length, 2);
+
+	const top = entries.find((e) => e.guid === 'guid-1')!;
+	assert.equal(top.folder, 'Bookmarks bar');
+	assert.equal(top.url, 'https://example.com/');
+
+	const nested = entries.find((e) => e.guid === 'guid-2')!;
+	assert.equal(nested.folder, 'Bookmarks bar / design');
+	assert.equal(nested.dateModified, 13377617858724200n);
+});
+
+Deno.test('flattenBookmarks tolerates missing/garbage input', () => {
+	assert.deepEqual(flattenBookmarks(null), []);
+	assert.deepEqual(flattenBookmarks({}), []);
+	assert.deepEqual(flattenBookmarks({ roots: 5 }), []);
+});
+
+Deno.test('buildBookmarkDoc emits a linkable web doc', () => {
+	const entry: BookmarkEntry = {
+		guid: 'g1',
+		name: 'Example',
+		url: 'https://example.com/',
+		folder: 'Bookmarks bar / design',
+		dateAdded: WEBKIT_UNIX_EPOCH,
+		dateModified: null,
+	};
+	const doc = buildBookmarkDoc(entry);
+	assert.equal(doc.id, 'chrome:bookmark:g1');
+	assert.equal(doc.doc_type, 'chrome:bookmark');
+	assert.equal(doc.content_format, 'plaintext');
+	assert.equal(doc.doc_updated_at, '1970-01-01T00:00:00.000Z');
+	const meta = doc.metadata as Record<string, unknown>;
+	assert.equal(meta.url, 'https://example.com/');
+	assert.equal(meta.folder, 'Bookmarks bar / design');
+	assert.equal(meta.created_at, '1970-01-01T00:00:00.000Z');
+	assert.equal((doc.content ?? '').split('\n')[0], 'Example');
+});
+
+Deno.test('buildBookmarkDoc omits url metadata for non-web bookmarks', () => {
+	const doc = buildBookmarkDoc({
+		guid: 'g2',
+		name: 'Bookmarks',
+		url: 'chrome://bookmarks/',
+		folder: 'Bookmarks bar',
+		dateAdded: null,
+		dateModified: null,
 	});
+	const meta = doc.metadata as Record<string, unknown>;
+	assert.equal(meta.url, undefined);
+	assert.equal(doc.title, 'Bookmarks');
+});
+
+Deno.test('buildHistoryDoc hashes the url into a stable id', () => {
+	const doc = buildHistoryDoc({
+		url: 'https://example.com/page',
+		title: 'A Page',
+		visitCount: 7,
+		lastVisit: WEBKIT_UNIX_EPOCH,
+	});
+	assert.equal(doc.id, `chrome:history:${sha1Hex('https://example.com/page')}`);
+	assert.equal(doc.doc_type, 'chrome:history');
+	assert.equal(doc.doc_updated_at, '1970-01-01T00:00:00.000Z');
+	const meta = doc.metadata as Record<string, unknown>;
+	assert.equal(meta.url, 'https://example.com/page');
+	assert.equal(meta.visit_count, 7);
+});
+
+Deno.test('buildHistoryDoc falls back to url when title is blank', () => {
+	const doc = buildHistoryDoc({
+		url: 'https://example.com/x',
+		title: '   ',
+		visitCount: 1,
+		lastVisit: WEBKIT_UNIX_EPOCH,
+	});
+	assert.equal(doc.title, 'https://example.com/x');
+});
+
+Deno.test('computeDeletes returns ids no longer present', () => {
+	assert.deepEqual(
+		computeDeletes(['a', 'b', 'c'], new Set(['a', 'c'])),
+		['b'],
+	);
+	assert.deepEqual(computeDeletes(undefined, new Set(['a'])), []);
+	assert.deepEqual(computeDeletes(['a'], new Set(['a'])), []);
+});
+
+Deno.test('doc id helpers are stable', () => {
+	assert.equal(bookmarkDocId('xyz'), 'chrome:bookmark:xyz');
+	assert.equal(
+		historyDocId('https://x/'),
+		`chrome:history:${sha1Hex('https://x/')}`,
+	);
+	assert.equal(sha1Hex('abc'), 'a9993e364706816aba3e25717850c26c9cd0d89d');
 });

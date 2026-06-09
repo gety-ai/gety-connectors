@@ -1,12 +1,13 @@
 {
-	"id": "sample_dummy",
-	"name": "Gety Sample Connector",
+	"id": "chrome",
+	"name": "Google Chrome",
 	"version": "0.1.0",
 	"min_app_version": "0.5.1",
 	"entry": "dist/main.js",
-	"description": "A minimal runnable sample connector that indexes a small Gety introduction.",
+	"icon": "icon.png",
+	"description": "Indexes Google Chrome bookmarks and browsing history from a local Chrome profile.",
 	"author": {
-		"name": "Gety"
+		"name": "yuche"
 	},
 	"schedule": {
 		"interval": 3600
@@ -14,5 +15,70 @@
 	"doc_link": {
 		"kind": "url",
 		"field": "url"
+	},
+	"schema": {
+		"extra_indexed_fields": [
+			{
+				"field": "folder",
+				"strategy": "fast_text"
+			}
+		]
+	},
+	"config": {
+		"fields": [
+			{
+				"id": "index_bookmarks",
+				"title": "Index bookmarks",
+				"type": "checkbox",
+				"required": false,
+				"default_value": true,
+				"description": "Index entries from the Bookmarks file."
+			},
+			{
+				"id": "index_history",
+				"title": "Index browsing history",
+				"type": "checkbox",
+				"required": false,
+				"default_value": true,
+				"description": "Index visited pages from the History database."
+			},
+			{
+				"id": "history_range",
+				"title": "History time range",
+				"type": "dropdown",
+				"required": true,
+				"description": "How far back to index browsing history. Pick the time window to index — only pages visited within it are indexed.",
+				"options": [
+					{
+						"value": "7d",
+						"label": "Last 7 days"
+					},
+					{
+						"value": "30d",
+						"label": "Last 30 days"
+					},
+					{
+						"value": "90d",
+						"label": "Last 90 days"
+					},
+					{
+						"value": "365d",
+						"label": "Last year"
+					},
+					{
+						"value": "all",
+						"label": "All history"
+					}
+				]
+			},
+			{
+				"id": "history_skip_non_web",
+				"title": "Skip non-web history URLs",
+				"type": "checkbox",
+				"required": false,
+				"default_value": true,
+				"description": "Skip history entries that are not http(s) URLs (e.g. chrome://, file://, about:)."
+			}
+		]
 	}
 }

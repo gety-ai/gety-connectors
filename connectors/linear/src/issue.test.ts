@@ -14,7 +14,7 @@ Deno.test('issueDateBoundary subtracts the configured overlap', () => {
 	);
 });
 
-Deno.test('buildIssueUpdate renders details with compact Linear time', () => {
+Deno.test('buildIssueUpdate emits preview timestamps outside markdown content', () => {
 	const update = buildIssueUpdate(
 		issue({
 			createdAt: '2026-06-03T00:00:01.000Z',
@@ -25,8 +25,12 @@ Deno.test('buildIssueUpdate renders details with compact Linear time', () => {
 	);
 
 	assert.equal(update.kind, 'upsert');
-	assert.match(update.doc.content ?? '', /- Created: 2026-06-03 00:00/);
-	assert.match(update.doc.content ?? '', /- Updated: 2026-06-03 00:02/);
+	assert.doesNotMatch(update.doc.content ?? '', /- Created:/);
+	assert.doesNotMatch(update.doc.content ?? '', /- Updated:/);
+	assert.equal(update.doc.doc_updated_at, '2026-06-03T00:02:03.000Z');
+	const metadata = update.doc.metadata as Record<string, unknown>;
+	assert.equal(metadata.created_at, '2026-06-03T00:00:01.000Z');
+	assert.equal(Object.hasOwn(metadata, 'updated_at'), false);
 });
 
 function issue(overrides: Partial<LinearIssue>): LinearIssue {

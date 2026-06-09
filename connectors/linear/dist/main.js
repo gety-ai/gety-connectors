@@ -99610,9 +99610,15 @@ function commentBoundary(state, options) {
 function renderCommentBlock(comment, childrenByParentId, depth) {
   const prefix = quotePrefix(depth);
   const body = commentBodyMarkdown(comment);
-  const lines = [`${prefix} ${commentHeader(comment)}`];
+  const lines = [
+    prefix == null ? commentHeader(comment) : `${prefix} ${commentHeader(comment)}`
+  ];
   if (body.length > 0) {
-    lines.push(prefix, ...quoteMarkdownLines(body, prefix));
+    if (prefix == null) {
+      lines.push("", ...body);
+    } else {
+      lines.push(prefix, ...quoteMarkdownLines(body, prefix));
+    }
   }
   for (const child of childrenByParentId.get(comment.id) ?? []) {
     lines.push("", renderCommentBlock(child, childrenByParentId, depth + 1));
@@ -99620,7 +99626,10 @@ function renderCommentBlock(comment, childrenByParentId, depth) {
   return lines.join("\n");
 }
 function quotePrefix(depth) {
-  return Array.from({ length: depth + 1 }, () => ">").join(" ");
+  if (depth === 0) {
+    return null;
+  }
+  return Array.from({ length: depth }, () => ">").join(" ");
 }
 function commentHeader(comment) {
   return `@${commentAuthorName(comment)} \xB7 ${commentTime(comment)}`;
@@ -99882,7 +99891,6 @@ function buildIssueUpdate(issue, comments, options) {
       assignee: details.assigneeName ?? void 0,
       project: details.projectName ?? void 0,
       created_at: createdAt ?? void 0,
-      updated_at: issueUpdatedAt2,
       comments_updated_at: commentsUpdatedAt
     }
   });
@@ -99912,9 +99920,7 @@ function renderIssueMarkdown(issue, details, comments, options) {
     ["Team", formatTeam(details)],
     ["Assignee", details.assigneeName],
     ["Project", details.projectName],
-    ["Priority", issue.priorityLabel],
-    ["Created", formatLinearTime(issue.createdAt)],
-    ["Updated", formatLinearTime(issue.updatedAt)]
+    ["Priority", issue.priorityLabel]
   ];
   const sections = [
     `# ${issue.identifier}: ${issue.title}`,

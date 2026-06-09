@@ -376,9 +376,17 @@ function renderCommentBlock(
 ): string {
 	const prefix = quotePrefix(depth);
 	const body = commentBodyMarkdown(comment);
-	const lines = [`${prefix} ${commentHeader(comment)}`];
+	const lines = [
+		prefix == null
+			? commentHeader(comment)
+			: `${prefix} ${commentHeader(comment)}`,
+	];
 	if (body.length > 0) {
-		lines.push(prefix, ...quoteMarkdownLines(body, prefix));
+		if (prefix == null) {
+			lines.push('', ...body);
+		} else {
+			lines.push(prefix, ...quoteMarkdownLines(body, prefix));
+		}
 	}
 
 	for (const child of childrenByParentId.get(comment.id) ?? []) {
@@ -388,8 +396,11 @@ function renderCommentBlock(
 	return lines.join('\n');
 }
 
-function quotePrefix(depth: number): string {
-	return Array.from({ length: depth + 1 }, () => '>').join(' ');
+function quotePrefix(depth: number): string | null {
+	if (depth === 0) {
+		return null;
+	}
+	return Array.from({ length: depth }, () => '>').join(' ');
 }
 
 function commentHeader(comment: LinearComment): string {

@@ -7,7 +7,7 @@ import {
 	renderCommentsMarkdown,
 } from './comment.ts';
 import { markdownImagesToLinks } from './markdown.ts';
-import { dateToIso, formatLinearTime, maxIsoDate } from './utils.ts';
+import { dateToIso, maxIsoDate } from './utils.ts';
 
 export type IssuesQueryVariables = NonNullable<
 	Parameters<LinearClient['issues']>[0]
@@ -310,7 +310,6 @@ export function buildIssueUpdate(
 			assignee: details.assigneeName ?? undefined,
 			project: details.projectName ?? undefined,
 			created_at: createdAt ?? undefined,
-			updated_at: issueUpdatedAt,
 			comments_updated_at: commentsUpdatedAt,
 		},
 	});
@@ -353,8 +352,6 @@ function renderIssueMarkdown(
 		['Assignee', details.assigneeName],
 		['Project', details.projectName],
 		['Priority', issue.priorityLabel],
-		['Created', formatLinearTime(issue.createdAt)],
-		['Updated', formatLinearTime(issue.updatedAt)],
 	];
 
 	const sections = [

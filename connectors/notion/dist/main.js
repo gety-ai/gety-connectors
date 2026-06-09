@@ -1,6 +1,7 @@
 // src/index.ts
 import { Connector, upsert } from "@gety-ai/connector-sdk";
 var GETY_URL = "https://gety.ai/";
+var DOC_CREATED_AT = "2026-05-12T00:00:00Z";
 var DOC_UPDATED_AT = "2026-05-12T00:00:00Z";
 function buildSamplePollResult(nextRunCount) {
   return {
@@ -22,6 +23,7 @@ function buildSamplePollResult(nextRunCount) {
         doc_type: "gety:sample",
         metadata: {
           url: GETY_URL,
+          created_at: DOC_CREATED_AT,
           source: "gety-sample-connector",
           run_count: nextRunCount
         }
@@ -39,6 +41,7 @@ function buildSamplePollResult(nextRunCount) {
         doc_type: "gety:sample",
         metadata: {
           url: GETY_URL,
+          created_at: DOC_CREATED_AT,
           source: "gety-sample-connector"
         }
       })

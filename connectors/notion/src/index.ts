@@ -6,6 +6,7 @@ type SampleState = {
 };
 
 const GETY_URL = 'https://gety.ai/';
+const DOC_CREATED_AT = '2026-05-12T00:00:00Z';
 const DOC_UPDATED_AT = '2026-05-12T00:00:00Z';
 
 export function buildSamplePollResult(nextRunCount: number): PollResult {
@@ -28,6 +29,7 @@ export function buildSamplePollResult(nextRunCount: number): PollResult {
 				doc_type: 'gety:sample',
 				metadata: {
 					url: GETY_URL,
+					created_at: DOC_CREATED_AT,
 					source: 'gety-sample-connector',
 					run_count: nextRunCount,
 				},
@@ -45,6 +47,7 @@ export function buildSamplePollResult(nextRunCount: number): PollResult {
 				doc_type: 'gety:sample',
 				metadata: {
 					url: GETY_URL,
+					created_at: DOC_CREATED_AT,
 					source: 'gety-sample-connector',
 				},
 			}),

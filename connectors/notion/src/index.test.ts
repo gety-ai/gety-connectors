@@ -24,6 +24,7 @@ Deno.test('buildSamplePollResult emits stable markdown docs', () => {
 	);
 	assert.deepEqual(intro.doc.metadata, {
 		url: 'https://gety.ai/',
+		created_at: '2026-05-12T00:00:00Z',
 		source: 'gety-sample-connector',
 		run_count: 3,
 	});
@@ -31,6 +32,7 @@ Deno.test('buildSamplePollResult emits stable markdown docs', () => {
 	assert.equal(notes.doc.id, 'gety-sample:development-notes');
 	assert.deepEqual(notes.doc.metadata, {
 		url: 'https://gety.ai/',
+		created_at: '2026-05-12T00:00:00Z',
 		source: 'gety-sample-connector',
 	});
 });

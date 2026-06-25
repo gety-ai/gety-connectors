@@ -2,14 +2,16 @@
 	"id": "sample_dummy",
 	"name": "Gety Sample Connector",
 	"version": "0.1.0",
-	"min_app_version": "0.5.1",
+	"min_gety_app_version": "0.5.1",
+	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
 	"description": "A minimal runnable sample connector that indexes a small Gety introduction.",
 	"author": {
 		"name": "Gety"
 	},
 	"schedule": {
-		"interval": 3600
+		"strategy": "interval",
+		"interval_seconds": 3600
 	},
 	"doc_link": {
 		"kind": "url",

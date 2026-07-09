@@ -1,11 +1,12 @@
 {
-	"id": "sample_dummy",
-	"name": "Gety Sample Connector",
+	"id": "claude-code",
+	"name": "Claude Code",
 	"version": "0.1.0",
 	"min_gety_app_version": "0.5.1",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
-	"description": "A minimal runnable sample connector that indexes a small Gety introduction.",
+	"icon": "assets/claude-code.svg",
+	"description": "Indexes Claude Code chat sessions from the local Claude Code projects directory so they are searchable in Gety.",
 	"author": {
 		"name": "Gety"
 	},
@@ -16,5 +17,24 @@
 	"doc_link": {
 		"kind": "url",
 		"field": "url"
+	},
+	"config": {
+		"fields": [
+			{
+				"id": "projects_dir",
+				"type": "directory",
+				"title": "Claude Code projects directory",
+				"description": "Optional override. Defaults to ~/.claude/projects on Linux/macOS and %USERPROFILE%\\.claude\\projects on Windows.",
+				"required": false
+			},
+			{
+				"id": "include_subagents",
+				"type": "checkbox",
+				"title": "Include subagent sessions",
+				"description": "Index Claude Code subagent and workflow JSONL logs in addition to top-level sessions.",
+				"required": true,
+				"default_value": false
+			}
+		]
 	}
 }

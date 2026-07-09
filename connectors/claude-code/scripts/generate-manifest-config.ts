@@ -7,11 +7,13 @@ interface Manifest {
 interface ManifestConfigField {
 	id: string;
 	type: string;
+	required?: boolean;
 }
 
 interface ConfigNode {
 	children: Map<string, ConfigNode>;
 	type: string | null;
+	optional: boolean;
 }
 
 const manifestPath = new URL('../manifest.json', import.meta.url);
@@ -58,6 +60,7 @@ function renderConfigType(fields: ManifestConfigField[]): string {
 	const root: ConfigNode = {
 		children: new Map(),
 		type: null,
+		optional: false,
 	};
 	for (const field of fields) {
 		addField(root, field);
@@ -72,6 +75,10 @@ function addField(root: ConfigNode, field: ManifestConfigField): void {
 		throw new Error(`Unsupported manifest config field type "${field.type}".`);
 	}
 
+	// A field is optional when `required` is explicitly false. Nested groups are
+	// optional only when every leaf under them is optional.
+	const optional = field.required === false;
+
 	const parts = field.id.split('.');
 	let node = root;
 	for (const [index, part] of parts.entries()) {
@@ -85,6 +92,7 @@ function addField(root: ConfigNode, field: ManifestConfigField): void {
 			child = {
 				children: new Map(),
 				type: null,
+				optional: isLeaf ? optional : true,
 			};
 			node.children.set(part, child);
 		}
@@ -94,12 +102,15 @@ function addField(root: ConfigNode, field: ManifestConfigField): void {
 				throw new Error(`Duplicate manifest config field id "${field.id}".`);
 			}
 			child.type = tsType;
+			child.optional = optional;
 			return;
 		}
 
 		if (child.type != null) {
 			throw new Error(`Conflicting manifest config field id "${field.id}".`);
 		}
+		// A group stays optional only while all of its leaves are optional.
+		child.optional = child.optional && true;
 		node = child;
 	}
 }
@@ -108,10 +119,30 @@ function renderNode(node: ConfigNode, depth: number): string {
 	const lines = ['{'];
 	for (const [key, child] of node.children) {
 		const value = child.type ?? renderNode(child, depth + 1);
-		lines.push(`${'\t'.repeat(depth + 1)}${propertyKey(key)}: ${value};`);
+		const optionalMark = isNodeOptional(child) ? '?' : '';
+		lines.push(
+			`${'\t'.repeat(depth + 1)}${propertyKey(key)}${optionalMark}: ${value};`,
+		);
 	}
 	lines.push(`${'\t'.repeat(depth)}}`);
 	return lines.join('\n');
+}
+
+/**
+ * A leaf is optional when its field declared `required: false`. A group is
+ * optional only when every leaf under it is optional, so that a required nested
+ * field still forces the group to be present.
+ */
+function isNodeOptional(node: ConfigNode): boolean {
+	if (node.type != null) {
+		return node.optional;
+	}
+	for (const child of node.children.values()) {
+		if (!isNodeOptional(child)) {
+			return false;
+		}
+	}
+	return node.children.size > 0;
 }
 
 function propertyKey(key: string): string {

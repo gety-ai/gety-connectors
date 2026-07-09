@@ -18,10 +18,10 @@ The projects directory is auto-detected per platform:
 - Linux/macOS: `~/.claude/projects`
 - Windows: `%USERPROFILE%\.claude\projects`
 
-`HOME` and `USERPROFILE` are read from the environment. An optional
-`projects_dir` config field (or `PROJECTS_DIR` / `GETY_CONFIG_PROJECTS_DIR` env
-var) overrides the default. The required `include_subagents` checkbox defaults
-to false.
+`HOME` and `USERPROFILE` are read from the environment. There is no connector
+setting for the folder path; the required `include_subagents` checkbox defaults
+to false. For local development only, `PROJECTS_DIR` or
+`GETY_CONFIG_PROJECTS_DIR` can override the auto-detected path.
 
 ## Document model
 
@@ -33,11 +33,13 @@ to false.
 - `content_format`: `markdown`.
 - Title: `ai-title`/`aiTitle` record if present, else the first meaningful user
   text snippet, else the session id / file basename.
-- Content: only user and assistant **text** is rendered. Injected context such
-  as `<environment_context>`, command/local-command records, and AGENTS.md
-  instruction blocks is skipped. `tool_use`, `tool_result`, `thinking`, and
-  other non-text message parts are omitted entirely. Messages with no text after
-  skipping parts are omitted.
+- Content: only user and assistant **text** is rendered. Slash-command user
+  prompts keep the command name (for example,
+  `` Command: `/code-review-expert` ``) and the command arguments while dropping
+  the XML wrapper tags. Injected context such as `<environment_context>`,
+  local-command records, and AGENTS.md instruction blocks is skipped.
+  `tool_use`, `tool_result`, `thinking`, and other non-text message parts are
+  omitted entirely. Messages with no text after skipping parts are omitted.
 - The markdown body follows the Codex connector shape: `# {title}`,
   `## Session`, a `---` separator, then `## User` / `## Claude Code` sections
   grouped by conversation round. Parse-error and truncation facts are recorded
@@ -147,10 +149,12 @@ lifecycle.
 
 Config environment variables are derived from manifest field IDs:
 
-- `projects_dir`: `GETY_CONFIG_PROJECTS_DIR` or `PROJECTS_DIR`; when unset, the
-  auto-detected default is used.
 - `include_subagents`: `GETY_CONFIG_INCLUDE_SUBAGENTS` or `INCLUDE_SUBAGENTS`;
   defaults to `false`.
+
+The folder path is auto-detected and is not shown as a connector setting. For
+local development only, `PROJECTS_DIR` or `GETY_CONFIG_PROJECTS_DIR` can
+override it.
 
 Runner output is written outside git:
 

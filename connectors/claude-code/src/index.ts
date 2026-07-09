@@ -16,8 +16,6 @@ import type { ManifestConfig } from './gen/manifest.d.ts';
  *
  * - Linux/macOS: ~/.claude/projects
  * - Windows:     %USERPROFILE%\.claude\projects
- *
- * An optional `projects_dir` config field overrides the default.
  */
 
 const DOC_TYPE = 'claude_code:session';
@@ -75,6 +73,11 @@ type NormalizedState = {
 	forceReindex: boolean;
 };
 
+type RuntimeConfig = ManifestConfig & {
+	/** Hidden development/back-compat override; not exposed as a connector setting. */
+	projects_dir?: string;
+};
+
 export function defaultProjectsDir(
 	env: EnvLike = Deno.env,
 	os: typeof Deno.build.os = Deno.build.os,
@@ -86,7 +89,7 @@ export function defaultProjectsDir(
 		: env.get('HOME') ?? env.get('USERPROFILE');
 	if (!home) {
 		throw new Error(
-			'Cannot determine home directory for Claude Code projects. Set HOME or USERPROFILE, or configure projects_dir.',
+			'Cannot determine home directory for Claude Code projects. Set HOME or USERPROFILE.',
 		);
 	}
 	return os === 'windows'
@@ -94,15 +97,16 @@ export function defaultProjectsDir(
 		: join(home, '.claude', 'projects');
 }
 
-function resolveRoot(config: ManifestConfig): string {
-	const override = config.projects_dir;
+function resolveRoot(config: RuntimeConfig, env: EnvLike = Deno.env): string {
+	const override = config.projects_dir ?? env.get('GETY_CONFIG_PROJECTS_DIR') ??
+		env.get('PROJECTS_DIR');
 	if (typeof override === 'string' && override.trim()) {
 		return normalize(override);
 	}
 	return defaultProjectsDir();
 }
 
-function includeSubagents(config: ManifestConfig): boolean {
+function includeSubagents(config: RuntimeConfig): boolean {
 	return config.include_subagents === true;
 }
 
@@ -228,10 +232,9 @@ function extractSession(records: unknown[]): Session {
 			assistantMessageCount += 1;
 		}
 
-		const text = extractText(message.content);
-		const trimmedText = text?.trim();
-		if (trimmedText && !isInjectedUserContext(role, trimmedText)) {
-			messages.push({ role, text: trimmedText, timestamp: ts });
+		const text = normalizeMessageText(role, extractText(message.content));
+		if (text) {
+			messages.push({ role, text, timestamp: ts });
 		}
 	}
 
@@ -250,17 +253,62 @@ function extractSession(records: unknown[]): Session {
 	};
 }
 
-function isInjectedUserContext(
+function normalizeMessageText(
 	role: 'user' | 'assistant',
+	text: string | null,
+): string | null {
+	const trimmedText = text?.trim();
+	if (!trimmedText) return null;
+
+	if (role !== 'user') return trimmedText;
+
+	const commandMessage = formatCommandMessage(trimmedText);
+	if (commandMessage) return commandMessage;
+
+	return isInjectedUserContext(trimmedText) ? null : trimmedText;
+}
+
+function formatCommandMessage(text: string): string | null {
+	const commandName = extractXmlTag(text, 'command-name');
+	const commandArgs = extractXmlTag(text, 'command-args');
+
+	if (!commandName && !commandArgs) return null;
+	if (!commandArgs && isLocalNoiseCommand(commandName)) return null;
+
+	const parts: string[] = [];
+	if (commandName) {
+		parts.push(`Command: \`${commandName.replaceAll('`', '\\`')}\``);
+	}
+	if (commandArgs) {
+		parts.push(commandArgs);
+	}
+	return parts.join('\n\n') || null;
+}
+
+function extractXmlTag(text: string, tagName: string): string | null {
+	const pattern = new RegExp(
+		`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`,
+		'u',
+	);
+	const value = text.match(pattern)?.[1]?.trim();
+	return value ? value : null;
+}
+
+function isLocalNoiseCommand(commandName: string | null): boolean {
+	return commandName === '/model' || commandName === '/effort' ||
+		commandName === '/usage';
+}
+
+function isInjectedUserContext(
 	text: string,
 ): boolean {
-	if (role !== 'user') return false;
 	const firstLine = text.trimStart();
 	return [
 		'# AGENTS.md instructions for',
 		'Base directory for this skill:',
 		'<environment_context>',
 		'<skill_content',
+		'<task-notification>',
 		'<user_instructions>',
 		'<INSTRUCTIONS>',
 		'<local-command',
@@ -288,7 +336,8 @@ function firstMeaningfulLine(text: string): string {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
 		if (
-			trimmed.startsWith('<local-command') || trimmed.startsWith('<command-')
+			trimmed.startsWith('<local-command') || trimmed.startsWith('<command-') ||
+			trimmed.startsWith('Command: `')
 		) {
 			continue;
 		}
@@ -674,7 +723,7 @@ function makeState(
  * build every document up front.
  */
 export async function* pollClaudeCode(
-	config: ManifestConfig,
+	config: RuntimeConfig,
 	lastState: unknown,
 	signal: AbortSignal,
 ): AsyncGenerator<PollResult, void, unknown> {

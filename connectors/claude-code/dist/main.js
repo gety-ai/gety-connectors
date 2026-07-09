@@ -14,13 +14,13 @@ function defaultProjectsDir(env = Deno.env, os = Deno.build.os) {
   const home = os === "windows" ? env.get("USERPROFILE") ?? env.get("HOME") : env.get("HOME") ?? env.get("USERPROFILE");
   if (!home) {
     throw new Error(
-      "Cannot determine home directory for Claude Code projects. Set HOME or USERPROFILE, or configure projects_dir."
+      "Cannot determine home directory for Claude Code projects. Set HOME or USERPROFILE."
     );
   }
   return os === "windows" ? win32.join(home, ".claude", "projects") : join(home, ".claude", "projects");
 }
-function resolveRoot(config) {
-  const override = config.projects_dir;
+function resolveRoot(config, env = Deno.env) {
+  const override = config.projects_dir ?? env.get("GETY_CONFIG_PROJECTS_DIR") ?? env.get("PROJECTS_DIR");
   if (typeof override === "string" && override.trim()) {
     return normalize(override);
   }
@@ -120,10 +120,9 @@ function extractSession(records) {
     } else {
       assistantMessageCount += 1;
     }
-    const text = extractText(message.content);
-    const trimmedText = text?.trim();
-    if (trimmedText && !isInjectedUserContext(role, trimmedText)) {
-      messages.push({ role, text: trimmedText, timestamp: ts });
+    const text = normalizeMessageText(role, extractText(message.content));
+    if (text) {
+      messages.push({ role, text, timestamp: ts });
     }
   }
   return {
@@ -140,14 +139,47 @@ function extractSession(records) {
     assistantMessageCount
   };
 }
-function isInjectedUserContext(role, text) {
-  if (role !== "user") return false;
+function normalizeMessageText(role, text) {
+  const trimmedText = text?.trim();
+  if (!trimmedText) return null;
+  if (role !== "user") return trimmedText;
+  const commandMessage = formatCommandMessage(trimmedText);
+  if (commandMessage) return commandMessage;
+  return isInjectedUserContext(trimmedText) ? null : trimmedText;
+}
+function formatCommandMessage(text) {
+  const commandName = extractXmlTag(text, "command-name");
+  const commandArgs = extractXmlTag(text, "command-args");
+  if (!commandName && !commandArgs) return null;
+  if (!commandArgs && isLocalNoiseCommand(commandName)) return null;
+  const parts = [];
+  if (commandName) {
+    parts.push(`Command: \`${commandName.replaceAll("`", "\\`")}\``);
+  }
+  if (commandArgs) {
+    parts.push(commandArgs);
+  }
+  return parts.join("\n\n") || null;
+}
+function extractXmlTag(text, tagName) {
+  const pattern = new RegExp(
+    `<${tagName}>([\\s\\S]*?)<\\/${tagName}>`,
+    "u"
+  );
+  const value = text.match(pattern)?.[1]?.trim();
+  return value ? value : null;
+}
+function isLocalNoiseCommand(commandName) {
+  return commandName === "/model" || commandName === "/effort" || commandName === "/usage";
+}
+function isInjectedUserContext(text) {
   const firstLine = text.trimStart();
   return [
     "# AGENTS.md instructions for",
     "Base directory for this skill:",
     "<environment_context>",
     "<skill_content",
+    "<task-notification>",
     "<user_instructions>",
     "<INSTRUCTIONS>",
     "<local-command",
@@ -170,7 +202,7 @@ function firstMeaningfulLine(text) {
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (trimmed.startsWith("<local-command") || trimmed.startsWith("<command-")) {
+    if (trimmed.startsWith("<local-command") || trimmed.startsWith("<command-") || trimmed.startsWith("Command: `")) {
       continue;
     }
     return trimmed;

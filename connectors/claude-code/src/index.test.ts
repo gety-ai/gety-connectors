@@ -12,17 +12,11 @@ function jsonl(records: unknown[]): string {
 	return records.map((record) => JSON.stringify(record)).join('\n');
 }
 
-Deno.test('ManifestConfig requires include_subagents and accepts omitted projects_dir', () => {
-	// Compile-time: projects_dir is optional, while include_subagents is a
-	// required checkbox with default_value false in the manifest.
-	const withoutDir: ManifestConfig = { include_subagents: false };
-	const withDir: ManifestConfig = {
-		projects_dir: '/tmp/x',
-		include_subagents: true,
-	};
-	assert.equal(withoutDir.projects_dir, undefined);
-	assert.equal(withDir.projects_dir, '/tmp/x');
-	assert.equal(withDir.include_subagents, true);
+Deno.test('ManifestConfig exposes only include_subagents', () => {
+	// Compile-time: include_subagents is the only user-visible setting in the
+	// manifest; the projects directory is auto-detected by the connector.
+	const config: ManifestConfig = { include_subagents: false };
+	assert.equal(config.include_subagents, false);
 });
 
 Deno.test('extractText returns string content directly', () => {
@@ -204,12 +198,22 @@ Deno.test('buildDocFromRecords skips injected command context messages', async (
 			type: 'user',
 			sessionId: 's3',
 			timestamp: '2026-03-01T00:00:02Z',
+			message: {
+				role: 'user',
+				content:
+					'<task-notification>Agent finished with internal output</task-notification>',
+			},
+		},
+		{
+			type: 'user',
+			sessionId: 's3',
+			timestamp: '2026-03-01T00:00:03Z',
 			message: { role: 'user', content: 'Real question' },
 		},
 		{
 			type: 'assistant',
 			sessionId: 's3',
-			timestamp: '2026-03-01T00:00:03Z',
+			timestamp: '2026-03-01T00:00:04Z',
 			message: { role: 'assistant', content: 'Real answer' },
 		},
 	];
@@ -223,7 +227,52 @@ Deno.test('buildDocFromRecords skips injected command context messages', async (
 	assert.equal(doc.title, 'Real question');
 	assert.doesNotMatch(doc.content ?? '', /command-name/);
 	assert.doesNotMatch(doc.content ?? '', /Base directory for this skill/);
+	assert.doesNotMatch(doc.content ?? '', /task-notification/);
 	assert.match(doc.content ?? '', /Real question/);
+});
+
+Deno.test('buildDocFromRecords preserves slash-command arguments as user input', async () => {
+	const records = [
+		{
+			type: 'user',
+			sessionId: 's-command-args',
+			timestamp: '2026-03-02T00:00:00Z',
+			message: {
+				role: 'user',
+				content: '<command-message>code-review-expert</command-message>\n' +
+					'<command-name>/code-review-expert</command-name>\n' +
+					'<command-args>帮我看当前分支和 develop 的区别。review 代码。\n\n1. 生成的 ts 类型有没有改进的空间？\n2. 会不会影响 fix/dev-494/docx-ocr 分支</command-args>',
+			},
+		},
+		{
+			type: 'assistant',
+			sessionId: 's-command-args',
+			timestamp: '2026-03-02T00:01:00Z',
+			message: {
+				role: 'assistant',
+				content: '我会 review 当前分支。',
+			},
+		},
+	];
+
+	const doc = await buildDocFromRecords(records, {
+		relPath: 'p/s-command-args.jsonl',
+		fileName: 's-command-args.jsonl',
+		fileSize: 10,
+		fileMtime: 0,
+	});
+
+	assert.ok(doc);
+	assert.equal(doc.title, '帮我看当前分支和 develop 的区别。review 代码。');
+	assert.match(doc.content ?? '', /Command: `\/code-review-expert`/);
+	assert.match(
+		doc.content ?? '',
+		/## User\n\nCommand: `\/code-review-expert`\n\n帮我看当前分支和 develop 的区别。review 代码。/,
+	);
+	assert.match(doc.content ?? '', /会不会影响 fix\/dev-494\/docx-ocr 分支/);
+	assert.match(doc.content ?? '', /## Claude Code\n\n我会 review 当前分支。/);
+	assert.doesNotMatch(doc.content ?? '', /command-name/);
+	assert.doesNotMatch(doc.content ?? '', /command-args/);
 });
 
 Deno.test('buildDocFromRecords skips sessions without user text', async () => {
@@ -396,7 +445,7 @@ Deno.test('pollClaudeCode indexes, skips unchanged, updates on change, deletes o
 	];
 	await Deno.writeTextFile(filePath, jsonl(baseRecords));
 
-	const config: ManifestConfig = {
+	const config = {
 		projects_dir: tmp,
 		include_subagents: false,
 	};
@@ -511,7 +560,7 @@ Deno.test('pollClaudeCode indexes nested jsonl files as separate docs', async ()
 		]),
 	);
 
-	const config: ManifestConfig = {
+	const config = {
 		projects_dir: tmp,
 		include_subagents: false,
 	};
@@ -818,7 +867,7 @@ Deno.test('pollClaudeCode re-indexes same-size/same-mtime rewrites via content h
 	];
 	await Deno.writeTextFile(filePath, jsonl(recordsA));
 
-	const config: ManifestConfig = {
+	const config = {
 		projects_dir: tmp,
 		include_subagents: false,
 	};
@@ -878,7 +927,7 @@ Deno.test('pollClaudeCode treats old state missing hash as changed', async () =>
 		]),
 	);
 	const stat = await Deno.stat(filePath);
-	const config: ManifestConfig = {
+	const config = {
 		projects_dir: tmp,
 		include_subagents: false,
 	};
@@ -943,7 +992,7 @@ Deno.test('pollClaudeCode deletes missing files after a complete scan', async ()
 			},
 		]),
 	);
-	const config: ManifestConfig = {
+	const config = {
 		projects_dir: tmp,
 		include_subagents: false,
 	};

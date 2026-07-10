@@ -7,6 +7,7 @@ import {
 	type WireDoc,
 } from '@gety-ai/connector-sdk';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+import { cleanupDocMarkdown } from './doc_markdown.ts';
 import {
 	buildDocUrl,
 	type ChatMessage,
@@ -522,7 +523,7 @@ export default class FeishuConnector extends Connector<
 				);
 				return null;
 			}
-			return buildCloudDoc(entity, content);
+			return buildCloudDoc(entity, cleanupDocMarkdown(content));
 		} catch (error) {
 			this.signal.throwIfAborted();
 			console.error(

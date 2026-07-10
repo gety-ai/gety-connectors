@@ -5,6 +5,193 @@ import {
   upsert
 } from "@gety-ai/connector-sdk";
 
+// src/doc_markdown.ts
+var EPHEMERAL_URL_MARKERS = ["internal-api-drive-stream", "/authcode/"];
+function cleanupDocMarkdown(text) {
+  return transformOutsideCode(text, (segment) => {
+    let out = segment;
+    out = convertTables(out);
+    out = convertCallouts(out);
+    out = stripGrids(out);
+    out = transformInline(out);
+    out = convertBlockLevel(out);
+    out = replaceEphemeralImages(out);
+    out = convertLineBreaks(out);
+    return out.replace(/\n{3,}/g, "\n\n");
+  });
+}
+function transformOutsideCode(text, fn) {
+  const parts = text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/);
+  return parts.map((part, index) => index % 2 === 0 ? fn(part) : part).join("");
+}
+function convertTables(text) {
+  return text.replace(/<table>[\s\S]*?<\/table>/g, (block) => {
+    const rows = [];
+    for (const row of block.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
+      const cells = [];
+      for (const cell of row[1].matchAll(/<t[dh]\b([^>]*)>([\s\S]*?)<\/t[dh]>/g)) {
+        const colspan = Number(/colspan="(\d+)"/.exec(cell[1])?.[1] ?? "1");
+        cells.push(flattenCell(cell[2]));
+        for (let extra = 1; extra < colspan; extra += 1) {
+          cells.push("");
+        }
+      }
+      rows.push(cells);
+    }
+    if (rows.length === 0) {
+      return "";
+    }
+    const width = Math.max(...rows.map((cells) => cells.length), 1);
+    const line = (cells) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? "").join(" | ")} |`;
+    const separator = `| ${Array(width).fill("---").join(" | ")} |`;
+    return [
+      "",
+      line(rows[0]),
+      separator,
+      ...rows.slice(1).map(line),
+      ""
+    ].join("\n");
+  });
+}
+function flattenCell(content) {
+  let out = content;
+  out = transformInline(out);
+  out = out.replace(/<br\s*\/?>/g, " ").replace(/<p(?:\s[^>]*)?>|<\/p>/g, " ").replace(/<li(?:\s[^>]*)?>/g, " \u2022 ").replace(/<\/li>/g, " ").replace(/<\/?(?:ul|ol|blockquote)(?:\s[^>]*)?>/g, " ");
+  return out.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+function convertCallouts(text) {
+  return text.replace(
+    /<callout\b([^>]*)>([\s\S]*?)<\/callout>/g,
+    (_, attrs, inner) => {
+      const emoji = /emoji="([^"]*)"/.exec(attrs)?.[1];
+      const lines = inner.trim().split("\n");
+      const quoted = lines.map(
+        (line, index) => index === 0 && emoji ? `> ${emoji} ${line}` : `> ${line}`
+      ).join("\n");
+      return `
+${quoted}
+`;
+    }
+  );
+}
+function stripGrids(text) {
+  return text.replace(/<\/?grid>/g, "").replace(/<column\b[^>]*>/g, "").replace(/<\/column>/g, "\n\n");
+}
+function transformInline(text) {
+  let out = text;
+  out = out.replace(
+    /<cite\b([^>]*)>([\s\S]*?)<\/cite>/g,
+    (_, attrs, inner) => {
+      const name = /user-name="([^"]*)"/.exec(attrs)?.[1];
+      return name ? `@${name}` : inner.trim();
+    }
+  );
+  out = out.replace(/<source\b([^>]*?)\/?>/g, (_, attrs) => {
+    const mime = /mime="([^"]*)"/.exec(attrs)?.[1] ?? "";
+    if (mime.startsWith("video/")) {
+      return "[\u89C6\u9891]";
+    }
+    if (mime.startsWith("audio/")) {
+      return "[\u97F3\u9891]";
+    }
+    if (mime.startsWith("image/")) {
+      return "[\u56FE\u7247]";
+    }
+    return "[\u9644\u4EF6]";
+  });
+  out = out.replace(/<\/?figure[^>]*>/g, "");
+  out = out.replace(/<img\b([^>]*?)\/?>/g, (_, attrs) => {
+    const name = /name="([^"]*)"/.exec(attrs)?.[1];
+    const alt = /alt="([^"]*)"/.exec(attrs)?.[1];
+    const label = name ? `[\u56FE\u7247: ${name}]` : "[\u56FE\u7247]";
+    return alt ? `${label} ${alt}` : label;
+  });
+  out = out.replace(
+    /<whiteboard\b[^>]*>(?:[\s\S]*?<\/whiteboard>)?/g,
+    "[\u753B\u677F]"
+  );
+  out = out.replace(
+    /<bitable\b([^>]*)>(?:[\s\S]*?<\/bitable>)?/g,
+    (_, attrs) => {
+      const token = /token="([^"]*)"/.exec(attrs)?.[1];
+      return token ? `[\u591A\u7EF4\u8868\u683C](https://feishu.cn/base/${token})` : "[\u591A\u7EF4\u8868\u683C]";
+    }
+  );
+  out = out.replace(/<task\b[^>]*>(?:[\s\S]*?<\/task>)?/g, "");
+  out = out.replace(
+    /<time\b([^>]*)>(?:[\s\S]*?<\/time>)?/g,
+    (_, attrs) => {
+      const ms = Number(/expire-time="(\d+)"/.exec(attrs)?.[1]);
+      if (!Number.isFinite(ms)) {
+        return "[\u65E5\u671F]";
+      }
+      const date = new Date(ms);
+      const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      if (/is-whole-day="true"/.test(attrs)) {
+        return day;
+      }
+      const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+      return `${day} ${time}`;
+    }
+  );
+  out = out.replace(
+    /<poll\b([^>]*)>([\s\S]*?)<\/poll>/g,
+    (_, attrs, inner) => {
+      const name = /name="([^"]*)"/.exec(attrs)?.[1];
+      const label = name ? `[\u6295\u7968: ${name}]` : "[\u6295\u7968]";
+      const body = inner.trim();
+      return body ? `${label}
+${body}` : label;
+    }
+  );
+  out = out.replace(/<\/?synced-source>/g, "");
+  out = out.replace(
+    /<readonly-block\b([^>]*)>(?:[\s\S]*?<\/readonly-block>)?/g,
+    (_, attrs) => /type="task_list"/.test(attrs) ? "[\u4EFB\u52A1\u5217\u8868]" : "[\u53EA\u8BFB\u533A\u5757]"
+  );
+  out = out.replace(
+    /<a\b([^>]*)>([\s\S]*?)<\/a>/g,
+    (_, attrs, inner) => {
+      const href = /href="([^"]*)"/.exec(attrs)?.[1];
+      const label = inner.trim();
+      if (href == null) {
+        return label;
+      }
+      return label ? `[${label}](${href})` : href;
+    }
+  );
+  out = out.replace(
+    /<b>\s*([\s\S]*?)\s*<\/b>/g,
+    (_, inner) => inner === "" ? "" : `**${inner}**`
+  );
+  return out;
+}
+function convertBlockLevel(text) {
+  return text.replace(/<p(?:\s[^>]*)?>/g, "").replace(/<\/p>/g, "\n\n").replace(/<\/?(?:ul|ol)(?:\s[^>]*)?>/g, "\n").replace(/<li(?:\s[^>]*)?>/g, "\n- ").replace(/<\/li>/g, "").replace(
+    /<blockquote(?:\s[^>]*)?>([\s\S]*?)<\/blockquote>/g,
+    (_, inner) => `
+${inner.trim().split("\n").map((line) => `> ${line}`).join("\n")}
+`
+  );
+}
+function replaceEphemeralImages(text) {
+  return text.replace(
+    /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
+    (whole, alt, url) => {
+      if (!EPHEMERAL_URL_MARKERS.some((marker) => url.includes(marker))) {
+        return whole;
+      }
+      const label = alt.trim();
+      return label ? `[\u56FE\u7247: ${label}]` : "[\u56FE\u7247]";
+    }
+  );
+}
+function convertLineBreaks(text) {
+  return text.split("\n").map(
+    (line) => line.replace(/<br\s*\/?>/g, line.trimStart().startsWith("|") ? " " : "\n")
+  ).join("\n");
+}
+
 // src/lark_cli.ts
 var LarkCliError = class extends Error {
   missingScopes;
@@ -692,7 +879,7 @@ var FeishuConnector = class extends Connector {
         );
         return null;
       }
-      return buildCloudDoc(entity, content);
+      return buildCloudDoc(entity, cleanupDocMarkdown(content));
     } catch (error) {
       this.signal.throwIfAborted();
       console.error(

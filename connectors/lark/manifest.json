@@ -1,13 +1,13 @@
 {
-	"id": "sample_dummy",
-	"name": "Gety Sample Connector",
+	"id": "lark",
+	"name": "Lark / Feishu",
 	"version": "0.1.0",
 	"min_gety_app_version": "0.5.1",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
-	"description": "A minimal runnable sample connector that indexes a small Gety introduction.",
+	"description": "Indexes Lark/Feishu cloud documents and chat history through a locally authenticated lark-cli.",
 	"author": {
-		"name": "Gety"
+		"name": "yuche"
 	},
 	"schedule": {
 		"strategy": "interval",
@@ -16,5 +16,33 @@
 	"doc_link": {
 		"kind": "url",
 		"field": "url"
+	},
+	"config": {
+		"fields": [
+			{
+				"id": "index_chat_history",
+				"title": "Index chat history",
+				"type": "checkbox",
+				"required": true,
+				"default_value": true,
+				"description": "Index messages from group chats and direct messages. Uncheck to index cloud documents only."
+			},
+			{
+				"id": "chat_history_days",
+				"title": "Chat history lookback (days)",
+				"type": "number",
+				"required": false,
+				"default_value": 30,
+				"description": "How many days of chat history to backfill on the first sync. Later syncs are incremental."
+			},
+			{
+				"id": "lark_cli_path",
+				"title": "lark-cli path",
+				"type": "text",
+				"required": false,
+				"default_value": "lark-cli",
+				"description": "Path to the lark-cli executable. Keep the default if lark-cli is on PATH."
+			}
+		]
 	}
 }

@@ -1,94 +1,104 @@
-# Gety Sample Connector
+# Gety Lark / Feishu Connector
 
-This is a minimal runnable Gety custom connector. It emits a small set of fixed
-documents that link to <https://gety.ai/>.
+[简体中文](./README.zh-CN.md)
 
-## Files
+A [Gety](https://gety.ai/) custom connector that indexes your Lark / Feishu
+content through a locally authenticated
+[lark-cli](https://github.com/larksuite/cli):
 
-- `manifest.json` declares the connector metadata and uses `dist/main.js` as the
-  Gety runtime entry.
-- `src/index.ts` contains the connector source code.
-- `dist/main.js` is the committed build output loaded by Gety.
-- `dist/main.js.map` is committed to make debugging the bundled entry easier.
-- `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
-  and the build script do not require the npm SDK to be installed.
-- `src/gen/manifest.d.ts` is generated from `manifest.json` by
-  `deno task generate`, `deno task check`, or `deno task build`.
+- **Cloud documents** — docx documents and wiki pages you can access, exported
+  as markdown. Documents that disappear from the source (deleted, or access
+  lost) are removed from the index on the next sync.
+- **Chat history** _(optional, on by default)_ — group chats and direct
+  messages, indexed as one searchable document per chat per day.
 
-## Build
+The connector never stores Lark credentials itself. All API calls go through
+`lark-cli`, which keeps its own OAuth tokens.
+
+## Prerequisites
+
+1. Install [lark-cli](https://github.com/larksuite/cli) (1.0.58 or newer) and
+   make sure it is on your `PATH`, or set its path in the connector settings.
+2. Sign in and grant scopes in one step. `lark-cli auth login` **requires**
+   explicit scopes — running it bare fails with "please specify the scopes to
+   authorize". Use:
+
+   ```bash
+   lark-cli auth login --recommend --scope "search:docs:read contact:user.basic_profile:readonly"
+   ```
+
+   - `--recommend` grants the standard auto-approve read scopes the connector
+     relies on, including `docx:document:readonly`, `im:chat:read`,
+     `im:message:readonly`, `im:message.*_msg:get_as_user`, and
+     `wiki:node:read`.
+   - `search:docs:read` (enumerate cloud documents) and
+     `contact:user.basic_profile:readonly` (resolve sender names in chat
+     transcripts) are **not** in the recommended set and must be listed
+     explicitly. `search:docs:read` may additionally require approving the
+     permission for your app in the Lark developer console first.
+
+   Check what is currently granted with `lark-cli auth status`.
+
+## Install in Gety
+
+1. Build the connector (requires [Deno](https://deno.com/)):
+
+   ```bash
+   deno task verify
+   ```
+
+2. In Gety, open **Custom Connectors** and install this folder.
+3. Fill in the settings:
+
+   | Setting                      | Default    | Meaning                                                                       |
+   | ---------------------------- | ---------- | ----------------------------------------------------------------------------- |
+   | Index chat history           | checked    | Index group chats and direct messages. Uncheck to index cloud documents only. |
+   | Chat history lookback (days) | 30         | How many days of chat history to backfill on the first sync.                  |
+   | lark-cli path                | `lark-cli` | Path to the lark-cli executable if it is not on the `PATH` inherited by Gety. |
+
+After source edits, rebuild (`deno task build`) and click **Restart** for this
+connector in Gety. After manifest edits, reinstall the connector.
+
+## What gets indexed
+
+| Source              | Gety doc id                  | Link target                        |
+| ------------------- | ---------------------------- | ---------------------------------- |
+| Cloud document      | `lark:doc:<token>`           | The document in the browser        |
+| Chat day transcript | `lark:chat:<chat_id>:<date>` | The chat in the Lark app (applink) |
+
+Sync behavior:
+
+- Documents are discovered by a full two-pass Search v2 enumeration (the two
+  sort orders have complementary recall and are unioned). Content is refetched
+  only for documents edited since the last sync or not yet in the index, so a
+  transient fetch failure is retried on the next poll instead of being lost.
+- Search enumeration recall is unstable between polls, so a document missing
+  from a completed enumeration is deleted only after a direct fetch confirms it
+  is no longer accessible. An empty enumeration is treated as a source-side
+  glitch and skips the deletion pass.
+- Each chat keeps a per-chat cursor at day granularity; the most recent day is
+  refetched in full so the day transcript stays complete.
+- Document and transcript content is capped at 8 MB, below Gety's per-document
+  limit.
+
+## Local development
 
 ```bash
-deno task verify
-deno task build
+deno task verify                    # fmt + lint + generate + type-check + test + build
+deno task runner -- --reset-state   # full sync into dev/runs/<timestamp>/
+deno task runner -- --polls 2       # verify incremental behavior
 ```
 
-The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
-runtime through its import map.
+Runner config overrides go into `.env` (see `.env.example`), e.g.
+`GETY_CONFIG_INDEX_CHAT_HISTORY=false`.
 
-`deno task verify` formats code, applies safe lint fixes, runs type checking,
-then builds. `deno task build` only regenerates `dist/main.js` and
-`dist/main.js.map` for fast local iteration.
+## Limitations
 
-## Test
-
-```bash
-deno task test
-deno task verify
-```
-
-Unit tests use Deno's built-in test runner and cover stable connector behavior.
-They do not require network access.
-
-## Live Runner
-
-```bash
-cp .env.example .env
-deno task runner -- --reset-state
-```
-
-`dev/runner.ts` is a generic local runner for the Gety connector runtime
-contract. It is not sample-specific: it reads `manifest.json`, imports the
-manifest `entry` (`dist/main.js` by default), builds config values from `.env`,
-injects `config`, `lastState`, and `signal`, then runs `onLoad()` and `poll()`.
-Each poll cycle creates a fresh connector instance and runs `onLoad()`, matching
-Gety's one-shot Deno runner lifecycle.
-
-Config environment variables are derived from manifest field IDs. For example, a
-field named `api_key` can be set as `GETY_CONFIG_API_KEY` or `API_KEY`, and a
-nested field named `auth.api_key` can be set as `GETY_CONFIG_AUTH_API_KEY` or
-`AUTH_API_KEY`. This sample connector has no config fields, so `.env.example`
-only documents that no values are required. Optional fields without `.env`
-values use the same implicit defaults as Gety's install form: strings become
-`""`, numbers become `0`, and checkboxes become `false`.
-
-Runner output is written outside git:
-
-```text
-dev/runs/<timestamp>/
-  summary.json
-  state.before.json
-  state.after.json
-  updates.json
-  deletes.json
-  docs/
-    0001-<doc_type>__<doc_id>.md
-    0001-<doc_type>__<doc_id>.json
-```
-
-The persistent runner state lives at `dev/.runner/state.json`, so repeated runs
-exercise incremental sync. Use `--reset-state` to start from an empty state.
-Optional flags:
-
-```bash
-deno task runner -- --polls 3 --interval 60
-deno task runner -- --state dev/.runner/sample-state.json --out-dir dev/runs
-```
-
-## Install In Gety
-
-1. Open Gety's Custom Connectors settings page.
-2. Install from local folder and select this repository.
-3. Wait for the first poll to finish, then search for `Gety Sample Connector`.
-
-After changing `src/index.ts`, run `deno task build`, then use Restart in Gety
-to load the new `dist/main.js`.
+- Sheets, bitables, slides, mindnotes, file attachments, and legacy "doc"
+  documents (rejected by the v2 fetch API) are not indexed.
+- Deleted messages disappear from a day transcript only when that day is
+  refetched; past chat-day documents are never deleted.
+- Chat transcripts store message text only; images and files appear as
+  placeholders like `(image)`.
+- The connector shells out to `lark-cli`, so Gety must run on a machine where
+  `lark-cli` is installed and authenticated.

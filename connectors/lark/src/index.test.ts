@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+	addDays,
 	buildChatPeriodDoc,
 	buildCloudDoc,
 	chatTitle,
@@ -7,9 +8,10 @@ import {
 	dayStartISO,
 	groupDaysByPeriod,
 	groupMessagesByDay,
-	isoWeekKey,
 	isUnchangedDoc,
 	localDateString,
+	periodKey,
+	periodLabel,
 	renderChatPeriod,
 	senderLabel,
 	weekStartDay,
@@ -21,16 +23,18 @@ Deno.test('dayStartISO and localDateString round-trip a local day', () => {
 	assert.equal(localDateString(new Date(iso)), day);
 });
 
-Deno.test('isoWeekKey and weekStartDay follow ISO 8601 weeks', () => {
+Deno.test('week periods key on Monday and label as a date range', () => {
 	// 2026-07-10 is a Friday in the week of Monday 2026-07-06.
 	assert.equal(weekStartDay('2026-07-10'), '2026-07-06');
-	assert.equal(isoWeekKey('2026-07-10'), '2026-W28');
-	assert.equal(isoWeekKey('2026-07-06'), '2026-W28');
-	assert.equal(isoWeekKey('2026-07-12'), '2026-W28');
-	// Year boundary: the week of Monday 2025-12-29 belongs to ISO year 2026.
-	assert.equal(isoWeekKey('2025-12-29'), '2026-W01');
-	assert.equal(isoWeekKey('2026-01-01'), '2026-W01');
 	assert.equal(weekStartDay('2026-01-01'), '2025-12-29');
+	assert.equal(addDays('2026-07-06', 6), '2026-07-12');
+	assert.equal(periodKey('2026-07-10', 'week'), '2026-07-06');
+	assert.equal(periodKey('2026-07-10', 'day'), '2026-07-10');
+	assert.equal(
+		periodLabel('2026-07-06', 'week'),
+		'2026-07-06 ~ 2026-07-12',
+	);
+	assert.equal(periodLabel('2026-07-10', 'day'), '2026-07-10');
 });
 
 Deno.test('clampContent keeps small content and truncates huge content', () => {
@@ -149,8 +153,8 @@ Deno.test('groupDaysByPeriod merges days into ISO weeks', () => {
 	]);
 
 	const weekly = groupDaysByPeriod(byDay, 'week');
-	assert.deepEqual([...weekly.keys()].sort(), ['2026-W27', '2026-W28']);
-	assert.deepEqual([...weekly.get('2026-W28')!.keys()].sort(), [
+	assert.deepEqual([...weekly.keys()].sort(), ['2026-06-29', '2026-07-06']);
+	assert.deepEqual([...weekly.get('2026-07-06')!.keys()].sort(), [
 		'2026-07-06',
 		'2026-07-10',
 	]);
@@ -212,7 +216,7 @@ Deno.test('renderChatPeriod writes a readable day transcript', () => {
 Deno.test('renderChatPeriod writes day sections inside a week doc', () => {
 	const markdown = renderChatPeriod(
 		'Team',
-		'2026-W28',
+		'2026-07-06 ~ 2026-07-12',
 		new Map([
 			['2026-07-10', [{ content: 'later', create_time: '2026-07-10 09:15' }]],
 			['2026-07-06', [{ content: 'earlier', create_time: '2026-07-06 08:00' }]],
@@ -220,7 +224,7 @@ Deno.test('renderChatPeriod writes day sections inside a week doc', () => {
 		'week',
 	);
 
-	assert.match(markdown, /^# Team — 2026-W28/);
+	assert.match(markdown, /^# Team — 2026-07-06 ~ 2026-07-12/);
 	const monday = markdown.indexOf('## 2026-07-06');
 	const friday = markdown.indexOf('## 2026-07-10');
 	assert.ok(monday >= 0 && friday > monday, 'days are sorted sections');
@@ -264,12 +268,12 @@ Deno.test('buildChatPeriodDoc emits stable ids for both groupings', () => {
 	const weekDoc = buildChatPeriodDoc(
 		{ chat_id: 'oc_abc', name: 'Team', chat_mode: 'group' },
 		'week',
-		'2026-W28',
+		'2026-07-06',
 		days,
 	);
-	assert.equal(weekDoc.id, 'feishu:chat:oc_abc:2026-W28');
-	assert.equal(weekDoc.title, 'Team · 2026-W28');
+	assert.equal(weekDoc.id, 'feishu:chat:oc_abc:2026-07-06');
+	assert.equal(weekDoc.title, 'Team · 2026-07-06 ~ 2026-07-12');
 	const weekMetadata = weekDoc.metadata as Record<string, unknown>;
-	assert.equal(weekMetadata.date, '2026-W28');
+	assert.equal(weekMetadata.date, '2026-07-06 ~ 2026-07-12');
 	assert.equal(weekMetadata.grouping, 'week');
 });

@@ -64,23 +64,20 @@ export function weekStartDay(day: string): string {
 	return localDateString(date);
 }
 
-/** ISO 8601 week key such as "2026-W28" for a local date. */
-export function isoWeekKey(day: string): string {
+export function addDays(day: string, count: number): string {
 	const date = new Date(`${day}T00:00:00`);
-	const thursday = new Date(date);
-	thursday.setDate(date.getDate() - ((date.getDay() + 6) % 7) + 3);
-	const year = thursday.getFullYear();
-	const jan4 = new Date(year, 0, 4);
-	const week1Monday = new Date(jan4);
-	week1Monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-	const week = Math.round(
-		(thursday.getTime() - week1Monday.getTime()) / (7 * 86_400_000),
-	) + 1;
-	return `${year}-W${String(week).padStart(2, '0')}`;
+	date.setDate(date.getDate() + count);
+	return localDateString(date);
 }
 
+/** Stable per-period doc key: the day itself, or the week's Monday. */
 export function periodKey(day: string, grouping: ChatGrouping): string {
-	return grouping === 'week' ? isoWeekKey(day) : day;
+	return grouping === 'week' ? weekStartDay(day) : day;
+}
+
+/** Human-readable period: "2026-07-10" or "2026-07-06 ~ 2026-07-12". */
+export function periodLabel(key: string, grouping: ChatGrouping): string {
+	return grouping === 'week' ? `${key} ~ ${addDays(key, 6)}` : key;
 }
 
 export function clampContent(
@@ -211,11 +208,11 @@ function renderMessages(lines: string[], messages: ChatMessage[]): void {
  */
 export function renderChatPeriod(
 	title: string,
-	key: string,
+	label: string,
 	days: Map<string, ChatMessage[]>,
 	grouping: ChatGrouping,
 ): string {
-	const lines = [`# ${title} — ${key}`, ''];
+	const lines = [`# ${title} — ${label}`, ''];
 	const sortedDays = [...days.keys()].sort();
 	for (const day of sortedDays) {
 		if (grouping === 'week') {
@@ -233,6 +230,7 @@ export function buildChatPeriodDoc(
 	days: Map<string, ChatMessage[]>,
 ): WireDoc {
 	const title = chatTitle(chat);
+	const label = periodLabel(key, grouping);
 	const sortedDays = [...days.keys()].sort();
 	const lastDay = sortedDays[sortedDays.length - 1];
 	const lastMessages = days.get(lastDay) ?? [];
@@ -242,11 +240,11 @@ export function buildChatPeriodDoc(
 		0,
 	);
 	const { content, bytes } = clampContent(
-		renderChatPeriod(title, key, days, grouping),
+		renderChatPeriod(title, label, days, grouping),
 	);
 	return {
 		id: `feishu:chat:${chat.chat_id}:${key}`,
-		title: `${title} · ${key}`,
+		title: `${title} · ${label}`,
 		content,
 		content_format: 'markdown',
 		doc_type: 'feishu:chat',
@@ -257,7 +255,7 @@ export function buildChatPeriodDoc(
 				`https://applink.feishu.cn/client/chat/open?openChatId=${chat.chat_id}`,
 			chat_id: chat.chat_id,
 			chat_name: title,
-			date: key,
+			date: label,
 			grouping,
 			message_count: messageCount,
 		},
@@ -321,6 +319,11 @@ export default class FeishuConnector extends Connector<
 		) {
 			// Grouping changed: doc ids are keyed differently, so drop and
 			// rebuild the whole chat index from the lookback window.
+			yield* this.purgeChatIndex(state);
+		} else if (
+			(state.chat_doc_ids ?? []).some((id) => /:\d{4}-W\d{2}$/.test(id))
+		) {
+			// One-time migration off the retired "2026-W28" week-key format.
 			yield* this.purgeChatIndex(state);
 		}
 

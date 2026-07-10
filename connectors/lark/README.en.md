@@ -68,7 +68,8 @@ connector in Gety. After manifest edits, reinstall the connector.
 | Cloud document | `feishu:doc:<token>`                  | The document in the browser        |
 | Chat history   | `feishu:chat:<chat_id>:<week or day>` | The chat in the Lark app (applink) |
 
-Week keys look like `2026-W28` (ISO 8601), day keys like `2026-07-10`.
+Week docs key on the week's Monday and display a date range such as
+`2026-07-06 ~ 2026-07-12`; day docs use `2026-07-10`.
 
 Sync behavior:
 
@@ -106,5 +107,8 @@ Runner config overrides go into `.env` (see `.env.example`), e.g.
   refetched; historical chat docs are not swept message-by-message.
 - Chat transcripts store message text only; images and files appear as
   placeholders like `(image)`.
+- Images in cloud documents are inlined with Feishu's temporary signed URLs:
+  they render in Gety's preview but break once the URL expires, until the
+  document is edited and refetched.
 - The connector shells out to `lark-cli`, so Gety must run on a machine where
   `lark-cli` is installed and authenticated.

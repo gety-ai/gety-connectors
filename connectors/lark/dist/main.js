@@ -6,7 +6,6 @@ import {
 } from "@gety-ai/connector-sdk";
 
 // src/doc_markdown.ts
-var EPHEMERAL_URL_MARKERS = ["internal-api-drive-stream", "/authcode/"];
 function cleanupDocMarkdown(text) {
   return transformOutsideCode(text, (segment) => {
     let out = segment;
@@ -15,7 +14,6 @@ function cleanupDocMarkdown(text) {
     out = stripGrids(out);
     out = transformInline(out);
     out = convertBlockLevel(out);
-    out = replaceEphemeralImages(out);
     out = convertLineBreaks(out);
     return out.replace(/\n{3,}/g, "\n\n");
   });
@@ -103,6 +101,10 @@ function transformInline(text) {
   out = out.replace(/<img\b([^>]*?)\/?>/g, (_, attrs) => {
     const name = /name="([^"]*)"/.exec(attrs)?.[1];
     const alt = /alt="([^"]*)"/.exec(attrs)?.[1];
+    const href = /href="([^"]*)"/.exec(attrs)?.[1];
+    if (href != null) {
+      return `![${alt ?? name ?? ""}](${href})`;
+    }
     const label = name ? `[\u56FE\u7247: ${name}]` : "[\u56FE\u7247]";
     return alt ? `${label} ${alt}` : label;
   });
@@ -110,13 +112,7 @@ function transformInline(text) {
     /<whiteboard\b[^>]*>(?:[\s\S]*?<\/whiteboard>)?/g,
     "[\u753B\u677F]"
   );
-  out = out.replace(
-    /<bitable\b([^>]*)>(?:[\s\S]*?<\/bitable>)?/g,
-    (_, attrs) => {
-      const token = /token="([^"]*)"/.exec(attrs)?.[1];
-      return token ? `[\u591A\u7EF4\u8868\u683C](https://feishu.cn/base/${token})` : "[\u591A\u7EF4\u8868\u683C]";
-    }
-  );
+  out = out.replace(/<bitable\b[^>]*>(?:[\s\S]*?<\/bitable>)?/g, "[\u591A\u7EF4\u8868\u683C]");
   out = out.replace(/<task\b[^>]*>(?:[\s\S]*?<\/task>)?/g, "");
   out = out.replace(
     /<time\b([^>]*)>(?:[\s\S]*?<\/time>)?/g,
@@ -167,23 +163,14 @@ ${body}` : label;
   return out;
 }
 function convertBlockLevel(text) {
-  return text.replace(/<p(?:\s[^>]*)?>/g, "").replace(/<\/p>/g, "\n\n").replace(/<\/?(?:ul|ol)(?:\s[^>]*)?>/g, "\n").replace(/<li(?:\s[^>]*)?>/g, "\n- ").replace(/<\/li>/g, "").replace(
+  return text.replace(
+    /<title>\s*([\s\S]*?)\s*<\/title>/g,
+    (_, inner) => inner === "" ? "" : `# ${inner}`
+  ).replace(/<p(?:\s[^>]*)?>/g, "").replace(/<\/p>/g, "\n\n").replace(/<\/?(?:ul|ol)(?:\s[^>]*)?>/g, "\n").replace(/<li(?:\s[^>]*)?>/g, "\n- ").replace(/<\/li>/g, "").replace(
     /<blockquote(?:\s[^>]*)?>([\s\S]*?)<\/blockquote>/g,
     (_, inner) => `
 ${inner.trim().split("\n").map((line) => `> ${line}`).join("\n")}
 `
-  );
-}
-function replaceEphemeralImages(text) {
-  return text.replace(
-    /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
-    (whole, alt, url) => {
-      if (!EPHEMERAL_URL_MARKERS.some((marker) => url.includes(marker))) {
-        return whole;
-      }
-      const label = alt.trim();
-      return label ? `[\u56FE\u7247: ${label}]` : "[\u56FE\u7247]";
-    }
   );
 }
 function convertLineBreaks(text) {
@@ -520,21 +507,16 @@ function weekStartDay(day) {
   date.setDate(date.getDate() - weekday);
   return localDateString(date);
 }
-function isoWeekKey(day) {
+function addDays(day, count) {
   const date = /* @__PURE__ */ new Date(`${day}T00:00:00`);
-  const thursday = new Date(date);
-  thursday.setDate(date.getDate() - (date.getDay() + 6) % 7 + 3);
-  const year = thursday.getFullYear();
-  const jan4 = new Date(year, 0, 4);
-  const week1Monday = new Date(jan4);
-  week1Monday.setDate(jan4.getDate() - (jan4.getDay() + 6) % 7);
-  const week = Math.round(
-    (thursday.getTime() - week1Monday.getTime()) / (7 * 864e5)
-  ) + 1;
-  return `${year}-W${String(week).padStart(2, "0")}`;
+  date.setDate(date.getDate() + count);
+  return localDateString(date);
 }
 function periodKey(day, grouping) {
-  return grouping === "week" ? isoWeekKey(day) : day;
+  return grouping === "week" ? weekStartDay(day) : day;
+}
+function periodLabel(key, grouping) {
+  return grouping === "week" ? `${key} ~ ${addDays(key, 6)}` : key;
 }
 function clampContent(text) {
   const encoder = new TextEncoder();
@@ -642,8 +624,8 @@ ${body}` : `${label} ${body}`);
     lines.push("");
   }
 }
-function renderChatPeriod(title, key, days, grouping) {
-  const lines = [`# ${title} \u2014 ${key}`, ""];
+function renderChatPeriod(title, label, days, grouping) {
+  const lines = [`# ${title} \u2014 ${label}`, ""];
   const sortedDays = [...days.keys()].sort();
   for (const day of sortedDays) {
     if (grouping === "week") {
@@ -655,6 +637,7 @@ function renderChatPeriod(title, key, days, grouping) {
 }
 function buildChatPeriodDoc(chat, grouping, key, days) {
   const title = chatTitle(chat);
+  const label = periodLabel(key, grouping);
   const sortedDays = [...days.keys()].sort();
   const lastDay = sortedDays[sortedDays.length - 1];
   const lastMessages = days.get(lastDay) ?? [];
@@ -664,11 +647,11 @@ function buildChatPeriodDoc(chat, grouping, key, days) {
     0
   );
   const { content, bytes } = clampContent(
-    renderChatPeriod(title, key, days, grouping)
+    renderChatPeriod(title, label, days, grouping)
   );
   return {
     id: `feishu:chat:${chat.chat_id}:${key}`,
-    title: `${title} \xB7 ${key}`,
+    title: `${title} \xB7 ${label}`,
     content,
     content_format: "markdown",
     doc_type: "feishu:chat",
@@ -678,7 +661,7 @@ function buildChatPeriodDoc(chat, grouping, key, days) {
       url: `https://applink.feishu.cn/client/chat/open?openChatId=${chat.chat_id}`,
       chat_id: chat.chat_id,
       chat_name: title,
-      date: key,
+      date: label,
       grouping,
       message_count: messageCount
     }
@@ -715,6 +698,8 @@ var FeishuConnector = class extends Connector {
     if (!this.config.index_chat_history) {
       yield* this.purgeChatIndex(state);
     } else if (state.chat_grouping != null && state.chat_grouping !== grouping) {
+      yield* this.purgeChatIndex(state);
+    } else if ((state.chat_doc_ids ?? []).some((id) => /:\d{4}-W\d{2}$/.test(id))) {
       yield* this.purgeChatIndex(state);
     }
     yield* this.pollDocs(client, state);
@@ -968,6 +953,7 @@ var FeishuConnector = class extends Connector {
   }
 };
 export {
+  addDays,
   buildChatPeriodDoc,
   buildCloudDoc,
   chatTitle,
@@ -977,9 +963,9 @@ export {
   groupDaysByPeriod,
   groupMessagesByDay,
   isUnchangedDoc,
-  isoWeekKey,
   localDateString,
   periodKey,
+  periodLabel,
   renderChatPeriod,
   senderLabel,
   weekStartDay

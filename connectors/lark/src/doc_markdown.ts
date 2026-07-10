@@ -9,8 +9,6 @@
  * fenced/inline code is never modified.
  */
 
-const EPHEMERAL_URL_MARKERS = ['internal-api-drive-stream', '/authcode/'];
-
 export function cleanupDocMarkdown(text: string): string {
 	return transformOutsideCode(text, (segment) => {
 		let out = segment;
@@ -19,7 +17,6 @@ export function cleanupDocMarkdown(text: string): string {
 		out = stripGrids(out);
 		out = transformInline(out);
 		out = convertBlockLevel(out);
-		out = replaceEphemeralImages(out);
 		out = convertLineBreaks(out);
 		return out.replace(/\n{3,}/g, '\n\n');
 	});
@@ -146,10 +143,15 @@ function transformInline(text: string): string {
 	});
 	out = out.replace(/<\/?figure[^>]*>/g, '');
 
-	// Inline images carry name and alt description text worth indexing.
+	// Inline images: Gety renders remote images, so keep the (ephemeral,
+	// signed) href as a markdown image; alt/name text stays searchable.
 	out = out.replace(/<img\b([^>]*?)\/?>/g, (_, attrs: string) => {
 		const name = /name="([^"]*)"/.exec(attrs)?.[1];
 		const alt = /alt="([^"]*)"/.exec(attrs)?.[1];
+		const href = /href="([^"]*)"/.exec(attrs)?.[1];
+		if (href != null) {
+			return `![${alt ?? name ?? ''}](${href})`;
+		}
 		const label = name ? `[图片: ${name}]` : '[图片]';
 		return alt ? `${label} ${alt}` : label;
 	});
@@ -159,15 +161,9 @@ function transformInline(text: string): string {
 		'[画板]',
 	);
 
-	out = out.replace(
-		/<bitable\b([^>]*)>(?:[\s\S]*?<\/bitable>)?/g,
-		(_, attrs: string) => {
-			const token = /token="([^"]*)"/.exec(attrs)?.[1];
-			return token
-				? `[多维表格](https://feishu.cn/base/${token})`
-				: '[多维表格]';
-		},
-	);
+	// Embedded bitable block tokens are not directly openable URLs; open the
+	// parent document via its doc link instead.
+	out = out.replace(/<bitable\b[^>]*>(?:[\s\S]*?<\/bitable>)?/g, '[多维表格]');
 
 	// Empty status tag next to an already-rendered `- [x]` checkbox.
 	out = out.replace(/<task\b[^>]*>(?:[\s\S]*?<\/task>)?/g, '');
@@ -234,6 +230,10 @@ function transformInline(text: string): string {
 /** Block-level leftovers outside tables (mostly from grid columns). */
 function convertBlockLevel(text: string): string {
 	return text
+		.replace(
+			/<title>\s*([\s\S]*?)\s*<\/title>/g,
+			(_, inner: string) => (inner === '' ? '' : `# ${inner}`),
+		)
 		.replace(/<p(?:\s[^>]*)?>/g, '')
 		.replace(/<\/p>/g, '\n\n')
 		.replace(/<\/?(?:ul|ol)(?:\s[^>]*)?>/g, '\n')
@@ -244,20 +244,6 @@ function convertBlockLevel(text: string): string {
 			(_, inner: string) =>
 				`\n${inner.trim().split('\n').map((line) => `> ${line}`).join('\n')}\n`,
 		);
-}
-
-/** `![alt](signed url)` expires in minutes; keep the alt text only. */
-function replaceEphemeralImages(text: string): string {
-	return text.replace(
-		/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
-		(whole, alt: string, url: string) => {
-			if (!EPHEMERAL_URL_MARKERS.some((marker) => url.includes(marker))) {
-				return whole;
-			}
-			const label = alt.trim();
-			return label ? `[图片: ${label}]` : '[图片]';
-		},
-	);
 }
 
 /** `<br/>` inside a pipe-table line must not break the row. */

@@ -79,11 +79,34 @@ Deno.test('media embeds become typed placeholders', () => {
 	assert.match(out, /\[视频\]/);
 	assert.match(out, /\[图片: 截图\.png\] 入群二维码说明/);
 	assert.match(out, /\[画板\]/);
-	assert.match(out, /\[多维表格\]\(https:\/\/feishu\.cn\/base\/bas1\)/);
+	// Embedded bitable tokens are not openable URLs: plain placeholder only.
+	assert.match(out, /\[多维表格\]/);
+	assert.doesNotMatch(out, /feishu\.cn\/base/);
 	assert.match(out, /\[任务列表\]/);
 	assert.match(out, /\[投票: 表决\]\n选项A\n选项B/);
 	assert.match(out, /同步内容/);
 	assert.doesNotMatch(out, /<(?:figure|source|img|whiteboard|bitable|poll)/);
+});
+
+Deno.test('doc titles become h1 headings', () => {
+	const out = cleanupDocMarkdown('<title>Gety 诊断工具</title>\n\n正文');
+	assert.match(out, /^# Gety 诊断工具$/m);
+	assert.doesNotMatch(out, /<title>/);
+});
+
+Deno.test('img elements with an href stay renderable markdown images', () => {
+	const out = cleanupDocMarkdown(
+		'<img name="image.png" href="https://internal-api-drive-stream.feishu.cn/a/authcode/?code=x"/>\n' +
+			'<img name="图.png" alt="二维码说明" href="https://internal-api-drive-stream.feishu.cn/b/authcode/?code=y"/>',
+	);
+	assert.match(
+		out,
+		/!\[image\.png\]\(https:\/\/internal-api-drive-stream\.feishu\.cn\/a\/authcode\/\?code=x\)/,
+	);
+	assert.match(
+		out,
+		/!\[二维码说明\]\(https:\/\/internal-api-drive-stream\.feishu\.cn\/b\/authcode\/\?code=y\)/,
+	);
 });
 
 Deno.test('time elements render as readable dates', () => {
@@ -97,14 +120,13 @@ Deno.test('time elements render as readable dates', () => {
 	assert.match(out, /2026-12-22(?! 18:10 18:10)/);
 });
 
-Deno.test('ephemeral signed image urls collapse to placeholders', () => {
+Deno.test('markdown images are preserved (Gety renders remote images)', () => {
+	const signed =
+		'![](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=abc)';
 	const out = cleanupDocMarkdown(
-		'![](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=abc)\n' +
-			'![说明文字](https://internal-api-drive-stream.feishu.cn/x/authcode/?code=d)\n' +
-			'![keep](https://example.com/logo.png)',
+		`${signed}\n![keep](https://example.com/logo.png)`,
 	);
-	assert.match(out, /^\[图片\]$/m);
-	assert.match(out, /\[图片: 说明文字\]/);
+	assert.match(out, /internal-api-drive-stream\.feishu\.cn/);
 	assert.match(out, /!\[keep\]\(https:\/\/example\.com\/logo\.png\)/);
 });
 

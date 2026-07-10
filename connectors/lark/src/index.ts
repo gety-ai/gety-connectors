@@ -18,7 +18,7 @@ import {
 	type SearchEntity,
 } from './lark_cli.ts';
 
-export type ChatGrouping = 'day' | 'week';
+export type ChatGrouping = 'day' | 'week' | 'chat';
 
 export type FeishuState = {
 	/** RFC 3339 edit time of the newest cloud document indexed so far. */
@@ -70,8 +70,14 @@ export function addDays(day: string, count: number): string {
 	return localDateString(date);
 }
 
-/** Stable per-period doc key: the day itself, or the week's Monday. */
+/**
+ * Stable per-period doc key: the day itself, the week's Monday, or a single
+ * constant bucket when the whole chat is one document.
+ */
 export function periodKey(day: string, grouping: ChatGrouping): string {
+	if (grouping === 'chat') {
+		return 'all';
+	}
 	return grouping === 'week' ? weekStartDay(day) : day;
 }
 
@@ -203,8 +209,8 @@ function renderMessages(lines: string[], messages: ChatMessage[]): void {
 }
 
 /**
- * Day docs are a flat transcript; week docs add a `##` section per day so a
- * whole week stays readable.
+ * Day docs are a flat transcript; week and whole-chat docs add a `##`
+ * section per day so long transcripts stay readable.
  */
 export function renderChatPeriod(
 	title: string,
@@ -215,7 +221,7 @@ export function renderChatPeriod(
 	const lines = [`# ${title} — ${label}`, ''];
 	const sortedDays = [...days.keys()].sort();
 	for (const day of sortedDays) {
-		if (grouping === 'week') {
+		if (grouping !== 'day') {
 			lines.push(`## ${day}`, '');
 		}
 		renderMessages(lines, days.get(day) ?? []);
@@ -230,21 +236,44 @@ export function buildChatPeriodDoc(
 	days: Map<string, ChatMessage[]>,
 ): WireDoc {
 	const title = chatTitle(chat);
-	const label = periodLabel(key, grouping);
 	const sortedDays = [...days.keys()].sort();
+	const firstDay = sortedDays[0];
 	const lastDay = sortedDays[sortedDays.length - 1];
+	const label = grouping === 'chat'
+		? (firstDay === lastDay ? firstDay : `${firstDay} ~ ${lastDay}`)
+		: periodLabel(key, grouping);
 	const lastMessages = days.get(lastDay) ?? [];
 	const lastMessage = lastMessages[lastMessages.length - 1];
 	const messageCount = sortedDays.reduce(
 		(count, day) => count + (days.get(day)?.length ?? 0),
 		0,
 	);
-	const { content, bytes } = clampContent(
-		renderChatPeriod(title, label, days, grouping),
-	);
+	// A whole-chat doc can outgrow the content cap; drop the oldest days
+	// first so the recent history survives instead of the tail being cut.
+	let renderDays = days;
+	let rendered = renderChatPeriod(title, label, renderDays, grouping);
+	if (grouping === 'chat') {
+		const encoder = new TextEncoder();
+		let dropFrom = 0;
+		while (
+			encoder.encode(rendered).length > MAX_CONTENT_BYTES &&
+			dropFrom < sortedDays.length - 1
+		) {
+			dropFrom += 1;
+			renderDays = new Map(
+				sortedDays.slice(dropFrom).map((day) => [day, days.get(day) ?? []]),
+			);
+			rendered = `${
+				renderChatPeriod(title, label, renderDays, grouping)
+			}\n\n…(更早的消息因长度限制被省略)`;
+		}
+	}
+	const { content, bytes } = clampContent(rendered);
 	return {
-		id: `feishu:chat:${chat.chat_id}:${key}`,
-		title: `${title} · ${label}`,
+		id: grouping === 'chat'
+			? `feishu:chat:${chat.chat_id}`
+			: `feishu:chat:${chat.chat_id}:${key}`,
+		title: grouping === 'chat' ? title : `${title} · ${label}`,
 		content,
 		content_format: 'markdown',
 		doc_type: 'feishu:chat',
@@ -302,6 +331,8 @@ export default class FeishuConnector extends Connector<
 		const client = this.createClient();
 		const grouping: ChatGrouping = this.config.chat_grouping === 'day'
 			? 'day'
+			: this.config.chat_grouping === 'chat'
+			? 'chat'
 			: 'week';
 		const state: FeishuState = {
 			docs_high_water: this.lastState?.docs_high_water,
@@ -539,11 +570,14 @@ export default class FeishuConnector extends Connector<
 	}
 
 	/**
-	 * Chat history is indexed as one document per chat per period (day or
-	 * ISO week). Each chat's cursor is the day of its newest indexed
-	 * message; the poll refetches from the start of the period containing
-	 * that day, so the still-open period is re-upserted with the complete
-	 * transcript.
+	 * Chat history is indexed as one document per chat per period (day, ISO
+	 * week, or the whole chat). For day/week, each chat's cursor is the day
+	 * of its newest indexed message and the poll refetches from the start of
+	 * the period containing that day, so the still-open period is re-upserted
+	 * complete. For whole-chat docs the cursor is the newest message's
+	 * "YYYY-MM-DD HH:mm" timestamp: a cheap probe from that day decides
+	 * whether anything is new before the full window is refetched to rebuild
+	 * the single document.
 	 */
 	private async *pollChats(
 		client: LarkCliClient,
@@ -562,13 +596,21 @@ export default class FeishuConnector extends Connector<
 			if (this.signal.aborted) {
 				return;
 			}
-			const sinceDay = state.chat_cursors?.[chat.chat_id] ?? defaultStartDay;
-			const fetchFromDay = grouping === 'week'
-				? weekStartDay(sinceDay)
-				: sinceDay;
+			const cursor = state.chat_cursors?.[chat.chat_id];
+			const fetchFromDay = grouping === 'chat'
+				? defaultStartDay
+				: grouping === 'week'
+				? weekStartDay(cursor ?? defaultStartDay)
+				: cursor ?? defaultStartDay;
 
 			let messages: ChatMessage[];
 			try {
+				if (
+					grouping === 'chat' && cursor != null &&
+					!(await this.hasNewMessages(client, chat.chat_id, cursor))
+				) {
+					continue;
+				}
 				messages = await this.listMessages(client, chat.chat_id, fetchFromDay);
 			} catch (error) {
 				this.signal.throwIfAborted();
@@ -586,25 +628,52 @@ export default class FeishuConnector extends Connector<
 			}
 
 			const updates: DocUpdate[] = [];
-			let lastDay = sinceDay;
+			let nextCursor = cursor ?? '';
 			for (const [key, days] of periods) {
 				const doc = buildChatPeriodDoc(chat, grouping, key, days);
 				updates.push(upsert(doc));
 				chatDocIds.add(doc.id);
-				for (const day of days.keys()) {
-					if (day > lastDay) {
-						lastDay = day;
+				for (const [day, dayMessages] of days) {
+					if (grouping === 'chat') {
+						const lastTime = dayMessages[dayMessages.length - 1]?.create_time;
+						if (lastTime != null && lastTime > nextCursor) {
+							nextCursor = lastTime;
+						}
+					} else if (day > nextCursor) {
+						nextCursor = day;
 					}
 				}
 			}
 
 			state.chat_cursors = {
 				...(state.chat_cursors ?? {}),
-				[chat.chat_id]: lastDay,
+				[chat.chat_id]: nextCursor,
 			};
 			state.chat_doc_ids = [...chatDocIds].sort();
 			yield { updates, state: structuredClone(state) };
 		}
+	}
+
+	/**
+	 * Cheap probe for whole-chat docs: fetch from the cursor's day and check
+	 * for any message strictly newer than the cursor ("YYYY-MM-DD HH:mm"
+	 * strings compare chronologically). Quiet chats cost one small page
+	 * instead of a full-window refetch.
+	 */
+	private async hasNewMessages(
+		client: LarkCliClient,
+		chatId: string,
+		cursor: string,
+	): Promise<boolean> {
+		const probe = await this.listMessages(
+			client,
+			chatId,
+			cursor.slice(0, 10),
+		);
+		return probe.some((message) =>
+			message.deleted !== true && message.create_time != null &&
+			message.create_time > cursor
+		);
 	}
 
 	private async *listChats(

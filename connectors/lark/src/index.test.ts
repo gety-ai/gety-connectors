@@ -158,6 +158,10 @@ Deno.test('groupDaysByPeriod merges days into ISO weeks', () => {
 		'2026-07-06',
 		'2026-07-10',
 	]);
+
+	const whole = groupDaysByPeriod(byDay, 'chat');
+	assert.deepEqual([...whole.keys()], ['all']);
+	assert.equal(whole.get('all')!.size, 3);
 });
 
 Deno.test('senderLabel prefers names and marks bots', () => {
@@ -276,4 +280,31 @@ Deno.test('buildChatPeriodDoc emits stable ids for both groupings', () => {
 	const weekMetadata = weekDoc.metadata as Record<string, unknown>;
 	assert.equal(weekMetadata.date, '2026-07-06 ~ 2026-07-12');
 	assert.equal(weekMetadata.grouping, 'week');
+});
+
+Deno.test('whole-chat docs use the bare chat id and a date-range label', () => {
+	const days = new Map([
+		['2026-07-06', [{ content: 'earlier', create_time: '2026-07-06 08:00' }]],
+		['2026-07-10', [{ content: 'later', create_time: '2026-07-10 09:15' }]],
+	]);
+
+	const doc = buildChatPeriodDoc(
+		{ chat_id: 'oc_abc', name: 'Team', chat_mode: 'group' },
+		'chat',
+		'all',
+		days,
+	);
+	assert.equal(doc.id, 'feishu:chat:oc_abc');
+	assert.equal(doc.title, 'Team');
+	assert.match(String(doc.content), /^# Team — 2026-07-06 ~ 2026-07-10/);
+	assert.match(String(doc.content), /## 2026-07-06/);
+	assert.match(String(doc.content), /## 2026-07-10/);
+	const metadata = doc.metadata as Record<string, unknown>;
+	assert.equal(metadata.date, '2026-07-06 ~ 2026-07-10');
+	assert.equal(metadata.grouping, 'chat');
+	assert.equal(metadata.message_count, 2);
+	assert.equal(
+		doc.doc_updated_at,
+		new Date('2026-07-10T09:15:00').toISOString(),
+	);
 });

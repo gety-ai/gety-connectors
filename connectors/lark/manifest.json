@@ -36,9 +36,10 @@
 				"default_value": "week",
 				"options": [
 					{ "value": "week", "label": "按周" },
-					{ "value": "day", "label": "按天" }
+					{ "value": "day", "label": "按天" },
+					{ "value": "chat", "label": "不分组(每个会话一篇)" }
 				],
-				"description": "每个会话按周或按天聚合为一篇可搜索文档。修改此项后会删除并重新索引全部聊天记录。"
+				"description": "每个会话按周、按天,或不分组(整个会话一篇)聚合为可搜索文档。修改此项后会删除并重新索引全部聊天记录。"
 			},
 			{
 				"id": "chat_history_days",

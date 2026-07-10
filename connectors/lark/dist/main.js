@@ -523,6 +523,9 @@ function addDays(day, count) {
   return localDateString(date);
 }
 function periodKey(day, grouping) {
+  if (grouping === "chat") {
+    return "all";
+  }
   return grouping === "week" ? weekStartDay(day) : day;
 }
 function periodLabel(key, grouping) {
@@ -638,7 +641,7 @@ function renderChatPeriod(title, label, days, grouping) {
   const lines = [`# ${title} \u2014 ${label}`, ""];
   const sortedDays = [...days.keys()].sort();
   for (const day of sortedDays) {
-    if (grouping === "week") {
+    if (grouping !== "day") {
       lines.push(`## ${day}`, "");
     }
     renderMessages(lines, days.get(day) ?? []);
@@ -647,21 +650,35 @@ function renderChatPeriod(title, label, days, grouping) {
 }
 function buildChatPeriodDoc(chat, grouping, key, days) {
   const title = chatTitle(chat);
-  const label = periodLabel(key, grouping);
   const sortedDays = [...days.keys()].sort();
+  const firstDay = sortedDays[0];
   const lastDay = sortedDays[sortedDays.length - 1];
+  const label = grouping === "chat" ? firstDay === lastDay ? firstDay : `${firstDay} ~ ${lastDay}` : periodLabel(key, grouping);
   const lastMessages = days.get(lastDay) ?? [];
   const lastMessage = lastMessages[lastMessages.length - 1];
   const messageCount = sortedDays.reduce(
     (count, day) => count + (days.get(day)?.length ?? 0),
     0
   );
-  const { content, bytes } = clampContent(
-    renderChatPeriod(title, label, days, grouping)
-  );
+  let renderDays = days;
+  let rendered = renderChatPeriod(title, label, renderDays, grouping);
+  if (grouping === "chat") {
+    const encoder = new TextEncoder();
+    let dropFrom = 0;
+    while (encoder.encode(rendered).length > MAX_CONTENT_BYTES && dropFrom < sortedDays.length - 1) {
+      dropFrom += 1;
+      renderDays = new Map(
+        sortedDays.slice(dropFrom).map((day) => [day, days.get(day) ?? []])
+      );
+      rendered = `${renderChatPeriod(title, label, renderDays, grouping)}
+
+\u2026(\u66F4\u65E9\u7684\u6D88\u606F\u56E0\u957F\u5EA6\u9650\u5236\u88AB\u7701\u7565)`;
+    }
+  }
+  const { content, bytes } = clampContent(rendered);
   return {
-    id: `feishu:chat:${chat.chat_id}:${key}`,
-    title: `${title} \xB7 ${label}`,
+    id: grouping === "chat" ? `feishu:chat:${chat.chat_id}` : `feishu:chat:${chat.chat_id}:${key}`,
+    title: grouping === "chat" ? title : `${title} \xB7 ${label}`,
     content,
     content_format: "markdown",
     doc_type: "feishu:chat",
@@ -697,7 +714,7 @@ var FeishuConnector = class extends Connector {
   }
   async *poll() {
     const client = this.createClient();
-    const grouping = this.config.chat_grouping === "day" ? "day" : "week";
+    const grouping = this.config.chat_grouping === "day" ? "day" : this.config.chat_grouping === "chat" ? "chat" : "week";
     const state = {
       docs_high_water: this.lastState?.docs_high_water,
       docs: { ...this.lastState?.docs ?? {} },
@@ -884,11 +901,14 @@ var FeishuConnector = class extends Connector {
     }
   }
   /**
-   * Chat history is indexed as one document per chat per period (day or
-   * ISO week). Each chat's cursor is the day of its newest indexed
-   * message; the poll refetches from the start of the period containing
-   * that day, so the still-open period is re-upserted with the complete
-   * transcript.
+   * Chat history is indexed as one document per chat per period (day, ISO
+   * week, or the whole chat). For day/week, each chat's cursor is the day
+   * of its newest indexed message and the poll refetches from the start of
+   * the period containing that day, so the still-open period is re-upserted
+   * complete. For whole-chat docs the cursor is the newest message's
+   * "YYYY-MM-DD HH:mm" timestamp: a cheap probe from that day decides
+   * whether anything is new before the full window is refetched to rebuild
+   * the single document.
    */
   async *pollChats(client, state, grouping) {
     const lookbackDays = this.config.chat_history_days > 0 ? this.config.chat_history_days : DEFAULT_CHAT_LOOKBACK_DAYS;
@@ -900,10 +920,13 @@ var FeishuConnector = class extends Connector {
       if (this.signal.aborted) {
         return;
       }
-      const sinceDay = state.chat_cursors?.[chat.chat_id] ?? defaultStartDay;
-      const fetchFromDay = grouping === "week" ? weekStartDay(sinceDay) : sinceDay;
+      const cursor = state.chat_cursors?.[chat.chat_id];
+      const fetchFromDay = grouping === "chat" ? defaultStartDay : grouping === "week" ? weekStartDay(cursor ?? defaultStartDay) : cursor ?? defaultStartDay;
       let messages;
       try {
+        if (grouping === "chat" && cursor != null && !await this.hasNewMessages(client, chat.chat_id, cursor)) {
+          continue;
+        }
         messages = await this.listMessages(client, chat.chat_id, fetchFromDay);
       } catch (error) {
         this.signal.throwIfAborted();
@@ -917,24 +940,45 @@ var FeishuConnector = class extends Connector {
         continue;
       }
       const updates = [];
-      let lastDay = sinceDay;
+      let nextCursor = cursor ?? "";
       for (const [key, days] of periods) {
         const doc = buildChatPeriodDoc(chat, grouping, key, days);
         updates.push(upsert(doc));
         chatDocIds.add(doc.id);
-        for (const day of days.keys()) {
-          if (day > lastDay) {
-            lastDay = day;
+        for (const [day, dayMessages] of days) {
+          if (grouping === "chat") {
+            const lastTime = dayMessages[dayMessages.length - 1]?.create_time;
+            if (lastTime != null && lastTime > nextCursor) {
+              nextCursor = lastTime;
+            }
+          } else if (day > nextCursor) {
+            nextCursor = day;
           }
         }
       }
       state.chat_cursors = {
         ...state.chat_cursors ?? {},
-        [chat.chat_id]: lastDay
+        [chat.chat_id]: nextCursor
       };
       state.chat_doc_ids = [...chatDocIds].sort();
       yield { updates, state: structuredClone(state) };
     }
+  }
+  /**
+   * Cheap probe for whole-chat docs: fetch from the cursor's day and check
+   * for any message strictly newer than the cursor ("YYYY-MM-DD HH:mm"
+   * strings compare chronologically). Quiet chats cost one small page
+   * instead of a full-window refetch.
+   */
+  async hasNewMessages(client, chatId, cursor) {
+    const probe = await this.listMessages(
+      client,
+      chatId,
+      cursor.slice(0, 10)
+    );
+    return probe.some(
+      (message) => message.deleted !== true && message.create_time != null && message.create_time > cursor
+    );
   }
   async *listChats(client) {
     let pageToken;

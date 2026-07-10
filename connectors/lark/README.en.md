@@ -10,8 +10,8 @@ content through a locally authenticated
   as markdown. Documents that disappear from the source (deleted, or access
   lost) are removed from the index during sync.
 - **Chat history** _(optional, on by default)_ — group chats and direct
-  messages, grouped into one searchable document per chat per ISO week (default)
-  or per day.
+  messages, grouped into one searchable document per chat per ISO week
+  (default), per day, or ungrouped (one document per chat).
 
 The connector never stores Lark credentials itself. All API calls go through
 `lark-cli`, which keeps its own OAuth tokens.
@@ -51,25 +51,27 @@ The connector never stores Lark credentials itself. All API calls go through
 2. In Gety, open **Custom Connectors** and install this folder.
 3. Fill in the settings (labels are in Chinese):
 
-   | Setting (中文)   | Default     | Meaning                                                                                        |
-   | ---------------- | ----------- | ---------------------------------------------------------------------------------------------- |
-   | 索引聊天记录     | checked     | Index group chats and direct messages. Unchecking removes previously indexed chats.            |
-   | 聊天记录聚合粒度 | 按周 (week) | Group each chat's messages per ISO week or per day. Changing this re-indexes all chat history. |
-   | 聊天记录回溯天数 | 30          | How many days of chat history to backfill on the first sync.                                   |
-   | lark-cli 路径    | `lark-cli`  | Path to the lark-cli executable if it is not on the `PATH` inherited by Gety.                  |
+   | Setting (中文)   | Default     | Meaning                                                                                                             |
+   | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
+   | 索引聊天记录     | checked     | Index group chats and direct messages. Unchecking removes previously indexed chats.                                 |
+   | 聊天记录聚合粒度 | 按周 (week) | Group each chat's messages per ISO week, per day, or not at all (one doc per chat). Changing this re-indexes chats. |
+   | 聊天记录回溯天数 | 30          | How many days of chat history to backfill on the first sync.                                                        |
+   | lark-cli 路径    | `lark-cli`  | Path to the lark-cli executable if it is not on the `PATH` inherited by Gety.                                       |
 
 After source edits, rebuild (`deno task build`) and click **Restart** for this
 connector in Gety. After manifest edits, reinstall the connector.
 
 ## What gets indexed
 
-| Source         | Gety doc id                           | Link target                        |
-| -------------- | ------------------------------------- | ---------------------------------- |
-| Cloud document | `feishu:doc:<token>`                  | The document in the browser        |
-| Chat history   | `feishu:chat:<chat_id>:<week or day>` | The chat in the Lark app (applink) |
+| Source           | Gety doc id                           | Link target                        |
+| ---------------- | ------------------------------------- | ---------------------------------- |
+| Cloud document   | `feishu:doc:<token>`                  | The document in the browser        |
+| Chat (week/day)  | `feishu:chat:<chat_id>:<week or day>` | The chat in the Lark app (applink) |
+| Chat (ungrouped) | `feishu:chat:<chat_id>`               | The chat in the Lark app (applink) |
 
 Week docs key on the week's Monday and display a date range such as
-`2026-07-06 ~ 2026-07-12`; day docs use `2026-07-10`.
+`2026-07-06 ~ 2026-07-12`; day docs use `2026-07-10`; ungrouped mode keeps the
+whole chat in one document with per-day sections.
 
 Sync behavior:
 
@@ -81,8 +83,11 @@ Sync behavior:
   from a completed enumeration is deleted only after a direct fetch confirms it
   is no longer accessible. An empty enumeration is treated as a source-side
   glitch and skips the deletion pass.
-- Each chat keeps a day-granular cursor; the still-open period (current day or
-  week) is refetched in full so its transcript stays complete.
+- Each chat keeps a cursor; the still-open period (current day or week) is
+  refetched in full so its transcript stays complete. In ungrouped mode a cheap
+  probe checks for new messages first, and only then is the lookback window
+  refetched to rebuild that chat's document; oversized chats drop their oldest
+  days to fit the content cap.
 - Switching the grouping deletes all chat docs and rebuilds them from the
   lookback window with the new grouping.
 - Document and transcript content is capped at 8 MB, below Gety's per-document

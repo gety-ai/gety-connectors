@@ -105,10 +105,9 @@ Runner config overrides go into `.env` (see `.env.example`), e.g.
   documents (rejected by the v2 fetch API) are not indexed.
 - Recalled messages disappear from a transcript only when its period is
   refetched; historical chat docs are not swept message-by-message.
-- Chat transcripts store message text only; images and files appear as
-  placeholders like `(image)`.
-- Images in cloud documents are inlined with Feishu's temporary signed URLs:
-  they render in Gety's preview but break once the URL expires, until the
-  document is edited and refetched.
+- Images are not displayed; they appear as `[图片]` / `[图片: description]`
+  placeholders with the description text searchable. Feishu's signed image URLs
+  expire within ~30 minutes (measured), while polls run hourly and only refetch
+  edited documents — a kept URL would be a broken image at view time.
 - The connector shells out to `lark-cli`, so Gety must run on a machine where
   `lark-cli` is installed and authenticated.

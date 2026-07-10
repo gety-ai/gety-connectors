@@ -9,6 +9,8 @@
  * fenced/inline code is never modified.
  */
 
+const EPHEMERAL_URL_MARKERS = ['internal-api-drive-stream', '/authcode/'];
+
 export function cleanupDocMarkdown(text: string): string {
 	return transformOutsideCode(text, (segment) => {
 		let out = segment;
@@ -17,6 +19,7 @@ export function cleanupDocMarkdown(text: string): string {
 		out = stripGrids(out);
 		out = transformInline(out);
 		out = convertBlockLevel(out);
+		out = replaceEphemeralImages(out);
 		out = convertLineBreaks(out);
 		return out.replace(/\n{3,}/g, '\n\n');
 	});
@@ -143,15 +146,12 @@ function transformInline(text: string): string {
 	});
 	out = out.replace(/<\/?figure[^>]*>/g, '');
 
-	// Inline images: Gety renders remote images, so keep the (ephemeral,
-	// signed) href as a markdown image; alt/name text stays searchable.
+	// Inline images: the signed href expires within ~30 minutes (measured),
+	// far shorter than the hourly poll, so a rendered image would be broken
+	// almost every time it is viewed. Keep the searchable name/alt text only.
 	out = out.replace(/<img\b([^>]*?)\/?>/g, (_, attrs: string) => {
 		const name = /name="([^"]*)"/.exec(attrs)?.[1];
 		const alt = /alt="([^"]*)"/.exec(attrs)?.[1];
-		const href = /href="([^"]*)"/.exec(attrs)?.[1];
-		if (href != null) {
-			return `![${alt ?? name ?? ''}](${href})`;
-		}
 		const label = name ? `[图片: ${name}]` : '[图片]';
 		return alt ? `${label} ${alt}` : label;
 	});
@@ -244,6 +244,25 @@ function convertBlockLevel(text: string): string {
 			(_, inner: string) =>
 				`\n${inner.trim().split('\n').map((line) => `> ${line}`).join('\n')}\n`,
 		);
+}
+
+/**
+ * `![alt](signed url)` expires within ~30 minutes (measured 2026-07-10:
+ * a 31-minute-old authcode URL already returned HTTP 400), so with hourly
+ * polls and edit-gated refetch the image would be broken at view time.
+ * Keep the searchable alt text only. Stable image URLs are left alone.
+ */
+function replaceEphemeralImages(text: string): string {
+	return text.replace(
+		/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
+		(whole, alt: string, url: string) => {
+			if (!EPHEMERAL_URL_MARKERS.some((marker) => url.includes(marker))) {
+				return whole;
+			}
+			const label = alt.trim();
+			return label ? `[图片: ${label}]` : '[图片]';
+		},
+	);
 }
 
 /** `<br/>` inside a pipe-table line must not break the row. */

@@ -94,21 +94,6 @@ Deno.test('doc titles become h1 headings', () => {
 	assert.doesNotMatch(out, /<title>/);
 });
 
-Deno.test('img elements with an href stay renderable markdown images', () => {
-	const out = cleanupDocMarkdown(
-		'<img name="image.png" href="https://internal-api-drive-stream.feishu.cn/a/authcode/?code=x"/>\n' +
-			'<img name="图.png" alt="二维码说明" href="https://internal-api-drive-stream.feishu.cn/b/authcode/?code=y"/>',
-	);
-	assert.match(
-		out,
-		/!\[image\.png\]\(https:\/\/internal-api-drive-stream\.feishu\.cn\/a\/authcode\/\?code=x\)/,
-	);
-	assert.match(
-		out,
-		/!\[二维码说明\]\(https:\/\/internal-api-drive-stream\.feishu\.cn\/b\/authcode\/\?code=y\)/,
-	);
-});
-
 Deno.test('time elements render as readable dates', () => {
 	// 2026-12-22 18:10 in the local (Asia/Shanghai) zone.
 	const ms = new Date('2026-12-22T18:10:00').getTime();
@@ -120,13 +105,14 @@ Deno.test('time elements render as readable dates', () => {
 	assert.match(out, /2026-12-22(?! 18:10 18:10)/);
 });
 
-Deno.test('markdown images are preserved (Gety renders remote images)', () => {
-	const signed =
-		'![](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=abc)';
+Deno.test('ephemeral signed image urls collapse to placeholders', () => {
 	const out = cleanupDocMarkdown(
-		`${signed}\n![keep](https://example.com/logo.png)`,
+		'![](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=abc)\n' +
+			'![说明文字](https://internal-api-drive-stream.feishu.cn/x/authcode/?code=d)\n' +
+			'![keep](https://example.com/logo.png)',
 	);
-	assert.match(out, /internal-api-drive-stream\.feishu\.cn/);
+	assert.match(out, /^\[图片\]$/m);
+	assert.match(out, /\[图片: 说明文字\]/);
 	assert.match(out, /!\[keep\]\(https:\/\/example\.com\/logo\.png\)/);
 });
 

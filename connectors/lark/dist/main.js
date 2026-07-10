@@ -6,6 +6,7 @@ import {
 } from "@gety-ai/connector-sdk";
 
 // src/doc_markdown.ts
+var EPHEMERAL_URL_MARKERS = ["internal-api-drive-stream", "/authcode/"];
 function cleanupDocMarkdown(text) {
   return transformOutsideCode(text, (segment) => {
     let out = segment;
@@ -14,6 +15,7 @@ function cleanupDocMarkdown(text) {
     out = stripGrids(out);
     out = transformInline(out);
     out = convertBlockLevel(out);
+    out = replaceEphemeralImages(out);
     out = convertLineBreaks(out);
     return out.replace(/\n{3,}/g, "\n\n");
   });
@@ -101,10 +103,6 @@ function transformInline(text) {
   out = out.replace(/<img\b([^>]*?)\/?>/g, (_, attrs) => {
     const name = /name="([^"]*)"/.exec(attrs)?.[1];
     const alt = /alt="([^"]*)"/.exec(attrs)?.[1];
-    const href = /href="([^"]*)"/.exec(attrs)?.[1];
-    if (href != null) {
-      return `![${alt ?? name ?? ""}](${href})`;
-    }
     const label = name ? `[\u56FE\u7247: ${name}]` : "[\u56FE\u7247]";
     return alt ? `${label} ${alt}` : label;
   });
@@ -171,6 +169,18 @@ function convertBlockLevel(text) {
     (_, inner) => `
 ${inner.trim().split("\n").map((line) => `> ${line}`).join("\n")}
 `
+  );
+}
+function replaceEphemeralImages(text) {
+  return text.replace(
+    /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
+    (whole, alt, url) => {
+      if (!EPHEMERAL_URL_MARKERS.some((marker) => url.includes(marker))) {
+        return whole;
+      }
+      const label = alt.trim();
+      return label ? `[\u56FE\u7247: ${label}]` : "[\u56FE\u7247]";
+    }
   );
 }
 function convertLineBreaks(text) {

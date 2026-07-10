@@ -1,104 +1,97 @@
-# Gety Lark / Feishu Connector
+# Gety 飞书连接器
 
-[简体中文](./README.zh-CN.md)
+[English](./README.en.md)
 
-A [Gety](https://gety.ai/) custom connector that indexes your Lark / Feishu
-content through a locally authenticated
-[lark-cli](https://github.com/larksuite/cli):
+一个 [Gety](https://gety.ai/) 自定义连接器,通过本机已登录的
+[lark-cli](https://github.com/larksuite/cli) 索引你的飞书内容:
 
-- **Cloud documents** — docx documents and wiki pages you can access, exported
-  as markdown. Documents that disappear from the source (deleted, or access
-  lost) are removed from the index on the next sync.
-- **Chat history** _(optional, on by default)_ — group chats and direct
-  messages, indexed as one searchable document per chat per day.
+- **云文档** —— 你有权限访问的 docx 文档与知识库(wiki)页面,导出为
+  Markdown。源端消失的文档(被删除或失去访问权限)会在同步时从索引中移除。
+- **聊天记录**(可选,默认开启)—— 群聊与单聊,按周(默认)或按天聚合为 可搜索文档。
 
-The connector never stores Lark credentials itself. All API calls go through
-`lark-cli`, which keeps its own OAuth tokens.
+连接器自身不保存任何飞书凭据,所有 API 调用都经由 `lark-cli`,OAuth token
+由它自己管理。
 
-## Prerequisites
+## 前置条件
 
-1. Install [lark-cli](https://github.com/larksuite/cli) (1.0.58 or newer) and
-   make sure it is on your `PATH`, or set its path in the connector settings.
-2. Sign in and grant scopes in one step. `lark-cli auth login` **requires**
-   explicit scopes — running it bare fails with "please specify the scopes to
-   authorize". Use:
+1. 安装 [lark-cli](https://github.com/larksuite/cli)(1.0.58 及以上),并确保 它在
+   `PATH` 中,或在连接器设置里填写其路径。
+2. 登录并一步授权。注意:`lark-cli auth login` **必须**显式指定权限,裸跑会
+   直接报"请指定要授权的权限"。请使用:
 
    ```bash
    lark-cli auth login --recommend --scope "search:docs:read contact:user.basic_profile:readonly"
    ```
 
-   - `--recommend` grants the standard auto-approve read scopes the connector
-     relies on, including `docx:document:readonly`, `im:chat:read`,
-     `im:message:readonly`, `im:message.*_msg:get_as_user`, and
-     `wiki:node:read`.
-   - `search:docs:read` (enumerate cloud documents) and
-     `contact:user.basic_profile:readonly` (resolve sender names in chat
-     transcripts) are **not** in the recommended set and must be listed
-     explicitly. `search:docs:read` may additionally require approving the
-     permission for your app in the Lark developer console first.
+   - `--recommend` 会授予连接器依赖的标准自动审批读权限,包括
+     `docx:document:readonly`、`im:chat:read`、`im:message:readonly`、
+     `im:message.*_msg:get_as_user`、`wiki:node:read` 等。
+   - `search:docs:read`(枚举云文档)和
+     `contact:user.basic_profile:readonly`(在聊天记录里解析发送者姓名)
+     **不在**推荐集内,必须显式列出。`search:docs:read` 可能还需要先在飞书
+     开放平台后台为应用开通该权限。
 
-   Check what is currently granted with `lark-cli auth status`.
+   用 `lark-cli auth status` 可查看当前已授权的权限。
 
-## Install in Gety
+## 安装到 Gety
 
-1. Build the connector (requires [Deno](https://deno.com/)):
+1. 构建连接器(需要 [Deno](https://deno.com/)):
 
    ```bash
    deno task verify
    ```
 
-2. In Gety, open **Custom Connectors** and install this folder.
-3. Fill in the settings:
+2. 在 Gety 中打开 **Custom Connectors**,安装本文件夹。
+3. 填写设置:
 
-   | Setting                      | Default    | Meaning                                                                       |
-   | ---------------------------- | ---------- | ----------------------------------------------------------------------------- |
-   | Index chat history           | checked    | Index group chats and direct messages. Uncheck to index cloud documents only. |
-   | Chat history lookback (days) | 30         | How many days of chat history to backfill on the first sync.                  |
-   | lark-cli path                | `lark-cli` | Path to the lark-cli executable if it is not on the `PATH` inherited by Gety. |
+   | 设置项           | 默认值     | 含义                                                                   |
+   | ---------------- | ---------- | ---------------------------------------------------------------------- |
+   | 索引聊天记录     | 勾选       | 索引群聊与单聊。取消勾选则只索引云文档,已索引的聊天记录会被移除。      |
+   | 聊天记录聚合粒度 | 按周       | 每个会话按周或按天聚合为一篇文档。修改后会删除并重新索引全部聊天记录。 |
+   | 聊天记录回溯天数 | 30         | 首次同步回填多少天的聊天记录。                                         |
+   | lark-cli 路径    | `lark-cli` | Gety 继承的 `PATH` 中找不到 lark-cli 时填其路径。                      |
 
-After source edits, rebuild (`deno task build`) and click **Restart** for this
-connector in Gety. After manifest edits, reinstall the connector.
+修改源码后需重新构建(`deno task build`)并在 Gety 中点击该连接器的
+**Restart**;修改 manifest 后需重新安装。
 
-## What gets indexed
+## 索引内容
 
-| Source              | Gety doc id                  | Link target                        |
-| ------------------- | ---------------------------- | ---------------------------------- |
-| Cloud document      | `lark:doc:<token>`           | The document in the browser        |
-| Chat day transcript | `lark:chat:<chat_id>:<date>` | The chat in the Lark app (applink) |
+| 来源     | Gety 文档 id                     | 链接目标                      |
+| -------- | -------------------------------- | ----------------------------- |
+| 云文档   | `feishu:doc:<token>`             | 浏览器中打开源文档            |
+| 聊天记录 | `feishu:chat:<chat_id>:<周或日>` | 飞书客户端中打开会话(applink) |
 
-Sync behavior:
+聊天文档的周键形如 `2026-W28`(ISO 8601 周),日键形如 `2026-07-10`。
 
-- Documents are discovered by a full two-pass Search v2 enumeration (the two
-  sort orders have complementary recall and are unioned). Content is refetched
-  only for documents edited since the last sync or not yet in the index, so a
-  transient fetch failure is retried on the next poll instead of being lost.
-- Search enumeration recall is unstable between polls, so a document missing
-  from a completed enumeration is deleted only after a direct fetch confirms it
-  is no longer accessible. An empty enumeration is treated as a source-side
-  glitch and skips the deletion pass.
-- Each chat keeps a per-chat cursor at day granularity; the most recent day is
-  refetched in full so the day transcript stays complete.
-- Document and transcript content is capped at 8 MB, below Gety's per-document
-  limit.
+同步行为:
 
-## Local development
+- 文档通过 Search v2 的两遍完整枚举发现(两种排序的召回互补,取并集)。仅对
+  上次同步后有编辑、或尚未入库的文档重新抓取正文,因此偶发的抓取失败会在下次
+  轮询时重试,不会被水位线跳过。
+- 搜索枚举的召回在两次轮询之间并不稳定,因此从完整枚举中消失的文档,只有在
+  直接抓取确认已无法访问后才会从索引中删除;枚举结果为空时视为源端召回异常,
+  跳过删除。
+- 每个会话维护天粒度游标;未关闭的当前周期(当天或当周)会整体重取,保证 文档完整。
+- 切换聚合粒度后,旧的聊天文档会被全部删除,并按新粒度从回溯窗口重建。
+- 单篇内容上限 8 MB,低于 Gety 的单文档限制。
+
+## 本地开发
 
 ```bash
-deno task verify                    # fmt + lint + generate + type-check + test + build
-deno task runner -- --reset-state   # full sync into dev/runs/<timestamp>/
-deno task runner -- --polls 2       # verify incremental behavior
+deno task verify                    # fmt + lint + generate + 类型检查 + 测试 + 构建
+deno task runner -- --reset-state   # 全量同步,输出到 dev/runs/<timestamp>/
+deno task runner -- --polls 2       # 验证增量行为
 ```
 
-Runner config overrides go into `.env` (see `.env.example`), e.g.
-`GETY_CONFIG_INDEX_CHAT_HISTORY=false`.
+本地运行的配置覆盖写在 `.env`(参考 `.env.example`),例如
+`GETY_CONFIG_INDEX_CHAT_HISTORY=false`、`GETY_CONFIG_CHAT_GROUPING=day`。
 
-## Limitations
+## 已知限制
 
-- Sheets, bitables, slides, mindnotes, file attachments, and legacy "doc"
-  documents (rejected by the v2 fetch API) are not indexed.
-- Deleted messages disappear from a day transcript only when that day is
-  refetched; past chat-day documents are never deleted.
-- Chat transcripts store message text only; images and files appear as
-  placeholders like `(image)`.
-- The connector shells out to `lark-cli`, so Gety must run on a machine where
-  `lark-cli` is installed and authenticated.
+- 表格、多维表格、幻灯片、思维笔记、文件附件,以及旧版 "doc" 文档(v2 抓取 API
+  不支持)不被索引。
+- 已撤回消息只有在其所在周期被重取时才会从聊天文档中消失;历史聊天文档不会
+  被逐条清理。
+- 聊天记录只保存文本;图片和文件以 `(image)` 之类的占位符出现。
+- 连接器通过子进程调用 `lark-cli`,因此 Gety 必须运行在已安装并登录 lark-cli
+  的机器上。

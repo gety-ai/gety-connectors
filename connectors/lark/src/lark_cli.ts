@@ -319,7 +319,7 @@ export function extractSearchPage(data: unknown): SearchPage {
 		entities.push({
 			token,
 			type,
-			title: title || 'Untitled document',
+			title: title || '无标题文档',
 			editedAt: normalizeSourceTime(meta.update_time ?? meta.update_time_iso),
 			createdAt: normalizeSourceTime(
 				meta.create_time ?? meta.create_time_iso,

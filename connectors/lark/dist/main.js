@@ -218,7 +218,7 @@ function extractSearchPage(data) {
     entities.push({
       token,
       type,
-      title: title || "Untitled document",
+      title: title || "\u65E0\u6807\u9898\u6587\u6863",
       editedAt: normalizeSourceTime(meta.update_time ?? meta.update_time_iso),
       createdAt: normalizeSourceTime(
         meta.create_time ?? meta.create_time_iso
@@ -316,7 +316,8 @@ function abortableDelay(milliseconds, signal) {
 var DEFAULT_CHAT_LOOKBACK_DAYS = 30;
 var INDEXABLE_DOC_TYPES = /* @__PURE__ */ new Set(["docx"]);
 var MAX_CONTENT_BYTES = 8e6;
-var TRUNCATION_NOTICE = "\n\n\u2026(content truncated by connector)";
+var TRUNCATION_NOTICE = "\n\n\u2026(\u5185\u5BB9\u8D85\u957F,\u5DF2\u88AB\u8FDE\u63A5\u5668\u622A\u65AD)";
+var DELETE_BATCH_SIZE = 200;
 function localDateString(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -325,6 +326,28 @@ function localDateString(date) {
 }
 function dayStartISO(day) {
   return (/* @__PURE__ */ new Date(`${day}T00:00:00`)).toISOString();
+}
+function weekStartDay(day) {
+  const date = /* @__PURE__ */ new Date(`${day}T00:00:00`);
+  const weekday = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - weekday);
+  return localDateString(date);
+}
+function isoWeekKey(day) {
+  const date = /* @__PURE__ */ new Date(`${day}T00:00:00`);
+  const thursday = new Date(date);
+  thursday.setDate(date.getDate() - (date.getDay() + 6) % 7 + 3);
+  const year = thursday.getFullYear();
+  const jan4 = new Date(year, 0, 4);
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - (jan4.getDay() + 6) % 7);
+  const week = Math.round(
+    (thursday.getTime() - week1Monday.getTime()) / (7 * 864e5)
+  ) + 1;
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+function periodKey(day, grouping) {
+  return grouping === "week" ? isoWeekKey(day) : day;
 }
 function clampContent(text) {
   const encoder = new TextEncoder();
@@ -354,11 +377,11 @@ function clampContent(text) {
 function buildCloudDoc(entity, raw) {
   const { content, bytes } = clampContent(raw);
   return {
-    id: `lark:doc:${entity.token}`,
+    id: `feishu:doc:${entity.token}`,
     title: entity.title,
     content,
     content_format: "markdown",
-    doc_type: `lark:${entity.type}`,
+    doc_type: `feishu:${entity.type}`,
     doc_updated_at: entity.editedAt,
     original_file_size: bytes,
     metadata: {
@@ -373,7 +396,7 @@ function buildCloudDoc(entity, raw) {
 function senderLabel(message) {
   const sender = message.sender;
   if (sender == null) {
-    return "unknown";
+    return "\u672A\u77E5";
   }
   if (sender.name != null && sender.name !== "") {
     return sender.name;
@@ -381,7 +404,7 @@ function senderLabel(message) {
   if (sender.sender_type != null && sender.sender_type !== "user") {
     return `bot(${sender.id ?? sender.sender_type})`;
   }
-  return sender.id ?? "unknown";
+  return sender.id ?? "\u672A\u77E5";
 }
 function groupMessagesByDay(messages) {
   const byDay = /* @__PURE__ */ new Map();
@@ -402,15 +425,27 @@ function groupMessagesByDay(messages) {
   }
   return byDay;
 }
+function groupDaysByPeriod(byDay, grouping) {
+  const periods = /* @__PURE__ */ new Map();
+  for (const [day, messages] of byDay) {
+    const key = periodKey(day, grouping);
+    const days = periods.get(key);
+    if (days == null) {
+      periods.set(key, /* @__PURE__ */ new Map([[day, messages]]));
+    } else {
+      days.set(day, messages);
+    }
+  }
+  return periods;
+}
 function chatTitle(chat) {
   const name = chat.name?.trim();
   if (name != null && name !== "") {
     return name;
   }
-  return chat.chat_mode === "p2p" ? "Direct message" : "Group chat";
+  return chat.chat_mode === "p2p" ? "\u79C1\u804A" : "\u7FA4\u804A";
 }
-function renderChatDay(title, day, messages) {
-  const lines = [`# ${title} \u2014 ${day}`, ""];
+function renderMessages(lines, messages) {
   for (const message of messages) {
     const time = message.create_time?.slice(11, 16) ?? "";
     const body = message.content?.trim() || `(${message.msg_type ?? "message"})`;
@@ -419,26 +454,46 @@ function renderChatDay(title, day, messages) {
 ${body}` : `${label} ${body}`);
     lines.push("");
   }
+}
+function renderChatPeriod(title, key, days, grouping) {
+  const lines = [`# ${title} \u2014 ${key}`, ""];
+  const sortedDays = [...days.keys()].sort();
+  for (const day of sortedDays) {
+    if (grouping === "week") {
+      lines.push(`## ${day}`, "");
+    }
+    renderMessages(lines, days.get(day) ?? []);
+  }
   return lines.join("\n").trimEnd();
 }
-function buildChatDayDoc(chat, day, messages) {
+function buildChatPeriodDoc(chat, grouping, key, days) {
   const title = chatTitle(chat);
-  const lastMessage = messages[messages.length - 1];
-  const { content, bytes } = clampContent(renderChatDay(title, day, messages));
+  const sortedDays = [...days.keys()].sort();
+  const lastDay = sortedDays[sortedDays.length - 1];
+  const lastMessages = days.get(lastDay) ?? [];
+  const lastMessage = lastMessages[lastMessages.length - 1];
+  const messageCount = sortedDays.reduce(
+    (count, day) => count + (days.get(day)?.length ?? 0),
+    0
+  );
+  const { content, bytes } = clampContent(
+    renderChatPeriod(title, key, days, grouping)
+  );
   return {
-    id: `lark:chat:${chat.chat_id}:${day}`,
-    title: `${title} \xB7 ${day}`,
+    id: `feishu:chat:${chat.chat_id}:${key}`,
+    title: `${title} \xB7 ${key}`,
     content,
     content_format: "markdown",
-    doc_type: "lark:chat",
+    doc_type: "feishu:chat",
     doc_updated_at: isoFromLarkTime(lastMessage?.create_time),
     original_file_size: bytes,
     metadata: {
       url: `https://applink.feishu.cn/client/chat/open?openChatId=${chat.chat_id}`,
       chat_id: chat.chat_id,
       chat_name: title,
-      date: day,
-      message_count: messages.length
+      date: key,
+      grouping,
+      message_count: messageCount
     }
   };
 }
@@ -448,21 +503,57 @@ function isUnchangedDoc(entity, indexedTokens, previousMark) {
 function errorMessage2(error) {
   return error instanceof Error ? error.message : String(error);
 }
-var LarkConnector = class extends Connector {
+function chunks(values, size) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
+}
+var FeishuConnector = class extends Connector {
   createClient() {
     const bin = this.config.lark_cli_path?.trim() || "lark-cli";
     return new LarkCliClient(bin, this.signal);
   }
   async *poll() {
     const client = this.createClient();
+    const grouping = this.config.chat_grouping === "day" ? "day" : "week";
     const state = {
       docs_high_water: this.lastState?.docs_high_water,
       docs: { ...this.lastState?.docs ?? {} },
-      chat_cursors: { ...this.lastState?.chat_cursors ?? {} }
+      chat_cursors: { ...this.lastState?.chat_cursors ?? {} },
+      chat_doc_ids: [...this.lastState?.chat_doc_ids ?? []],
+      chat_grouping: this.lastState?.chat_grouping
     };
+    if (!this.config.index_chat_history) {
+      yield* this.purgeChatIndex(state);
+    } else if (state.chat_grouping != null && state.chat_grouping !== grouping) {
+      yield* this.purgeChatIndex(state);
+    }
     yield* this.pollDocs(client, state);
     if (this.config.index_chat_history) {
-      yield* this.pollChats(client, state);
+      state.chat_grouping = grouping;
+      yield* this.pollChats(client, state, grouping);
+    }
+  }
+  *purgeChatIndex(state) {
+    const ids = state.chat_doc_ids ?? [];
+    state.chat_cursors = {};
+    state.chat_grouping = void 0;
+    if (ids.length === 0) {
+      state.chat_doc_ids = [];
+      return;
+    }
+    const remaining = new Set(ids);
+    for (const batch of chunks(ids, DELETE_BATCH_SIZE)) {
+      for (const id of batch) {
+        remaining.delete(id);
+      }
+      state.chat_doc_ids = [...remaining];
+      yield {
+        updates: batch.map((id) => del(id)),
+        state: structuredClone(state)
+      };
     }
   }
   /**
@@ -495,7 +586,7 @@ var LarkConnector = class extends Connector {
         } catch (error) {
           if (error instanceof LarkCliError && error.missingScopes.length > 0) {
             console.error(
-              `[lark] skipping cloud documents (${error.message}). Grant access with: lark-cli auth login --scope "${error.missingScopes.join(" ")}"`
+              `[feishu] skipping cloud documents (${error.message}). Grant access with: lark-cli auth login --scope "${error.missingScopes.join(" ")}"`
             );
             return;
           }
@@ -561,12 +652,12 @@ var LarkConnector = class extends Connector {
         if (await this.isStillFetchable(client, known[token])) {
           next[token] = known[token];
         } else {
-          deletes.push(del(`lark:doc:${token}`));
+          deletes.push(del(`feishu:doc:${token}`));
         }
       }
     } else if (knownTokens.size > 0) {
       console.error(
-        "[lark] document enumeration returned nothing; skipping deletion pass"
+        "[feishu] document enumeration returned nothing; skipping deletion pass"
       );
       Object.assign(next, known);
     }
@@ -585,7 +676,7 @@ var LarkConnector = class extends Connector {
     } catch (error) {
       this.signal.throwIfAborted();
       console.error(
-        `[lark] ${url} disappeared from enumeration and cannot be fetched (${errorMessage2(error)}); deleting from index`
+        `[feishu] ${url} disappeared from enumeration and cannot be fetched (${errorMessage2(error)}); deleting from index`
       );
       return false;
     }
@@ -597,7 +688,7 @@ var LarkConnector = class extends Connector {
       );
       if (content == null) {
         console.error(
-          `[lark] no content in ${entity.type} ${entity.token}; skipped`
+          `[feishu] no content in ${entity.type} ${entity.token}; skipped`
         );
         return null;
       }
@@ -605,53 +696,61 @@ var LarkConnector = class extends Connector {
     } catch (error) {
       this.signal.throwIfAborted();
       console.error(
-        `[lark] failed to fetch ${entity.type} ${entity.token}: ${errorMessage2(error)}`
+        `[feishu] failed to fetch ${entity.type} ${entity.token}: ${errorMessage2(error)}`
       );
       return null;
     }
   }
   /**
-   * Chat history is indexed as one document per chat per local day. Each
-   * chat's cursor is the day of its newest indexed message, so the still
-   * open day is refetched in full on the next poll and its document is
-   * re-upserted with the complete transcript.
+   * Chat history is indexed as one document per chat per period (day or
+   * ISO week). Each chat's cursor is the day of its newest indexed
+   * message; the poll refetches from the start of the period containing
+   * that day, so the still-open period is re-upserted with the complete
+   * transcript.
    */
-  async *pollChats(client, state) {
+  async *pollChats(client, state, grouping) {
     const lookbackDays = this.config.chat_history_days > 0 ? this.config.chat_history_days : DEFAULT_CHAT_LOOKBACK_DAYS;
     const defaultStartDay = localDateString(
       new Date(Date.now() - lookbackDays * 864e5)
     );
+    const chatDocIds = new Set(state.chat_doc_ids ?? []);
     for await (const chat of this.listChats(client)) {
       if (this.signal.aborted) {
         return;
       }
       const sinceDay = state.chat_cursors?.[chat.chat_id] ?? defaultStartDay;
+      const fetchFromDay = grouping === "week" ? weekStartDay(sinceDay) : sinceDay;
       let messages;
       try {
-        messages = await this.listMessages(client, chat.chat_id, sinceDay);
+        messages = await this.listMessages(client, chat.chat_id, fetchFromDay);
       } catch (error) {
         this.signal.throwIfAborted();
         console.error(
-          `[lark] failed to list messages of chat ${chat.chat_id}: ${errorMessage2(error)}`
+          `[feishu] failed to list messages of chat ${chat.chat_id}: ${errorMessage2(error)}`
         );
         continue;
       }
-      const byDay = groupMessagesByDay(messages);
-      if (byDay.size === 0) {
+      const periods = groupDaysByPeriod(groupMessagesByDay(messages), grouping);
+      if (periods.size === 0) {
         continue;
       }
       const updates = [];
       let lastDay = sinceDay;
-      for (const [day, dayMessages] of byDay) {
-        updates.push(upsert(buildChatDayDoc(chat, day, dayMessages)));
-        if (day > lastDay) {
-          lastDay = day;
+      for (const [key, days] of periods) {
+        const doc = buildChatPeriodDoc(chat, grouping, key, days);
+        updates.push(upsert(doc));
+        chatDocIds.add(doc.id);
+        for (const day of days.keys()) {
+          if (day > lastDay) {
+            lastDay = day;
+          }
         }
       }
       state.chat_cursors = {
         ...state.chat_cursors ?? {},
         [chat.chat_id]: lastDay
       };
+      state.chat_doc_ids = [...chatDocIds].sort();
       yield { updates, state: structuredClone(state) };
     }
   }
@@ -682,16 +781,20 @@ var LarkConnector = class extends Connector {
   }
 };
 export {
-  buildChatDayDoc,
+  buildChatPeriodDoc,
   buildCloudDoc,
   chatTitle,
   clampContent,
   dayStartISO,
-  LarkConnector as default,
+  FeishuConnector as default,
+  groupDaysByPeriod,
   groupMessagesByDay,
   isUnchangedDoc,
+  isoWeekKey,
   localDateString,
-  renderChatDay,
-  senderLabel
+  periodKey,
+  renderChatPeriod,
+  senderLabel,
+  weekStartDay
 };
 //# sourceMappingURL=main.js.map

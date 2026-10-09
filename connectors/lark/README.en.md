@@ -77,8 +77,9 @@ Sync behavior:
 
 - Documents are discovered by a full two-pass Search v2 enumeration (the two
   sort orders have complementary recall and are unioned). Content is refetched
-  only for documents edited since the last sync or not yet in the index, so a
-  transient fetch failure is retried on the next poll instead of being lost.
+  only for documents whose content or source context changed, or which are not
+  yet in the index, so a transient fetch failure is retried on the next poll
+  instead of being lost.
 - Search enumeration recall is unstable between polls, so a document missing
   from a completed enumeration is deleted only after a direct fetch confirms it
   is no longer accessible. An empty enumeration is treated as a source-side
@@ -92,6 +93,27 @@ Sync behavior:
   lookback window with the new grouping.
 - Document and transcript content is capped at 8 MB, below Gety's per-document
   limit.
+
+## Source context in Markdown
+
+Cloud document Markdown starts with any available Wiki space, parent node or
+folder, directory path, and original link. Each field appears only when it has a
+value. With no source information, the original body is kept without an empty
+header. Paths run from the root to the parent and exclude the document title.
+Incomplete ancestor paths start with `… /`.
+
+Source context is part of the Markdown content, so no Gety host changes are
+required. No `metadata.location` or `metadata.feishu` fields are added; existing
+metadata stays compatible. Resource IDs are used internally for lookups and sync
+state, never as display text. No additional authentication token is needed:
+lookups use the signed-in `lark-cli` user.
+
+Moves and parent or space renames refresh source context even when the document
+edit time is unchanged. The first poll after upgrading refreshes existing
+documents without resetting state. Permission or temporary lookup failures do
+not block content indexing and preserve previously resolved context. Drive paths
+come from the accessible folder tree; shared documents may have no discoverable
+full path.
 
 ## Local development
 

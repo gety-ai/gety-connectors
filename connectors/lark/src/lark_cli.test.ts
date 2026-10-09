@@ -5,6 +5,8 @@ import {
 	extractSearchPage,
 	isoFromLarkTime,
 	isRateLimitFailure,
+	LarkCliClient,
+	LarkCliError,
 	normalizeSourceTime,
 	stripHighlightTags,
 } from './lark_cli.ts';
@@ -87,6 +89,79 @@ Deno.test('extractSearchPage tolerates unknown shapes', () => {
 		hasMore: false,
 		pageToken: undefined,
 	});
+});
+
+Deno.test('search results without an original URL do not invent a display link', () => {
+	const page = extractSearchPage({
+		results: [{ result_meta: { token: 'doc', doc_types: 'DOCX' } }],
+	});
+	assert.equal(page.entities[0].url, undefined);
+});
+
+class ApiClient extends LarkCliClient {
+	args: string[] = [];
+	constructor(private reply: unknown) {
+		super('unused', new AbortController().signal);
+	}
+	protected override run(args: string[]): Promise<unknown> {
+		this.args = args;
+		return Promise.resolve(this.reply);
+	}
+}
+
+Deno.test('raw metadata API unwraps business responses and sends the user identity', async () => {
+	const client = new ApiClient({
+		code: 0,
+		data: {
+			node: { node_token: 'wiki', obj_token: 'doc', parent_node_token: '' },
+		},
+	});
+	const node = await client.getWikiNode('doc', 'docx');
+	assert.equal(node.node_token, 'wiki');
+	assert.equal(node.obj_token, 'doc');
+	assert.equal(node.parent_node_token, undefined);
+	assert.deepEqual(client.args.slice(0, 7), [
+		'api',
+		'GET',
+		'/open-apis/wiki/v2/spaces/get_node',
+		'--as',
+		'user',
+		'--format',
+		'json',
+	]);
+	assert.deepEqual(JSON.parse(client.args[8]), {
+		token: 'doc',
+		obj_type: 'docx',
+	});
+	const failure = new ApiClient({ code: 131014, msg: 'not mounted' });
+	await assert.rejects(
+		failure.getWikiNode('doc'),
+		(error: unknown) =>
+			error instanceof LarkCliError && error.code === '131014',
+	);
+});
+
+Deno.test('Drive metadata API preserves pagination and rejects malformed success payloads', async () => {
+	const client = new ApiClient({
+		files: [{
+			token: 'doc',
+			type: 'docx',
+			name: 'Spec',
+			parent_token: 'folder',
+			url: 'https://team.feishu.cn/docx/doc',
+		}],
+		has_more: true,
+		next_page_token: 'next',
+	});
+	const page = await client.listDriveFiles('folder', 'page');
+	assert.equal(page.pageToken, 'next');
+	assert.equal(page.files[0].parent_token, 'folder');
+	assert.deepEqual(JSON.parse(client.args[8]), {
+		page_size: 200,
+		folder_token: 'folder',
+		page_token: 'page',
+	});
+	await assert.rejects(new ApiClient({}).listDriveFiles(), /no file list/);
 });
 
 Deno.test('extractDocContent finds markdown in nested payloads', () => {

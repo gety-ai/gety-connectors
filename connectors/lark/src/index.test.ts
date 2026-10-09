@@ -364,3 +364,29 @@ Deno.test('cloud markdown escapes source names and marks incomplete paths', () =
 		'> **父节点：** \\[API\\] \\# title\n>\n> **目录路径：** … / Gety / API\n\n---\n\n# Body',
 	);
 });
+
+Deno.test('source links escape names and preserve plain text for invalid destinations', () => {
+	const doc = buildCloudDoc(
+		{ token: 'doc', type: 'docx', title: 'Doc' },
+		'# Body',
+		{
+			location: {
+				space_name: '[Space]',
+				space_url: 'javascript:alert(1)',
+				parent_name: 'API',
+				parent_url: 'https://team.feishu.cn/wiki/api',
+				path: 'Root / API',
+				path_complete: false,
+				ancestors: [{ id: 'root', title: 'Root', url: 'invalid' }, {
+					id: 'api',
+					title: 'API',
+					url: 'https://team.feishu.cn/wiki/api',
+				}],
+			},
+		},
+	);
+	assert.equal(
+		doc.content,
+		'> **知识库：** \\[Space\\]\n>\n> **父节点：** [API](<https://team.feishu.cn/wiki/api>)\n>\n> **目录路径：** … / Root / [API](<https://team.feishu.cn/wiki/api>)\n\n---\n\n# Body',
+	);
+});

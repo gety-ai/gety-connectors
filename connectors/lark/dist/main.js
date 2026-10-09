@@ -192,10 +192,12 @@ function convertLineBreaks(text) {
 // src/lark_cli.ts
 var LarkCliError = class extends Error {
   missingScopes;
-  constructor(message, missingScopes2 = []) {
+  code;
+  constructor(message, missingScopes2 = [], code) {
     super(message);
     this.name = "LarkCliError";
     this.missingScopes = missingScopes2;
+    this.code = code == null ? void 0 : String(code);
   }
 };
 var DOCS_PAGE_SIZE = "20";
@@ -251,6 +253,84 @@ var LarkCliClient = class {
       "full"
     ]);
     return extractDocContent(data);
+  }
+  async getWikiNode(token, objType) {
+    const data = await this.api("/open-apis/wiki/v2/spaces/get_node", {
+      token,
+      ...objType == null ? {} : { obj_type: objType }
+    });
+    const node = isRecord(data) && isRecord(data.node) ? data.node : null;
+    if (node == null || asString(node.node_token) == null) {
+      throw new LarkCliError("Wiki response contains no node");
+    }
+    return {
+      node_token: asString(node.node_token),
+      obj_token: asString(node.obj_token),
+      space_id: asString(node.space_id),
+      parent_node_token: asString(node.parent_node_token),
+      title: asString(node.title),
+      origin_node_token: asString(node.origin_node_token),
+      origin_space_id: asString(node.origin_space_id)
+    };
+  }
+  async getWikiSpaceName(spaceId) {
+    const data = await this.api(
+      `/open-apis/wiki/v2/spaces/${encodeURIComponent(spaceId)}`
+    );
+    return isRecord(data) && isRecord(data.space) ? asString(data.space.name) : void 0;
+  }
+  async listDriveFiles(folderToken, pageToken) {
+    const data = await this.api("/open-apis/drive/v1/files", {
+      page_size: 200,
+      ...folderToken == null ? {} : { folder_token: folderToken },
+      ...pageToken == null ? {} : { page_token: pageToken }
+    });
+    if (!isRecord(data) || !Array.isArray(data.files)) {
+      throw new LarkCliError("Drive response contains no file list");
+    }
+    const files = [];
+    for (const item of data.files) {
+      if (!isRecord(item)) continue;
+      const token = asString(item.token);
+      const type = asString(item.type);
+      if (token == null || type == null) continue;
+      files.push({
+        token,
+        type,
+        name: asString(item.name),
+        parent_token: asString(item.parent_token),
+        url: asString(item.url)
+      });
+    }
+    return {
+      files,
+      hasMore: data.has_more === true,
+      pageToken: asString(data.next_page_token)
+    };
+  }
+  async api(path, params = {}) {
+    const result = await this.run([
+      "api",
+      "GET",
+      path,
+      "--as",
+      "user",
+      "--format",
+      "json",
+      "--params",
+      JSON.stringify(params)
+    ]);
+    if (isRecord(result) && typeof result.code === "number") {
+      if (result.code !== 0) {
+        throw new LarkCliError(
+          asString(result.msg) ?? `OpenAPI error ${result.code}`,
+          [],
+          result.code
+        );
+      }
+      return result.data;
+    }
+    return result;
   }
   async listChats(pageToken) {
     const data = await this.run([
@@ -355,7 +435,8 @@ var LarkCliClient = class {
       const detail = envelope?.error?.message ?? (stderrText || `exit code ${output.code}`);
       throw new LarkCliError(
         `lark-cli ${args.slice(0, 2).join(" ")} failed: ${detail}`,
-        missingScopes(envelope)
+        missingScopes(envelope),
+        envelope?.error?.code
       );
     }
   }
@@ -407,7 +488,7 @@ function extractSearchPage(data) {
       createdAt: normalizeSourceTime(
         meta.create_time ?? meta.create_time_iso
       ),
-      url: asString(meta.url) ?? buildDocUrl(type, token),
+      url: asString(meta.url),
       owner: asString(meta.owner_name)
     });
   }
@@ -496,6 +577,199 @@ function abortableDelay(milliseconds, signal) {
   });
 }
 
+// src/doc_location.ts
+var DocLocationResolver = class {
+  constructor(client, signal) {
+    this.client = client;
+    this.signal = signal;
+  }
+  nodes = /* @__PURE__ */ new Map();
+  spaces = /* @__PURE__ */ new Map();
+  drive;
+  wikiUnavailable = false;
+  warnings = /* @__PURE__ */ new Set();
+  async resolve(entity, previous = {}) {
+    this.signal.throwIfAborted();
+    let node;
+    try {
+      if (this.wikiUnavailable) {
+        return (await this.getDriveLocations()).get(entity.token) ?? previous;
+      }
+      const wikiToken = wikiTokenFromUrl(entity.url);
+      node = await this.getNode(
+        wikiToken ?? entity.token,
+        wikiToken == null ? entity.type : "wiki"
+      );
+    } catch (error) {
+      this.signal.throwIfAborted();
+      const notMounted = error instanceof LarkCliError && error.code === "131014";
+      if (!notMounted) {
+        if (error instanceof LarkCliError && error.missingScopes.length > 0) {
+          this.wikiUnavailable = true;
+        }
+        this.warn("wiki", error);
+      }
+      const drive = await this.getDriveLocations();
+      return drive.get(entity.token) ?? (notMounted && previous.feishu?.node_token != null ? {} : previous);
+    }
+    let spaceName;
+    if (node.space_id != null) {
+      try {
+        let pending = this.spaces.get(node.space_id);
+        if (pending == null) {
+          pending = this.client.getWikiSpaceName(node.space_id);
+          this.spaces.set(node.space_id, pending);
+        }
+        spaceName = nonempty(await pending);
+      } catch (error) {
+        this.signal.throwIfAborted();
+        this.warn("wiki space", error);
+        if (previous.feishu?.space_id === node.space_id) {
+          spaceName = previous.location?.space_name;
+        }
+      }
+    }
+    let parentToken = node.parent_node_token;
+    const ancestors = [];
+    const visited = /* @__PURE__ */ new Set([node.node_token]);
+    let complete = true;
+    while (parentToken != null) {
+      this.signal.throwIfAborted();
+      if (visited.has(parentToken)) {
+        complete = false;
+        break;
+      }
+      visited.add(parentToken);
+      try {
+        const parent = await this.getNode(parentToken, "wiki");
+        const title = nonempty(parent.title);
+        if (title == null) {
+          complete = false;
+          break;
+        }
+        ancestors.unshift({ id: parent.node_token, title });
+        parentToken = parent.parent_node_token;
+      } catch (error) {
+        this.signal.throwIfAborted();
+        this.warn("wiki ancestor", error);
+        complete = false;
+        break;
+      }
+    }
+    if (!complete && ancestors.length === 0 && previous.feishu?.parent_node_token === node.parent_node_token && previous.feishu?.space_id === node.space_id) {
+      ancestors.push(...previous.location?.ancestors ?? []);
+    }
+    const location = makeLocation(ancestors, spaceName, complete);
+    const feishu = {
+      node_token: node.node_token,
+      ...node.obj_token == null ? {} : { obj_token: node.obj_token },
+      ...node.space_id == null ? {} : { space_id: node.space_id },
+      ...node.parent_node_token == null ? {} : { parent_node_token: node.parent_node_token },
+      ...node.origin_node_token == null ? {} : { origin_node_token: node.origin_node_token },
+      ...node.origin_space_id == null ? {} : { origin_space_id: node.origin_space_id }
+    };
+    return { ...location == null ? {} : { location }, feishu };
+  }
+  getNode(token, objType) {
+    let pending = this.nodes.get(token);
+    if (pending == null) {
+      pending = this.client.getWikiNode(token, objType);
+      this.nodes.set(token, pending);
+    }
+    return pending;
+  }
+  getDriveLocations() {
+    this.drive ??= this.scanDrive();
+    return this.drive;
+  }
+  async scanDrive() {
+    const locations = /* @__PURE__ */ new Map();
+    const queue = [
+      { ancestors: [] }
+    ];
+    const visited = /* @__PURE__ */ new Set();
+    for (let index = 0; index < queue.length; index++) {
+      const folder = queue[index];
+      const key = folder.token ?? "";
+      if (visited.has(key)) continue;
+      visited.add(key);
+      let pageToken;
+      const pages = /* @__PURE__ */ new Set();
+      try {
+        while (true) {
+          this.signal.throwIfAborted();
+          const page = await this.client.listDriveFiles(
+            folder.token,
+            pageToken
+          );
+          for (const file of page.files) {
+            if (file.type === "folder") {
+              const title = nonempty(file.name);
+              if (title != null) {
+                queue.push({
+                  token: file.token,
+                  ancestors: [...folder.ancestors, { id: file.token, title }]
+                });
+              }
+            } else {
+              const location = makeLocation(folder.ancestors);
+              locations.set(file.token, {
+                ...file.url == null ? {} : { url: file.url },
+                ...location == null ? {} : { location },
+                ...file.parent_token == null ? {} : { feishu: { folder_token: file.parent_token } }
+              });
+            }
+          }
+          if (!page.hasMore) break;
+          if (page.pageToken == null || pages.has(page.pageToken)) {
+            throw new Error("Drive pagination did not advance");
+          }
+          pages.add(page.pageToken);
+          pageToken = page.pageToken;
+        }
+      } catch (error) {
+        this.signal.throwIfAborted();
+        this.warn("drive folders", error);
+        if (error instanceof LarkCliError && error.missingScopes.length > 0) {
+          break;
+        }
+      }
+    }
+    return locations;
+  }
+  warn(source, error) {
+    if (this.warnings.has(source)) return;
+    this.warnings.add(source);
+    console.error(
+      `[feishu] optional ${source} metadata unavailable: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
+function makeLocation(ancestors, spaceName, complete = true) {
+  if (ancestors.length === 0 && spaceName == null) return void 0;
+  return {
+    ...spaceName == null ? {} : { space_name: spaceName },
+    ...ancestors.length === 0 ? {} : {
+      parent_name: ancestors[ancestors.length - 1].title,
+      path: ancestors.map((item) => item.title).join(" / "),
+      ancestors
+    },
+    path_complete: complete
+  };
+}
+function nonempty(value) {
+  return value?.trim() || void 0;
+}
+function wikiTokenFromUrl(value) {
+  if (value == null) return void 0;
+  try {
+    const match = /^\/wiki\/([^/]+)/.exec(new URL(value).pathname);
+    return match?.[1];
+  } catch {
+    return void 0;
+  }
+}
+
 // src/index.ts
 var DEFAULT_CHAT_LOOKBACK_DAYS = 30;
 var INDEXABLE_DOC_TYPES = /* @__PURE__ */ new Set(["docx"]);
@@ -556,8 +830,10 @@ function clampContent(text) {
   const content = prefix + TRUNCATION_NOTICE;
   return { content, bytes: encoder.encode(content).length };
 }
-function buildCloudDoc(entity, raw) {
+function buildCloudDoc(entity, raw, position = {}) {
   const { content, bytes } = clampContent(raw);
+  const { url: positionUrl, ...positionMetadata } = position;
+  const url = entity.url ?? positionUrl;
   return {
     id: `feishu:doc:${entity.token}`,
     title: entity.title,
@@ -567,11 +843,12 @@ function buildCloudDoc(entity, raw) {
     doc_updated_at: entity.editedAt,
     original_file_size: bytes,
     metadata: {
-      url: entity.url,
+      ...url == null ? {} : { url },
       token: entity.token,
       source_type: entity.type,
       ...entity.createdAt == null ? {} : { created_at: entity.createdAt },
-      ...entity.owner == null ? {} : { owner: entity.owner }
+      ...entity.owner == null ? {} : { owner: entity.owner },
+      ...positionMetadata
     }
   };
 }
@@ -697,6 +974,26 @@ function buildChatPeriodDoc(chat, grouping, key, days) {
 function isUnchangedDoc(entity, indexedTokens, previousMark) {
   return indexedTokens.has(entity.token) && entity.editedAt != null && previousMark != null && entity.editedAt <= previousMark;
 }
+async function cloudDocSignature(entity, position) {
+  const data = JSON.stringify([
+    entity.token,
+    entity.type,
+    entity.title,
+    entity.editedAt,
+    entity.createdAt,
+    entity.url,
+    entity.owner,
+    position
+  ]);
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(data)
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (value) => value.toString(16).padStart(2, "0")
+  ).join("");
+}
 function errorMessage2(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -718,6 +1015,8 @@ var FeishuConnector = class extends Connector {
     const state = {
       docs_high_water: this.lastState?.docs_high_water,
       docs: { ...this.lastState?.docs ?? {} },
+      doc_signatures: { ...this.lastState?.doc_signatures ?? {} },
+      doc_positions: { ...this.lastState?.doc_positions ?? {} },
       chat_cursors: { ...this.lastState?.chat_cursors ?? {} },
       chat_doc_ids: [...this.lastState?.chat_doc_ids ?? []],
       chat_grouping: this.lastState?.chat_grouping
@@ -758,7 +1057,7 @@ var FeishuConnector = class extends Connector {
   /**
    * Enumerates every visible document's metadata through the two
    * complementary Search v2 passes (see LarkCliClient.searchDocs). A
-   * document is refetched when it was edited past the high-water mark or
+   * document is refetched when content or source metadata changes, or
    * when it is not in the index yet — so a failed fetch is retried on the
    * next poll instead of being lost behind the advancing mark.
    *
@@ -776,6 +1075,9 @@ var FeishuConnector = class extends Connector {
     const enumerated = /* @__PURE__ */ new Set();
     const succeededUrls = /* @__PURE__ */ new Map();
     const processed = /* @__PURE__ */ new Set();
+    const locations = new DocLocationResolver(client, this.signal);
+    const signatures = { ...state.doc_signatures ?? {} };
+    const positions = { ...state.doc_positions ?? {} };
     for (const sortByEditTime of [false, true]) {
       let pageToken;
       while (!this.signal.aborted) {
@@ -804,17 +1106,27 @@ var FeishuConnector = class extends Connector {
             continue;
           }
           enumerated.add(entity.token);
-          if (isUnchangedDoc(entity, knownTokens, previousMark)) {
+          const position = await locations.resolve(
+            entity,
+            positions[entity.token]
+          );
+          const signature = await cloudDocSignature(entity, position);
+          if (isUnchangedDoc(entity, knownTokens, previousMark) && signatures[entity.token] === signature) {
             continue;
           }
-          const doc = await this.fetchCloudDoc(client, entity);
+          const doc = await this.fetchCloudDoc(client, entity, position);
           if (doc == null) {
             continue;
           }
           updates.push(upsert(doc));
+          signatures[entity.token] = signature;
+          positions[entity.token] = position;
           succeededUrls.set(
             entity.token,
-            entity.url ?? buildDocUrl(entity.type, entity.token)
+            entity.url ?? position.url ?? buildDocUrl(
+              entity.type,
+              position.feishu?.obj_token ?? entity.token
+            )
           );
           if (entity.editedAt != null && (newMark == null || entity.editedAt > newMark)) {
             newMark = entity.editedAt;
@@ -862,6 +1174,12 @@ var FeishuConnector = class extends Connector {
     }
     state.docs_high_water = newMark;
     state.docs = next;
+    state.doc_signatures = Object.fromEntries(
+      Object.entries(signatures).filter(([token]) => next[token] != null)
+    );
+    state.doc_positions = Object.fromEntries(
+      Object.entries(positions).filter(([token]) => next[token] != null)
+    );
     yield { updates: deletes, state: structuredClone(state) };
   }
   /**
@@ -880,10 +1198,10 @@ var FeishuConnector = class extends Connector {
       return false;
     }
   }
-  async fetchCloudDoc(client, entity) {
+  async fetchCloudDoc(client, entity, position) {
     try {
       const content = await client.fetchDocMarkdown(
-        entity.url ?? entity.token
+        entity.url ?? position.url ?? position.feishu?.obj_token ?? entity.token
       );
       if (content == null) {
         console.error(
@@ -891,7 +1209,7 @@ var FeishuConnector = class extends Connector {
         );
         return null;
       }
-      return buildCloudDoc(entity, cleanupDocMarkdown(content));
+      return buildCloudDoc(entity, cleanupDocMarkdown(content), position);
     } catch (error) {
       this.signal.throwIfAborted();
       console.error(

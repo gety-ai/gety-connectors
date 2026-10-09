@@ -8,6 +8,30 @@
 
 type JsonRecord = Record<string, unknown>;
 
+export type WikiNode = {
+	node_token: string;
+	obj_token?: string;
+	space_id?: string;
+	parent_node_token?: string;
+	title?: string;
+	origin_node_token?: string;
+	origin_space_id?: string;
+};
+
+export type DriveFile = {
+	token: string;
+	type: string;
+	name?: string;
+	parent_token?: string;
+	url?: string;
+};
+
+export type DrivePage = {
+	files: DriveFile[];
+	hasMore: boolean;
+	pageToken?: string;
+};
+
 export type SearchEntity = {
 	token: string;
 	type: string;
@@ -57,11 +81,13 @@ export type MessagePage = {
 
 export class LarkCliError extends Error {
 	readonly missingScopes: string[];
+	readonly code?: string;
 
-	constructor(message: string, missingScopes: string[] = []) {
+	constructor(message: string, missingScopes: string[] = [], code?: unknown) {
 		super(message);
 		this.name = 'LarkCliError';
 		this.missingScopes = missingScopes;
+		this.code = code == null ? undefined : String(code);
 	}
 }
 
@@ -135,6 +161,97 @@ export class LarkCliClient {
 			'full',
 		]);
 		return extractDocContent(data);
+	}
+
+	async getWikiNode(token: string, objType?: string): Promise<WikiNode> {
+		const data = await this.api('/open-apis/wiki/v2/spaces/get_node', {
+			token,
+			...(objType == null ? {} : { obj_type: objType }),
+		});
+		const node = isRecord(data) && isRecord(data.node) ? data.node : null;
+		if (node == null || asString(node.node_token) == null) {
+			throw new LarkCliError('Wiki response contains no node');
+		}
+		return {
+			node_token: asString(node.node_token)!,
+			obj_token: asString(node.obj_token),
+			space_id: asString(node.space_id),
+			parent_node_token: asString(node.parent_node_token),
+			title: asString(node.title),
+			origin_node_token: asString(node.origin_node_token),
+			origin_space_id: asString(node.origin_space_id),
+		};
+	}
+
+	async getWikiSpaceName(spaceId: string): Promise<string | undefined> {
+		const data = await this.api(
+			`/open-apis/wiki/v2/spaces/${encodeURIComponent(spaceId)}`,
+		);
+		return isRecord(data) && isRecord(data.space)
+			? asString(data.space.name)
+			: undefined;
+	}
+
+	async listDriveFiles(
+		folderToken?: string,
+		pageToken?: string,
+	): Promise<DrivePage> {
+		const data = await this.api('/open-apis/drive/v1/files', {
+			page_size: 200,
+			...(folderToken == null ? {} : { folder_token: folderToken }),
+			...(pageToken == null ? {} : { page_token: pageToken }),
+		});
+		if (!isRecord(data) || !Array.isArray(data.files)) {
+			throw new LarkCliError('Drive response contains no file list');
+		}
+		const files: DriveFile[] = [];
+		for (const item of data.files) {
+			if (!isRecord(item)) continue;
+			const token = asString(item.token);
+			const type = asString(item.type);
+			if (token == null || type == null) continue;
+			files.push({
+				token,
+				type,
+				name: asString(item.name),
+				parent_token: asString(item.parent_token),
+				url: asString(item.url),
+			});
+		}
+		return {
+			files,
+			hasMore: data.has_more === true,
+			pageToken: asString(data.next_page_token),
+		};
+	}
+
+	private async api(
+		path: string,
+		params: Record<string, string | number> = {},
+	): Promise<unknown> {
+		const result = await this.run([
+			'api',
+			'GET',
+			path,
+			'--as',
+			'user',
+			'--format',
+			'json',
+			'--params',
+			JSON.stringify(params),
+		]);
+		// Raw API envelopes may contain the original OpenAPI code/data wrapper.
+		if (isRecord(result) && typeof result.code === 'number') {
+			if (result.code !== 0) {
+				throw new LarkCliError(
+					asString(result.msg) ?? `OpenAPI error ${result.code}`,
+					[],
+					result.code,
+				);
+			}
+			return result.data;
+		}
+		return result;
 	}
 
 	async listChats(pageToken?: string): Promise<ChatPage> {
@@ -213,7 +330,7 @@ export class LarkCliClient {
 		};
 	}
 
-	private async run(args: string[]): Promise<unknown> {
+	protected async run(args: string[]): Promise<unknown> {
 		for (let attempt = 0;; attempt += 1) {
 			this.signal.throwIfAborted();
 
@@ -256,6 +373,7 @@ export class LarkCliClient {
 			throw new LarkCliError(
 				`lark-cli ${args.slice(0, 2).join(' ')} failed: ${detail}`,
 				missingScopes(envelope),
+				envelope?.error?.code,
 			);
 		}
 	}
@@ -324,7 +442,7 @@ export function extractSearchPage(data: unknown): SearchPage {
 			createdAt: normalizeSourceTime(
 				meta.create_time ?? meta.create_time_iso,
 			),
-			url: asString(meta.url) ?? buildDocUrl(type, token),
+			url: asString(meta.url),
 			owner: asString(meta.owner_name),
 		});
 	}

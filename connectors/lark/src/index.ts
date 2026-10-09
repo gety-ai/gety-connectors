@@ -8,6 +8,7 @@ import {
 } from '@gety-ai/connector-sdk';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { cleanupDocMarkdown } from './doc_markdown.ts';
+import { type CloudPosition, DocLocationResolver } from './doc_location.ts';
 import {
 	buildDocUrl,
 	type ChatMessage,
@@ -25,6 +26,9 @@ export type FeishuState = {
 	docs_high_water?: string;
 	/** token -> fetch URL of the cloud documents currently in the index. */
 	docs?: Record<string, string>;
+	/** Metadata signatures and last known positions; committed after a successful upsert. */
+	doc_signatures?: Record<string, string>;
+	doc_positions?: Record<string, CloudPosition>;
 	/** chat_id -> local date (YYYY-MM-DD) from which the chat is refetched. */
 	chat_cursors?: Record<string, string>;
 	/** ids of the chat transcript docs currently in the index. */
@@ -115,8 +119,14 @@ export function clampContent(
 	return { content, bytes: encoder.encode(content).length };
 }
 
-export function buildCloudDoc(entity: SearchEntity, raw: string): WireDoc {
+export function buildCloudDoc(
+	entity: SearchEntity,
+	raw: string,
+	position: CloudPosition = {},
+): WireDoc {
 	const { content, bytes } = clampContent(raw);
+	const { url: positionUrl, ...positionMetadata } = position;
+	const url = entity.url ?? positionUrl;
 	return {
 		id: `feishu:doc:${entity.token}`,
 		title: entity.title,
@@ -126,11 +136,12 @@ export function buildCloudDoc(entity: SearchEntity, raw: string): WireDoc {
 		doc_updated_at: entity.editedAt,
 		original_file_size: bytes,
 		metadata: {
-			url: entity.url,
+			...(url == null ? {} : { url }),
 			token: entity.token,
 			source_type: entity.type,
 			...(entity.createdAt == null ? {} : { created_at: entity.createdAt }),
 			...(entity.owner == null ? {} : { owner: entity.owner }),
+			...positionMetadata,
 		},
 	};
 }
@@ -306,6 +317,30 @@ export function isUnchangedDoc(
 		entity.editedAt <= previousMark;
 }
 
+async function cloudDocSignature(
+	entity: SearchEntity,
+	position: CloudPosition,
+): Promise<string> {
+	const data = JSON.stringify([
+		entity.token,
+		entity.type,
+		entity.title,
+		entity.editedAt,
+		entity.createdAt,
+		entity.url,
+		entity.owner,
+		position,
+	]);
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(data),
+	);
+	return Array.from(
+		new Uint8Array(digest),
+		(value) => value.toString(16).padStart(2, '0'),
+	).join('');
+}
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -337,6 +372,8 @@ export default class FeishuConnector extends Connector<
 		const state: FeishuState = {
 			docs_high_water: this.lastState?.docs_high_water,
 			docs: { ...(this.lastState?.docs ?? {}) },
+			doc_signatures: { ...(this.lastState?.doc_signatures ?? {}) },
+			doc_positions: { ...(this.lastState?.doc_positions ?? {}) },
 			chat_cursors: { ...(this.lastState?.chat_cursors ?? {}) },
 			chat_doc_ids: [...(this.lastState?.chat_doc_ids ?? [])],
 			chat_grouping: this.lastState?.chat_grouping,
@@ -390,7 +427,7 @@ export default class FeishuConnector extends Connector<
 	/**
 	 * Enumerates every visible document's metadata through the two
 	 * complementary Search v2 passes (see LarkCliClient.searchDocs). A
-	 * document is refetched when it was edited past the high-water mark or
+	 * document is refetched when content or source metadata changes, or
 	 * when it is not in the index yet — so a failed fetch is retried on the
 	 * next poll instead of being lost behind the advancing mark.
 	 *
@@ -411,6 +448,9 @@ export default class FeishuConnector extends Connector<
 		const enumerated = new Set<string>();
 		const succeededUrls = new Map<string, string>();
 		const processed = new Set<string>();
+		const locations = new DocLocationResolver(client, this.signal);
+		const signatures = { ...(state.doc_signatures ?? {}) };
+		const positions = { ...(state.doc_positions ?? {}) };
 
 		for (const sortByEditTime of [false, true]) {
 			let pageToken: string | undefined;
@@ -447,17 +487,31 @@ export default class FeishuConnector extends Connector<
 						continue;
 					}
 					enumerated.add(entity.token);
-					if (isUnchangedDoc(entity, knownTokens, previousMark)) {
+					const position = await locations.resolve(
+						entity,
+						positions[entity.token],
+					);
+					const signature = await cloudDocSignature(entity, position);
+					if (
+						isUnchangedDoc(entity, knownTokens, previousMark) &&
+						signatures[entity.token] === signature
+					) {
 						continue;
 					}
-					const doc = await this.fetchCloudDoc(client, entity);
+					const doc = await this.fetchCloudDoc(client, entity, position);
 					if (doc == null) {
 						continue;
 					}
 					updates.push(upsert(doc));
+					signatures[entity.token] = signature;
+					positions[entity.token] = position;
 					succeededUrls.set(
 						entity.token,
-						entity.url ?? buildDocUrl(entity.type, entity.token),
+						entity.url ?? position.url ??
+							buildDocUrl(
+								entity.type,
+								position.feishu?.obj_token ?? entity.token,
+							),
 					);
 					if (
 						entity.editedAt != null &&
@@ -519,6 +573,12 @@ export default class FeishuConnector extends Connector<
 
 		state.docs_high_water = newMark;
 		state.docs = next;
+		state.doc_signatures = Object.fromEntries(
+			Object.entries(signatures).filter(([token]) => next[token] != null),
+		);
+		state.doc_positions = Object.fromEntries(
+			Object.entries(positions).filter(([token]) => next[token] != null),
+		);
 		yield { updates: deletes, state: structuredClone(state) };
 	}
 
@@ -546,10 +606,12 @@ export default class FeishuConnector extends Connector<
 	private async fetchCloudDoc(
 		client: LarkCliClient,
 		entity: SearchEntity,
+		position: CloudPosition,
 	): Promise<WireDoc | null> {
 		try {
 			const content = await client.fetchDocMarkdown(
-				entity.url ?? entity.token,
+				entity.url ?? position.url ?? position.feishu?.obj_token ??
+					entity.token,
 			);
 			if (content == null) {
 				console.error(
@@ -557,7 +619,7 @@ export default class FeishuConnector extends Connector<
 				);
 				return null;
 			}
-			return buildCloudDoc(entity, cleanupDocMarkdown(content));
+			return buildCloudDoc(entity, cleanupDocMarkdown(content), position);
 		} catch (error) {
 			this.signal.throwIfAborted();
 			console.error(

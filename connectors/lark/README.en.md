@@ -77,8 +77,9 @@ Sync behavior:
 
 - Documents are discovered by a full two-pass Search v2 enumeration (the two
   sort orders have complementary recall and are unioned). Content is refetched
-  only for documents edited since the last sync or not yet in the index, so a
-  transient fetch failure is retried on the next poll instead of being lost.
+  only for documents whose content or source metadata changed, or which are not
+  yet in the index, so a transient fetch failure is retried on the next poll
+  instead of being lost.
 - Search enumeration recall is unstable between polls, so a document missing
   from a completed enumeration is deleted only after a direct fetch confirms it
   is no longer accessible. An empty enumeration is treated as a source-side
@@ -92,6 +93,37 @@ Sync behavior:
   lookback window with the new grouping.
 - Document and transcript content is capped at 8 MB, below Gety's per-document
   limit.
+
+## Document source metadata
+
+Cloud documents retain original URLs supplied by the source and add accessible
+Wiki or Drive location information:
+
+- `metadata.location.space_name`: Wiki space name.
+- `metadata.location.parent_name`: direct parent node or folder name.
+- `metadata.location.path` and `ancestors`: the path and ancestors up to the
+  document's parent, excluding the document title itself.
+- `metadata.location.path_complete`: `false` when only part of the ancestor
+  chain could be read.
+- `metadata.feishu`: node, object, space, or parent folder resource IDs used for
+  lookups. These tokens are resource IDs, not authentication credentials or
+  display labels.
+
+Missing display fields are omitted. Directory names and original URLs are never
+invented from tokens. Moves, parent renames, and space renames trigger an update
+even if the document edit time has not changed. The first poll after upgrading
+enriches existing documents without resetting connector state.
+
+Metadata requests use the current `lark-cli` user identity. Missing permissions
+or temporary failures do not block content indexing and retain previously
+resolved information. Consult connector logs and CLI errors for missing scopes.
+Drive paths are derived from the accessible folder tree; shared documents may
+have no discoverable full path. Nodes, spaces, and Drive enumeration are reused
+within each poll.
+
+Gety's `GetDoc` already returns full metadata. Conditional search and preview
+display requires host integration; upgrading this connector alone does not add
+directory rows to the UI.
 
 ## Local development
 

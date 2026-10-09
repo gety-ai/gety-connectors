@@ -124,9 +124,47 @@ export function buildCloudDoc(
 	raw: string,
 	position: CloudPosition = {},
 ): WireDoc {
-	const { content, bytes } = clampContent(raw);
-	const { url: positionUrl, ...positionMetadata } = position;
-	const url = entity.url ?? positionUrl;
+	const url = entity.url ?? position.url;
+	const lines: string[] = [];
+	const display = (value: string | undefined): string =>
+		(value ?? '').replace(/\s+/g, ' ').trim().replace(
+			/[\\`*_{}\[\]()<>#!|]/g,
+			'\\$&',
+		);
+	const location = position.location;
+	for (
+		const [label, value] of [
+			['知识库', location?.space_name],
+			['父节点', location?.parent_name],
+			['目录路径', location?.path],
+		]
+	) {
+		const text = display(value);
+		if (text) {
+			const prefix = label === '目录路径' && location?.path_complete === false
+				? '… / '
+				: '';
+			lines.push(`> **${label}：** ${prefix}${text}`);
+		}
+	}
+	if (url?.trim()) {
+		try {
+			const link = new URL(url);
+			if (link.protocol === 'https:' || link.protocol === 'http:') {
+				lines.push(
+					`> **原链接：** [打开原文](<${
+						link.href.replace(/</g, '%3C').replace(/>/g, '%3E')
+					}>)`,
+				);
+			}
+		} catch {
+			// An unusable source URL has no rendered link.
+		}
+	}
+	const markdown = lines.length > 0
+		? `${lines.join('\n>\n')}\n\n---\n\n${raw}`
+		: raw;
+	const { content, bytes } = clampContent(markdown);
 	return {
 		id: `feishu:doc:${entity.token}`,
 		title: entity.title,
@@ -141,7 +179,6 @@ export function buildCloudDoc(
 			source_type: entity.type,
 			...(entity.createdAt == null ? {} : { created_at: entity.createdAt }),
 			...(entity.owner == null ? {} : { owner: entity.owner }),
-			...positionMetadata,
 		},
 	};
 }
@@ -322,6 +359,7 @@ async function cloudDocSignature(
 	position: CloudPosition,
 ): Promise<string> {
 	const data = JSON.stringify([
+		'markdown-source-v1',
 		entity.token,
 		entity.type,
 		entity.title,

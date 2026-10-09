@@ -259,6 +259,13 @@ Deno.test('poll refreshes moved/renamed locations despite unchanged edit time an
 	client.nodes.get('parent')!.title = 'Platform';
 	const renamed = await poll(client, unchanged.state);
 	assert.equal(renamed.updates.length, 1);
+	const update = renamed.updates[0];
+	assert.equal(update.kind, 'upsert');
+	if (update.kind === 'upsert') {
+		assert.ok(update.doc.content?.includes('> **目录路径：** Gety / Platform'));
+		assert.ok(update.doc.content?.includes('> **父节点：** Platform'));
+		assert.ok(update.doc.content?.endsWith('# Spec\n\nText'));
+	}
 	assert.equal(
 		renamed.state.doc_positions?.doc.location?.path,
 		'Gety / Platform',
@@ -289,4 +296,40 @@ Deno.test('failed metadata refresh body fetch is retried without advancing the m
 		retried.state.doc_positions?.doc.location?.parent_name,
 		'Changed',
 	);
+});
+
+Deno.test('existing metadata-only signatures refresh Markdown once after upgrading', async () => {
+	const client = wikiClient();
+	const first = await poll(client);
+	const e = client.entity;
+	const oldData = JSON.stringify([
+		e.token,
+		e.type,
+		e.title,
+		e.editedAt,
+		e.createdAt,
+		e.url,
+		e.owner,
+		first.state.doc_positions?.doc,
+	]);
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(oldData),
+	);
+	const oldSignature = Array.from(
+		new Uint8Array(digest),
+		(value) => value.toString(16).padStart(2, '0'),
+	).join('');
+	const upgraded = await poll(client, {
+		...first.state,
+		doc_signatures: { doc: oldSignature },
+	});
+	assert.equal(upgraded.updates.length, 1);
+	const update = upgraded.updates[0];
+	assert.equal(update.kind, 'upsert');
+	if (update.kind === 'upsert') {
+		assert.ok(update.doc.content?.includes('> **知识库：** Engineering'));
+	}
+	const next = await poll(client, upgraded.state);
+	assert.equal(next.updates.length, 0);
 });

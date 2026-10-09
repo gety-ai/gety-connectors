@@ -114,7 +114,14 @@ Deno.test('buildCloudDoc emits a stable markdown doc with url metadata', () => {
 	assert.equal(doc.doc_type, 'feishu:docx');
 	assert.equal(doc.content_format, 'markdown');
 	assert.equal(doc.doc_updated_at, '2026-07-10T00:00:00.000Z');
-	assert.equal(doc.original_file_size, 24);
+	assert.equal(
+		doc.content,
+		'> **原链接：** [打开原文](<https://feishu.cn/docx/doxcnAAAA>)\n\n---\n\n# Release plan\n\nShip it.',
+	);
+	assert.equal(
+		doc.original_file_size,
+		new TextEncoder().encode(doc.content).length,
+	);
 	assert.deepEqual(doc.metadata, {
 		url: 'https://feishu.cn/docx/doxcnAAAA',
 		token: 'doxcnAAAA',
@@ -306,5 +313,54 @@ Deno.test('whole-chat docs use the bare chat id and a date-range label', () => {
 	assert.equal(
 		doc.doc_updated_at,
 		new Date('2026-07-10T09:15:00').toISOString(),
+	);
+});
+
+Deno.test('cloud markdown includes human source context without location metadata or resource IDs', () => {
+	const doc = buildCloudDoc(
+		{ token: 'private-id', type: 'docx', title: 'Doc' },
+		'# Body',
+		{
+			location: {
+				space_name: '工程知识库',
+				parent_name: 'API',
+				path: 'Gety / API',
+			},
+			feishu: { node_token: 'private-node' },
+		},
+	);
+	assert.equal(
+		doc.content,
+		'> **知识库：** 工程知识库\n>\n> **父节点：** API\n>\n> **目录路径：** Gety / API\n\n---\n\n# Body',
+	);
+	assert.deepEqual(doc.metadata, { token: 'private-id', source_type: 'docx' });
+});
+
+Deno.test('cloud markdown omits missing source fields and leaves an empty source block out', () => {
+	const entity = { token: 'doc', type: 'docx', title: 'Doc' };
+	assert.equal(buildCloudDoc(entity, '# Body').content, '# Body');
+	assert.equal(
+		buildCloudDoc(entity, '# Body', {
+			location: { space_name: ' ', parent_name: 'Parent' },
+		}).content,
+		'> **父节点：** Parent\n\n---\n\n# Body',
+	);
+});
+
+Deno.test('cloud markdown escapes source names and marks incomplete paths', () => {
+	const doc = buildCloudDoc(
+		{ token: 'doc', type: 'docx', title: 'Doc', url: 'invalid' },
+		'# Body',
+		{
+			location: {
+				parent_name: '[API]\n# title',
+				path: 'Gety / API',
+				path_complete: false,
+			},
+		},
+	);
+	assert.equal(
+		doc.content,
+		'> **父节点：** \\[API\\] \\# title\n>\n> **目录路径：** … / Gety / API\n\n---\n\n# Body',
 	);
 });

@@ -831,9 +831,41 @@ function clampContent(text) {
   return { content, bytes: encoder.encode(content).length };
 }
 function buildCloudDoc(entity, raw, position = {}) {
-  const { content, bytes } = clampContent(raw);
-  const { url: positionUrl, ...positionMetadata } = position;
-  const url = entity.url ?? positionUrl;
+  const url = entity.url ?? position.url;
+  const lines = [];
+  const display = (value) => (value ?? "").replace(/\s+/g, " ").trim().replace(
+    /[\\`*_{}\[\]()<>#!|]/g,
+    "\\$&"
+  );
+  const location = position.location;
+  for (const [label, value] of [
+    ["\u77E5\u8BC6\u5E93", location?.space_name],
+    ["\u7236\u8282\u70B9", location?.parent_name],
+    ["\u76EE\u5F55\u8DEF\u5F84", location?.path]
+  ]) {
+    const text = display(value);
+    if (text) {
+      const prefix = label === "\u76EE\u5F55\u8DEF\u5F84" && location?.path_complete === false ? "\u2026 / " : "";
+      lines.push(`> **${label}\uFF1A** ${prefix}${text}`);
+    }
+  }
+  if (url?.trim()) {
+    try {
+      const link = new URL(url);
+      if (link.protocol === "https:" || link.protocol === "http:") {
+        lines.push(
+          `> **\u539F\u94FE\u63A5\uFF1A** [\u6253\u5F00\u539F\u6587](<${link.href.replace(/</g, "%3C").replace(/>/g, "%3E")}>)`
+        );
+      }
+    } catch {
+    }
+  }
+  const markdown = lines.length > 0 ? `${lines.join("\n>\n")}
+
+---
+
+${raw}` : raw;
+  const { content, bytes } = clampContent(markdown);
   return {
     id: `feishu:doc:${entity.token}`,
     title: entity.title,
@@ -847,8 +879,7 @@ function buildCloudDoc(entity, raw, position = {}) {
       token: entity.token,
       source_type: entity.type,
       ...entity.createdAt == null ? {} : { created_at: entity.createdAt },
-      ...entity.owner == null ? {} : { owner: entity.owner },
-      ...positionMetadata
+      ...entity.owner == null ? {} : { owner: entity.owner }
     }
   };
 }
@@ -976,6 +1007,7 @@ function isUnchangedDoc(entity, indexedTokens, previousMark) {
 }
 async function cloudDocSignature(entity, position) {
   const data = JSON.stringify([
+    "markdown-source-v1",
     entity.token,
     entity.type,
     entity.title,

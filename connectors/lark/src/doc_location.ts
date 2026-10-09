@@ -5,11 +5,15 @@ import {
 	type WikiNode,
 } from './lark_cli.ts';
 
+export type SourceAncestor = { id: string; title: string; url?: string };
+
 export type SourceLocation = {
 	space_name?: string;
+	space_url?: string;
 	parent_name?: string;
+	parent_url?: string;
 	path?: string;
-	ancestors?: { id: string; title: string }[];
+	ancestors?: SourceAncestor[];
 	path_complete?: boolean;
 };
 
@@ -91,8 +95,9 @@ export class DocLocationResolver {
 			}
 		}
 
+		const origin = wikiOrigin(entity.url);
 		let parentToken = node.parent_node_token;
-		const ancestors: { id: string; title: string }[] = [];
+		const ancestors: SourceAncestor[] = [];
 		const visited = new Set([node.node_token]);
 		let complete = true;
 		while (parentToken != null) {
@@ -109,7 +114,13 @@ export class DocLocationResolver {
 					complete = false;
 					break;
 				}
-				ancestors.unshift({ id: parent.node_token, title });
+				ancestors.unshift({
+					id: parent.node_token,
+					title,
+					...(origin == null ? {} : {
+						url: `${origin}/wiki/${encodeURIComponent(parent.node_token)}`,
+					}),
+				});
 				parentToken = parent.parent_node_token;
 			} catch (error) {
 				this.signal.throwIfAborted();
@@ -127,6 +138,13 @@ export class DocLocationResolver {
 			ancestors.push(...(previous.location?.ancestors ?? []));
 		}
 		const location = makeLocation(ancestors, spaceName, complete);
+		if (
+			location != null && spaceName != null && origin != null && node.space_id
+		) {
+			location.space_url = `${origin}/wiki/space/${
+				encodeURIComponent(node.space_id)
+			}`;
+		}
 		const feishu = {
 			node_token: node.node_token,
 			...(node.obj_token == null ? {} : { obj_token: node.obj_token }),
@@ -162,7 +180,7 @@ export class DocLocationResolver {
 		const locations = new Map<string, CloudPosition>();
 		const queue: {
 			token?: string;
-			ancestors: { id: string; title: string }[];
+			ancestors: SourceAncestor[];
 		}[] = [
 			{ ancestors: [] },
 		];
@@ -188,7 +206,11 @@ export class DocLocationResolver {
 							if (title != null) {
 								queue.push({
 									token: file.token,
-									ancestors: [...folder.ancestors, { id: file.token, title }],
+									ancestors: [...folder.ancestors, {
+										id: file.token,
+										title,
+										...(file.url == null ? {} : { url: file.url }),
+									}],
 								});
 							}
 						} else {
@@ -232,7 +254,7 @@ export class DocLocationResolver {
 }
 
 function makeLocation(
-	ancestors: { id: string; title: string }[],
+	ancestors: SourceAncestor[],
 	spaceName?: string,
 	complete = true,
 ): SourceLocation | undefined {
@@ -241,6 +263,9 @@ function makeLocation(
 		...(spaceName == null ? {} : { space_name: spaceName }),
 		...(ancestors.length === 0 ? {} : {
 			parent_name: ancestors[ancestors.length - 1].title,
+			...(ancestors[ancestors.length - 1].url == null
+				? {}
+				: { parent_url: ancestors[ancestors.length - 1].url }),
 			path: ancestors.map((item) => item.title).join(' / '),
 			ancestors,
 		}),
@@ -260,4 +285,21 @@ function wikiTokenFromUrl(value: string | undefined): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/** Keep the tenant domain from the source; never guess a tenant for links. */
+function wikiOrigin(value: string | undefined): string | undefined {
+	if (value == null) return undefined;
+	try {
+		const url = new URL(value);
+		if (url.protocol !== 'https:' || url.username || url.password) {
+			return undefined;
+		}
+		if (
+			url.hostname === 'feishu.cn' || url.hostname.endsWith('.feishu.cn') ||
+			url.hostname === 'larksuite.com' ||
+			url.hostname.endsWith('.larksuite.com')
+		) return url.origin;
+	} catch { /* No reliable tenant origin. */ }
+	return undefined;
 }

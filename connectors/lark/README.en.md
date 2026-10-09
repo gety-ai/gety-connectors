@@ -102,6 +102,11 @@ value. With no source information, the original body is kept without an empty
 header. Paths run from the root to the parent and exclude the document title.
 Incomplete ancestor paths start with `… /`.
 
+The space name links to its Wiki space, the parent name to its page, and each
+path segment to its own ancestor. Wiki links retain the source document’s Feishu
+or Lark tenant domain; Drive folders use API-provided URLs only. Names remain
+plain text when no reliable link is available.
+
 Source context is part of the Markdown content, so no Gety host changes are
 required. No `metadata.location` or `metadata.feishu` fields are added; existing
 metadata stays compatible. Resource IDs are used internally for lookups and sync

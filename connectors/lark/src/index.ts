@@ -131,15 +131,40 @@ export function buildCloudDoc(
 			/[\\`*_{}\[\]()<>#!|]/g,
 			'\\$&',
 		);
+	const destination = (value: string | undefined): string | undefined => {
+		if (!value?.trim()) return undefined;
+		try {
+			const link = new URL(value);
+			if (
+				(link.protocol === 'https:' || link.protocol === 'http:') &&
+				!link.username && !link.password
+			) {
+				return link.href.replace(/</g, '%3C').replace(/>/g, '%3E');
+			}
+		} catch { /* Unusable links remain plain text. */ }
+		return undefined;
+	};
+	const labelLink = (
+		name: string | undefined,
+		url: string | undefined,
+	): string => {
+		const text = display(name);
+		const link = destination(url);
+		return text && link ? `[${text}](<${link}>)` : text;
+	};
 	const location = position.location;
+	const pathAncestors = location?.ancestors;
+	const path = pathAncestors?.length &&
+			pathAncestors.map((item) => item.title).join(' / ') === location?.path
+		? pathAncestors.map((item) => labelLink(item.title, item.url)).join(' / ')
+		: display(location?.path);
 	for (
-		const [label, value] of [
-			['知识库', location?.space_name],
-			['父节点', location?.parent_name],
-			['目录路径', location?.path],
+		const [label, text] of [
+			['知识库', labelLink(location?.space_name, location?.space_url)],
+			['父节点', labelLink(location?.parent_name, location?.parent_url)],
+			['目录路径', path],
 		]
 	) {
-		const text = display(value);
 		if (text) {
 			const prefix = label === '目录路径' && location?.path_complete === false
 				? '… / '
@@ -147,20 +172,8 @@ export function buildCloudDoc(
 			lines.push(`> **${label}：** ${prefix}${text}`);
 		}
 	}
-	if (url?.trim()) {
-		try {
-			const link = new URL(url);
-			if (link.protocol === 'https:' || link.protocol === 'http:') {
-				lines.push(
-					`> **原链接：** [打开原文](<${
-						link.href.replace(/</g, '%3C').replace(/>/g, '%3E')
-					}>)`,
-				);
-			}
-		} catch {
-			// An unusable source URL has no rendered link.
-		}
-	}
+	const sourceLink = destination(url);
+	if (sourceLink) lines.push(`> **原链接：** [打开原文](<${sourceLink}>)`);
 	const markdown = lines.length > 0
 		? `${lines.join('\n>\n')}\n\n---\n\n${raw}`
 		: raw;
@@ -359,7 +372,7 @@ async function cloudDocSignature(
 	position: CloudPosition,
 ): Promise<string> {
 	const data = JSON.stringify([
-		'markdown-source-v1',
+		'markdown-source-v2',
 		entity.token,
 		entity.type,
 		entity.title,

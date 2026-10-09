@@ -101,11 +101,18 @@ Deno.test('Wiki location uses the URL node token and preserves document identity
 	assert.deepEqual(position, {
 		location: {
 			space_name: 'Engineering',
+			space_url: 'https://team.feishu.cn/wiki/space/space',
 			parent_name: 'API',
+			parent_url: 'https://team.feishu.cn/wiki/parent',
 			path: 'Gety / API',
-			ancestors: [{ id: 'root', title: 'Gety' }, {
+			ancestors: [{
+				id: 'root',
+				title: 'Gety',
+				url: 'https://team.feishu.cn/wiki/root',
+			}, {
 				id: 'parent',
 				title: 'API',
+				url: 'https://team.feishu.cn/wiki/parent',
 			}],
 			path_complete: true,
 		},
@@ -262,8 +269,16 @@ Deno.test('poll refreshes moved/renamed locations despite unchanged edit time an
 	const update = renamed.updates[0];
 	assert.equal(update.kind, 'upsert');
 	if (update.kind === 'upsert') {
-		assert.ok(update.doc.content?.includes('> **目录路径：** Gety / Platform'));
-		assert.ok(update.doc.content?.includes('> **父节点：** Platform'));
+		assert.ok(
+			update.doc.content?.includes(
+				'> **目录路径：** [Gety](<https://team.feishu.cn/wiki/root>) / [Platform](<https://team.feishu.cn/wiki/parent>)',
+			),
+		);
+		assert.ok(
+			update.doc.content?.includes(
+				'> **父节点：** [Platform](<https://team.feishu.cn/wiki/parent>)',
+			),
+		);
 		assert.ok(update.doc.content?.endsWith('# Spec\n\nText'));
 	}
 	assert.equal(
@@ -328,8 +343,98 @@ Deno.test('existing metadata-only signatures refresh Markdown once after upgradi
 	const update = upgraded.updates[0];
 	assert.equal(update.kind, 'upsert');
 	if (update.kind === 'upsert') {
-		assert.ok(update.doc.content?.includes('> **知识库：** Engineering'));
+		assert.ok(
+			update.doc.content?.includes(
+				'> **知识库：** [Engineering](<https://team.feishu.cn/wiki/space/space>)',
+			),
+		);
 	}
 	const next = await poll(client, upgraded.state);
 	assert.equal(next.updates.length, 0);
+});
+
+Deno.test('Wiki links preserve Lark tenant domains and omit links without a known tenant', async () => {
+	const client = wikiClient();
+	client.entity.url = 'https://example.larksuite.com/wiki/leaf?from=search';
+	const lark = await resolver(client).resolve(client.entity);
+	assert.equal(
+		lark.location?.space_url,
+		'https://example.larksuite.com/wiki/space/space',
+	);
+	assert.equal(
+		lark.location?.parent_url,
+		'https://example.larksuite.com/wiki/parent',
+	);
+	for (const url of [undefined, 'https://feishu.cn.evil.example/wiki/leaf']) {
+		client.entity.url = url;
+		client.nodes.set('doc', client.nodes.get('leaf')!);
+		const unknown = await resolver(client).resolve(client.entity);
+		assert.equal(unknown.location?.space_name, 'Engineering');
+		assert.equal(unknown.location?.space_url, undefined);
+		assert.equal(unknown.location?.parent_url, undefined);
+	}
+});
+
+Deno.test('Drive paths link folders only when the API provides their URLs', async () => {
+	const client = new FakeClient();
+	client.folders.set(':', {
+		files: [{ token: 'root', type: 'folder', name: 'Plans' }],
+		hasMore: false,
+	});
+	client.folders.set('root:', {
+		files: [{
+			token: 'parent',
+			type: 'folder',
+			name: 'API',
+			url: 'https://team.feishu.cn/drive/folder/parent',
+		}],
+		hasMore: false,
+	});
+	client.folders.set('parent:', {
+		files: [{ token: 'doc', type: 'docx' }],
+		hasMore: false,
+	});
+	const position = await resolver(client).resolve(client.entity);
+	const doc = buildCloudDoc(client.entity, '# Body', position);
+	assert.ok(
+		doc.content?.includes(
+			'> **目录路径：** Plans / [API](<https://team.feishu.cn/drive/folder/parent>)',
+		),
+	);
+	assert.ok(
+		doc.content?.includes(
+			'> **父节点：** [API](<https://team.feishu.cn/drive/folder/parent>)',
+		),
+	);
+});
+
+Deno.test('Markdown v1 signatures refresh once even when locations remain unchanged', async () => {
+	const client = new FakeClient();
+	const first = await poll(client);
+	const e = client.entity;
+	const data = JSON.stringify([
+		'markdown-source-v1',
+		e.token,
+		e.type,
+		e.title,
+		e.editedAt,
+		e.createdAt,
+		e.url,
+		e.owner,
+		first.state.doc_positions?.doc,
+	]);
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(data),
+	);
+	const signature = Array.from(
+		new Uint8Array(digest),
+		(value) => value.toString(16).padStart(2, '0'),
+	).join('');
+	const upgraded = await poll(client, {
+		...first.state,
+		doc_signatures: { doc: signature },
+	});
+	assert.equal(upgraded.updates.length, 1);
+	assert.equal((await poll(client, upgraded.state)).updates.length, 0);
 });

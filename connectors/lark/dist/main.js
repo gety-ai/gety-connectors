@@ -629,6 +629,7 @@ var DocLocationResolver = class {
         }
       }
     }
+    const origin = wikiOrigin(entity.url);
     let parentToken = node.parent_node_token;
     const ancestors = [];
     const visited = /* @__PURE__ */ new Set([node.node_token]);
@@ -647,7 +648,13 @@ var DocLocationResolver = class {
           complete = false;
           break;
         }
-        ancestors.unshift({ id: parent.node_token, title });
+        ancestors.unshift({
+          id: parent.node_token,
+          title,
+          ...origin == null ? {} : {
+            url: `${origin}/wiki/${encodeURIComponent(parent.node_token)}`
+          }
+        });
         parentToken = parent.parent_node_token;
       } catch (error) {
         this.signal.throwIfAborted();
@@ -660,6 +667,9 @@ var DocLocationResolver = class {
       ancestors.push(...previous.location?.ancestors ?? []);
     }
     const location = makeLocation(ancestors, spaceName, complete);
+    if (location != null && spaceName != null && origin != null && node.space_id) {
+      location.space_url = `${origin}/wiki/space/${encodeURIComponent(node.space_id)}`;
+    }
     const feishu = {
       node_token: node.node_token,
       ...node.obj_token == null ? {} : { obj_token: node.obj_token },
@@ -708,7 +718,11 @@ var DocLocationResolver = class {
               if (title != null) {
                 queue.push({
                   token: file.token,
-                  ancestors: [...folder.ancestors, { id: file.token, title }]
+                  ancestors: [...folder.ancestors, {
+                    id: file.token,
+                    title,
+                    ...file.url == null ? {} : { url: file.url }
+                  }]
                 });
               }
             } else {
@@ -751,6 +765,7 @@ function makeLocation(ancestors, spaceName, complete = true) {
     ...spaceName == null ? {} : { space_name: spaceName },
     ...ancestors.length === 0 ? {} : {
       parent_name: ancestors[ancestors.length - 1].title,
+      ...ancestors[ancestors.length - 1].url == null ? {} : { parent_url: ancestors[ancestors.length - 1].url },
       path: ancestors.map((item) => item.title).join(" / "),
       ancestors
     },
@@ -768,6 +783,18 @@ function wikiTokenFromUrl(value) {
   } catch {
     return void 0;
   }
+}
+function wikiOrigin(value) {
+  if (value == null) return void 0;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) {
+      return void 0;
+    }
+    if (url.hostname === "feishu.cn" || url.hostname.endsWith(".feishu.cn") || url.hostname === "larksuite.com" || url.hostname.endsWith(".larksuite.com")) return url.origin;
+  } catch {
+  }
+  return void 0;
 }
 
 // src/index.ts
@@ -837,29 +864,37 @@ function buildCloudDoc(entity, raw, position = {}) {
     /[\\`*_{}\[\]()<>#!|]/g,
     "\\$&"
   );
+  const destination = (value) => {
+    if (!value?.trim()) return void 0;
+    try {
+      const link = new URL(value);
+      if ((link.protocol === "https:" || link.protocol === "http:") && !link.username && !link.password) {
+        return link.href.replace(/</g, "%3C").replace(/>/g, "%3E");
+      }
+    } catch {
+    }
+    return void 0;
+  };
+  const labelLink = (name, url2) => {
+    const text = display(name);
+    const link = destination(url2);
+    return text && link ? `[${text}](<${link}>)` : text;
+  };
   const location = position.location;
-  for (const [label, value] of [
-    ["\u77E5\u8BC6\u5E93", location?.space_name],
-    ["\u7236\u8282\u70B9", location?.parent_name],
-    ["\u76EE\u5F55\u8DEF\u5F84", location?.path]
+  const pathAncestors = location?.ancestors;
+  const path = pathAncestors?.length && pathAncestors.map((item) => item.title).join(" / ") === location?.path ? pathAncestors.map((item) => labelLink(item.title, item.url)).join(" / ") : display(location?.path);
+  for (const [label, text] of [
+    ["\u77E5\u8BC6\u5E93", labelLink(location?.space_name, location?.space_url)],
+    ["\u7236\u8282\u70B9", labelLink(location?.parent_name, location?.parent_url)],
+    ["\u76EE\u5F55\u8DEF\u5F84", path]
   ]) {
-    const text = display(value);
     if (text) {
       const prefix = label === "\u76EE\u5F55\u8DEF\u5F84" && location?.path_complete === false ? "\u2026 / " : "";
       lines.push(`> **${label}\uFF1A** ${prefix}${text}`);
     }
   }
-  if (url?.trim()) {
-    try {
-      const link = new URL(url);
-      if (link.protocol === "https:" || link.protocol === "http:") {
-        lines.push(
-          `> **\u539F\u94FE\u63A5\uFF1A** [\u6253\u5F00\u539F\u6587](<${link.href.replace(/</g, "%3C").replace(/>/g, "%3E")}>)`
-        );
-      }
-    } catch {
-    }
-  }
+  const sourceLink = destination(url);
+  if (sourceLink) lines.push(`> **\u539F\u94FE\u63A5\uFF1A** [\u6253\u5F00\u539F\u6587](<${sourceLink}>)`);
   const markdown = lines.length > 0 ? `${lines.join("\n>\n")}
 
 ---
@@ -1007,7 +1042,7 @@ function isUnchangedDoc(entity, indexedTokens, previousMark) {
 }
 async function cloudDocSignature(entity, position) {
   const data = JSON.stringify([
-    "markdown-source-v1",
+    "markdown-source-v2",
     entity.token,
     entity.type,
     entity.title,

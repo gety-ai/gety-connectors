@@ -52,48 +52,22 @@ Deno.test('clampContent keeps small content and truncates huge content', () => {
 	);
 });
 
-Deno.test('isUnchangedDoc gates refetch on index membership and mark', () => {
+Deno.test('isUnchangedDoc gates refetch on index membership and signature', () => {
 	const indexed = new Set(['t1']);
-	const mark = '2026-07-01T00:00:00.000Z';
+	const entity = { token: 't1', editedAt: '2026-06-30T00:00:00.000Z' };
 
-	// Indexed and not edited since the mark: skip.
+	// Indexed with the same signature: skip.
+	assert.equal(isUnchangedDoc(entity, indexed, 'sig', 'sig'), true);
+	// Edited, moved or renamed (signature differs) or never committed: refetch.
+	assert.equal(isUnchangedDoc(entity, indexed, 'old', 'sig'), false);
+	assert.equal(isUnchangedDoc(entity, indexed, undefined, 'sig'), false);
+	// Not in the index (failed fetch last poll, or restored): refetch.
 	assert.equal(
-		isUnchangedDoc(
-			{ token: 't1', editedAt: '2026-06-30T00:00:00.000Z' },
-			indexed,
-			mark,
-		),
-		true,
-	);
-	// Edited past the mark: refetch.
-	assert.equal(
-		isUnchangedDoc(
-			{ token: 't1', editedAt: '2026-07-02T00:00:00.000Z' },
-			indexed,
-			mark,
-		),
+		isUnchangedDoc({ ...entity, token: 't2' }, indexed, 'sig', 'sig'),
 		false,
 	);
-	// Not in the index (failed fetch last poll, or restored): refetch even
-	// though its edit time is behind the mark.
-	assert.equal(
-		isUnchangedDoc(
-			{ token: 't2', editedAt: '2026-06-30T00:00:00.000Z' },
-			indexed,
-			mark,
-		),
-		false,
-	);
-	// No edit time or no mark: refetch.
-	assert.equal(isUnchangedDoc({ token: 't1' }, indexed, mark), false);
-	assert.equal(
-		isUnchangedDoc(
-			{ token: 't1', editedAt: '2026-06-30T00:00:00.000Z' },
-			indexed,
-			undefined,
-		),
-		false,
-	);
+	// No edit time: content changes are undetectable, so refetch.
+	assert.equal(isUnchangedDoc({ token: 't1' }, indexed, 'sig', 'sig'), false);
 });
 
 Deno.test('buildCloudDoc emits a stable markdown doc with url metadata', () => {

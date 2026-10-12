@@ -203,11 +203,15 @@ var LarkCliError = class extends Error {
 var DOCS_PAGE_SIZE = "20";
 var CHATS_PAGE_SIZE = "100";
 var MESSAGES_PAGE_SIZE = "50";
-var LarkCliClient = class {
+var LarkCliClient = class _LarkCliClient {
   constructor(bin, signal, retryDelaysMs = [1e3, 2500, 5e3]) {
     this.bin = bin;
     this.signal = signal;
     this.retryDelaysMs = retryDelaysMs;
+  }
+  /** Same CLI, cancelled by `signal` instead (kills in-flight subprocesses). */
+  withSignal(signal) {
+    return new _LarkCliClient(this.bin, signal, this.retryDelaysMs);
   }
   /**
    * One page of the Search v2 browse enumeration. An empty query needs the
@@ -578,18 +582,34 @@ function abortableDelay(milliseconds, signal) {
 }
 
 // src/doc_location.ts
+var LOCATION_BUDGET_MS = 12e4;
+var LocationBudgetExhausted = class extends Error {
+};
 var DocLocationResolver = class {
-  constructor(client, signal) {
-    this.client = client;
+  constructor(client, signal, budgetMs = LOCATION_BUDGET_MS) {
     this.signal = signal;
+    this.budgetMs = budgetMs;
+    this.deadline = Date.now() + budgetMs;
+    this.client = client.withSignal(
+      AbortSignal.any([signal, this.budget.signal])
+    );
   }
   nodes = /* @__PURE__ */ new Map();
   spaces = /* @__PURE__ */ new Map();
   drive;
   wikiUnavailable = false;
   warnings = /* @__PURE__ */ new Set();
+  client;
+  budget = new AbortController();
+  deadline;
+  /**
+   * Once the budget is spent, or when a lookup is cut off by it, the last
+   * known position is kept: a partial result would change the signature and
+   * refetch content only to refetch it again when the lookup completes.
+   */
   async resolve(entity, previous = {}) {
     this.signal.throwIfAborted();
+    if (this.exhausted()) return previous;
     let node;
     try {
       if (this.wikiUnavailable) {
@@ -602,6 +622,7 @@ var DocLocationResolver = class {
       );
     } catch (error) {
       this.signal.throwIfAborted();
+      if (this.budget.signal.aborted) return previous;
       const notMounted = error instanceof LarkCliError && error.code === "131014";
       if (!notMounted) {
         if (error instanceof LarkCliError && error.missingScopes.length > 0) {
@@ -617,12 +638,14 @@ var DocLocationResolver = class {
       try {
         let pending = this.spaces.get(node.space_id);
         if (pending == null) {
-          pending = this.client.getWikiSpaceName(node.space_id);
+          const spaceId = node.space_id;
+          pending = this.bounded(() => this.client.getWikiSpaceName(spaceId));
           this.spaces.set(node.space_id, pending);
         }
         spaceName = nonempty(await pending);
       } catch (error) {
         this.signal.throwIfAborted();
+        if (this.budget.signal.aborted) return previous;
         this.warn("wiki space", error);
         if (previous.feishu?.space_id === node.space_id) {
           spaceName = previous.location?.space_name;
@@ -658,6 +681,7 @@ var DocLocationResolver = class {
         parentToken = parent.parent_node_token;
       } catch (error) {
         this.signal.throwIfAborted();
+        if (this.budget.signal.aborted) return previous;
         this.warn("wiki ancestor", error);
         complete = false;
         break;
@@ -683,7 +707,7 @@ var DocLocationResolver = class {
   getNode(token, objType) {
     let pending = this.nodes.get(token);
     if (pending == null) {
-      pending = this.client.getWikiNode(token, objType);
+      pending = this.bounded(() => this.client.getWikiNode(token, objType));
       this.nodes.set(token, pending);
     }
     return pending;
@@ -708,9 +732,9 @@ var DocLocationResolver = class {
       try {
         while (true) {
           this.signal.throwIfAborted();
-          const page = await this.client.listDriveFiles(
-            folder.token,
-            pageToken
+          const current = pageToken;
+          const page = await this.bounded(
+            () => this.client.listDriveFiles(folder.token, current)
           );
           for (const file of page.files) {
             if (file.type === "folder") {
@@ -743,6 +767,7 @@ var DocLocationResolver = class {
         }
       } catch (error) {
         this.signal.throwIfAborted();
+        if (this.budget.signal.aborted) break;
         this.warn("drive folders", error);
         if (error instanceof LarkCliError && error.missingScopes.length > 0) {
           break;
@@ -750,6 +775,30 @@ var DocLocationResolver = class {
       }
     }
     return locations;
+  }
+  exhausted() {
+    if (Date.now() >= this.deadline) this.exhaust();
+    return this.budget.signal.aborted;
+  }
+  exhaust() {
+    if (this.budget.signal.aborted) return;
+    this.budget.abort(new LocationBudgetExhausted());
+    console.error(
+      `[feishu] source location lookups exceeded ${Math.round(this.budgetMs / 1e3)}s this poll; keeping last known locations for the remaining documents`
+    );
+  }
+  bounded(request) {
+    if (this.exhausted()) {
+      return Promise.reject(new LocationBudgetExhausted());
+    }
+    let timer;
+    const expiry = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        this.exhaust();
+        reject(new LocationBudgetExhausted());
+      }, this.deadline - Date.now());
+    });
+    return Promise.race([request(), expiry]).finally(() => clearTimeout(timer));
   }
   warn(source, error) {
     if (this.warnings.has(source)) return;
@@ -1037,8 +1086,8 @@ function buildChatPeriodDoc(chat, grouping, key, days) {
     }
   };
 }
-function isUnchangedDoc(entity, indexedTokens, previousMark) {
-  return indexedTokens.has(entity.token) && entity.editedAt != null && previousMark != null && entity.editedAt <= previousMark;
+function isUnchangedDoc(entity, indexedTokens, previousSignature, signature) {
+  return indexedTokens.has(entity.token) && entity.editedAt != null && previousSignature === signature;
 }
 async function cloudDocSignature(entity, position) {
   const data = JSON.stringify([
@@ -1061,6 +1110,11 @@ async function cloudDocSignature(entity, position) {
     (value) => value.toString(16).padStart(2, "0")
   ).join("");
 }
+function pickKeys(values, keys) {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key]) => keys[key] != null)
+  );
+}
 function errorMessage2(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1072,6 +1126,7 @@ function chunks(values, size) {
   return result;
 }
 var FeishuConnector = class extends Connector {
+  locationBudgetMs = LOCATION_BUDGET_MS;
   createClient() {
     const bin = this.config.lark_cli_path?.trim() || "lark-cli";
     return new LarkCliClient(bin, this.signal);
@@ -1131,8 +1186,9 @@ var FeishuConnector = class extends Connector {
    * Enumeration recall is unstable between polls (indexed docs routinely
    * drop out of one enumeration and reappear in the next), so a document
    * missing from a completed enumeration is deleted only after a direct
-   * fetch of its stored URL confirms it is no longer accessible. The mark
-   * and the token->url index are committed in one final state.
+   * fetch of its stored URL confirms it is no longer accessible. Each batch
+   * commits the documents it indexed; the mark and deletions are committed
+   * only in the final state, after the enumeration completes.
    */
   async *pollDocs(client, state) {
     const previousMark = state.docs_high_water;
@@ -1142,7 +1198,11 @@ var FeishuConnector = class extends Connector {
     const enumerated = /* @__PURE__ */ new Set();
     const succeededUrls = /* @__PURE__ */ new Map();
     const processed = /* @__PURE__ */ new Set();
-    const locations = new DocLocationResolver(client, this.signal);
+    const locations = new DocLocationResolver(
+      client,
+      this.signal,
+      this.locationBudgetMs
+    );
     const signatures = { ...state.doc_signatures ?? {} };
     const positions = { ...state.doc_positions ?? {} };
     for (const sortByEditTime of [false, true]) {
@@ -1178,7 +1238,12 @@ var FeishuConnector = class extends Connector {
             positions[entity.token]
           );
           const signature = await cloudDocSignature(entity, position);
-          if (isUnchangedDoc(entity, knownTokens, previousMark) && signatures[entity.token] === signature) {
+          if (isUnchangedDoc(
+            entity,
+            knownTokens,
+            signatures[entity.token],
+            signature
+          )) {
             continue;
           }
           const doc = await this.fetchCloudDoc(client, entity, position);
@@ -1200,7 +1265,17 @@ var FeishuConnector = class extends Connector {
           }
         }
         if (updates.length > 0) {
-          yield { updates };
+          const docs = { ...known };
+          for (const [token, url] of succeededUrls) docs[token] = url;
+          yield {
+            updates,
+            state: structuredClone({
+              ...state,
+              docs,
+              doc_signatures: pickKeys(signatures, docs),
+              doc_positions: pickKeys(positions, docs)
+            })
+          };
         }
         if (!page.hasMore || page.pageToken == null || page.pageToken === pageToken) {
           break;
@@ -1241,12 +1316,8 @@ var FeishuConnector = class extends Connector {
     }
     state.docs_high_water = newMark;
     state.docs = next;
-    state.doc_signatures = Object.fromEntries(
-      Object.entries(signatures).filter(([token]) => next[token] != null)
-    );
-    state.doc_positions = Object.fromEntries(
-      Object.entries(positions).filter(([token]) => next[token] != null)
-    );
+    state.doc_signatures = pickKeys(signatures, next);
+    state.doc_positions = pickKeys(positions, next);
     yield { updates: deletes, state: structuredClone(state) };
   }
   /**

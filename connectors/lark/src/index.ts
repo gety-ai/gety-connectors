@@ -8,7 +8,11 @@ import {
 } from '@gety-ai/connector-sdk';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { cleanupDocMarkdown } from './doc_markdown.ts';
-import { type CloudPosition, DocLocationResolver } from './doc_location.ts';
+import {
+	type CloudPosition,
+	DocLocationResolver,
+	LOCATION_BUDGET_MS,
+} from './doc_location.ts';
 import {
 	buildDocUrl,
 	type ChatMessage,
@@ -353,18 +357,21 @@ export function buildChatPeriodDoc(
 }
 
 /**
- * A document is skipped only when it is already indexed AND not edited past
- * the high-water mark. A doc missing from the index (never fetched, fetch
- * failed last poll, or deleted-then-restored) is always refetched.
+ * A document is skipped only when it is already indexed AND its signature
+ * matches the one committed with its last successful upsert. The signature
+ * covers the edit time, so a match means this exact version is indexed —
+ * also when an interrupted poll committed it without advancing the mark. A
+ * doc missing from the index (never fetched, fetch failed last poll, or
+ * deleted-then-restored) or without an edit time is always refetched.
  */
 export function isUnchangedDoc(
 	entity: Pick<SearchEntity, 'token' | 'editedAt'>,
 	indexedTokens: ReadonlySet<string>,
-	previousMark: string | undefined,
+	previousSignature: string | undefined,
+	signature: string,
 ): boolean {
-	return indexedTokens.has(entity.token) &&
-		entity.editedAt != null && previousMark != null &&
-		entity.editedAt <= previousMark;
+	return indexedTokens.has(entity.token) && entity.editedAt != null &&
+		previousSignature === signature;
 }
 
 async function cloudDocSignature(
@@ -392,6 +399,15 @@ async function cloudDocSignature(
 	).join('');
 }
 
+function pickKeys<T>(
+	values: Record<string, T>,
+	keys: Record<string, unknown>,
+): Record<string, T> {
+	return Object.fromEntries(
+		Object.entries(values).filter(([key]) => keys[key] != null),
+	);
+}
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -408,6 +424,8 @@ export default class FeishuConnector extends Connector<
 	ManifestConfig,
 	FeishuState
 > {
+	protected locationBudgetMs = LOCATION_BUDGET_MS;
+
 	protected createClient(): LarkCliClient {
 		const bin = this.config.lark_cli_path?.trim() || 'lark-cli';
 		return new LarkCliClient(bin, this.signal);
@@ -485,8 +503,9 @@ export default class FeishuConnector extends Connector<
 	 * Enumeration recall is unstable between polls (indexed docs routinely
 	 * drop out of one enumeration and reappear in the next), so a document
 	 * missing from a completed enumeration is deleted only after a direct
-	 * fetch of its stored URL confirms it is no longer accessible. The mark
-	 * and the token->url index are committed in one final state.
+	 * fetch of its stored URL confirms it is no longer accessible. Each batch
+	 * commits the documents it indexed; the mark and deletions are committed
+	 * only in the final state, after the enumeration completes.
 	 */
 	private async *pollDocs(
 		client: LarkCliClient,
@@ -499,7 +518,11 @@ export default class FeishuConnector extends Connector<
 		const enumerated = new Set<string>();
 		const succeededUrls = new Map<string, string>();
 		const processed = new Set<string>();
-		const locations = new DocLocationResolver(client, this.signal);
+		const locations = new DocLocationResolver(
+			client,
+			this.signal,
+			this.locationBudgetMs,
+		);
 		const signatures = { ...(state.doc_signatures ?? {}) };
 		const positions = { ...(state.doc_positions ?? {}) };
 
@@ -544,8 +567,12 @@ export default class FeishuConnector extends Connector<
 					);
 					const signature = await cloudDocSignature(entity, position);
 					if (
-						isUnchangedDoc(entity, knownTokens, previousMark) &&
-						signatures[entity.token] === signature
+						isUnchangedDoc(
+							entity,
+							knownTokens,
+							signatures[entity.token],
+							signature,
+						)
 					) {
 						continue;
 					}
@@ -573,7 +600,21 @@ export default class FeishuConnector extends Connector<
 				}
 
 				if (updates.length > 0) {
-					yield { updates };
+					// Commit progress with each batch so a poll the host cancels
+					// (e.g. on its idle timeout) resumes instead of starting over.
+					// Nothing is dropped and the mark stays put until the
+					// enumeration completes.
+					const docs = { ...known };
+					for (const [token, url] of succeededUrls) docs[token] = url;
+					yield {
+						updates,
+						state: structuredClone({
+							...state,
+							docs,
+							doc_signatures: pickKeys(signatures, docs),
+							doc_positions: pickKeys(positions, docs),
+						}),
+					};
 				}
 
 				if (
@@ -624,12 +665,8 @@ export default class FeishuConnector extends Connector<
 
 		state.docs_high_water = newMark;
 		state.docs = next;
-		state.doc_signatures = Object.fromEntries(
-			Object.entries(signatures).filter(([token]) => next[token] != null),
-		);
-		state.doc_positions = Object.fromEntries(
-			Object.entries(positions).filter(([token]) => next[token] != null),
-		);
+		state.doc_signatures = pickKeys(signatures, next);
+		state.doc_positions = pickKeys(positions, next);
 		yield { updates: deletes, state: structuredClone(state) };
 	}
 

@@ -114,6 +114,11 @@ export class LarkCliClient {
 		private readonly retryDelaysMs: readonly number[] = [1_000, 2_500, 5_000],
 	) {}
 
+	/** Same CLI, cancelled by `signal` instead (kills in-flight subprocesses). */
+	withSignal(signal: AbortSignal): LarkCliClient {
+		return new LarkCliClient(this.bin, signal, this.retryDelaysMs);
+	}
+
 	/**
 	 * One page of the Search v2 browse enumeration. An empty query needs the
 	 * wide --created-since window to browse instead of returning only recent

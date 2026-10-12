@@ -32,6 +32,10 @@ class FakeClient extends LarkCliClient {
 		super('unused', new AbortController().signal);
 	}
 
+	override withSignal(): LarkCliClient {
+		return this;
+	}
+
 	override getWikiNode(token: string): Promise<WikiNode> {
 		this.wikiCalls++;
 		if (this.metadataError != null) return Promise.reject(this.metadataError);
@@ -224,8 +228,13 @@ Deno.test('missing Wiki scope still resolves Drive folders and avoids repeated f
 });
 
 class TestConnector extends FeishuConnector {
-	constructor(private client: FakeClient, state?: FeishuState) {
+	constructor(
+		private client: FakeClient,
+		state?: FeishuState,
+		budgetMs?: number,
+	) {
 		super();
+		if (budgetMs != null) this.locationBudgetMs = budgetMs;
 		this.config = {
 			index_chat_history: false,
 			chat_grouping: 'week',
@@ -240,9 +249,15 @@ class TestConnector extends FeishuConnector {
 	}
 }
 
-async function poll(client: FakeClient, state?: FeishuState) {
+async function poll(
+	client: FakeClient,
+	state?: FeishuState,
+	budgetMs?: number,
+) {
 	const results: PollResult[] = [];
-	for await (const result of new TestConnector(client, state).poll()) {
+	for await (
+		const result of new TestConnector(client, state, budgetMs).poll()
+	) {
 		results.push(result);
 	}
 	return {
@@ -437,4 +452,107 @@ Deno.test('Markdown v1 signatures refresh once even when locations remain unchan
 	});
 	assert.equal(upgraded.updates.length, 1);
 	assert.equal((await poll(client, upgraded.state)).updates.length, 0);
+});
+
+const never = <T>() => new Promise<T>(() => {});
+
+Deno.test('a hung Drive listing is cut off by the budget and later lookups reuse last known positions', async () => {
+	const client = new FakeClient();
+	client.folders.set(':', {
+		files: [{ token: 'folder', type: 'folder', name: 'Plans' }],
+		hasMore: false,
+	});
+	const listDriveFiles = client.listDriveFiles.bind(client);
+	client.listDriveFiles = (folder?: string, page?: string) =>
+		folder === 'folder'
+			? (client.driveCalls++, never())
+			: listDriveFiles(folder, page);
+	const previous = { location: { path: 'Old' } };
+	const current = new DocLocationResolver(
+		client,
+		new AbortController().signal,
+		50,
+	);
+	const started = Date.now();
+	assert.deepEqual(await current.resolve(client.entity, previous), previous);
+	assert.ok(Date.now() - started < 1_000);
+	const calls = client.wikiCalls + client.driveCalls;
+	assert.deepEqual(
+		await current.resolve({ ...client.entity, token: 'other' }, previous),
+		previous,
+	);
+	assert.equal(client.wikiCalls + client.driveCalls, calls);
+});
+
+Deno.test('a hung Wiki ancestor keeps the last known position instead of a partial path', async () => {
+	const client = wikiClient();
+	const previous = await resolver(client).resolve(client.entity);
+	const getWikiNode = client.getWikiNode.bind(client);
+	client.getWikiNode = (token: string) =>
+		token === 'root' ? never() : getWikiNode(token);
+	client.nodes.get('parent')!.title = 'Renamed';
+	const current = new DocLocationResolver(
+		client,
+		new AbortController().signal,
+		50,
+	);
+	assert.deepEqual(await current.resolve(client.entity, previous), previous);
+});
+
+Deno.test('hung location lookups do not withhold document content', async () => {
+	const client = new FakeClient();
+	client.listDriveFiles = () => never();
+	const result = await poll(client, undefined, 50);
+	assert.equal(result.updates.length, 1);
+	assert.equal(client.bodyCalls, 1);
+	assert.ok(result.state.docs?.doc != null);
+});
+
+class PagedClient extends FakeClient {
+	pages: SearchEntity[][] = [];
+
+	override searchDocs(
+		options: { sortByEditTime?: boolean; pageToken?: string } = {},
+	) {
+		const index = Number(options.pageToken ?? 0);
+		const hasMore = index + 1 < this.pages.length;
+		return Promise.resolve({
+			entities: this.pages[index] ?? [],
+			hasMore,
+			...(hasMore ? { pageToken: String(index + 1) } : {}),
+		});
+	}
+}
+
+Deno.test('an interrupted first sync resumes from the committed batches', async () => {
+	const client = new PagedClient();
+	const entity = (token: string): SearchEntity => ({
+		...client.entity,
+		token,
+		url: `https://team.feishu.cn/docx/${token}`,
+	});
+	client.pages = [[entity('a'), entity('b')], [entity('c')]];
+	const generator = new TestConnector(client).poll();
+	const first = (await generator.next()).value as PollResult;
+	// The host cancels the poll after the first batch (e.g. idle timeout).
+	await generator.return(undefined);
+	assert.equal(first.updates.length, 2);
+	const committed = first.state as FeishuState;
+	assert.deepEqual(Object.keys(committed.docs ?? {}).sort(), ['a', 'b']);
+	assert.equal(committed.docs_high_water, undefined);
+	assert.equal(client.bodyCalls, 2);
+
+	const resumed = await poll(client, committed);
+	assert.deepEqual(
+		resumed.updates.map((update) =>
+			update.kind === 'upsert' ? update.doc.id : update.id
+		),
+		['feishu:doc:c'],
+	);
+	assert.equal(client.bodyCalls, 3);
+	assert.deepEqual(Object.keys(resumed.state.docs ?? {}).sort(), [
+		'a',
+		'b',
+		'c',
+	]);
 });

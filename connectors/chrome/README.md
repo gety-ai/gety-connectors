@@ -24,37 +24,47 @@ Timestamps are converted from Chrome's WebKit epoch (microseconds since
 
 ## Configuration
 
-| Field                  | Type     | Default  | Notes                                                 |
-| ---------------------- | -------- | -------- | ----------------------------------------------------- |
-| `index_bookmarks`      | checkbox | `true`   | Index the Bookmarks file.                             |
-| `index_history`        | checkbox | `true`   | Index the History database.                           |
-| `history_range`        | dropdown | required | `7d` · `30d` · `90d` · `365d` · `all` — how far back. |
-| `history_skip_non_web` | checkbox | `true`   | Skip non-`http(s)` history URLs.                      |
+| Field                  | Type     | Default | Notes                                                 |
+| ---------------------- | -------- | ------- | ----------------------------------------------------- |
+| `index_bookmarks`      | checkbox | `true`  | Index the Bookmarks file.                             |
+| `index_history`        | checkbox | `true`  | Index the History database.                           |
+| `history_range`        | dropdown | `90d`   | `7d` · `30d` · `90d` · `365d` · `all` — how far back. |
+| `history_skip_non_web` | checkbox | `true`  | Skip non-`http(s)` history URLs.                      |
 
 The Chrome **Default** profile directory is detected from the host OS — there is
-no profile setting:
+no profile setting. The manifest grants read access to that directory only:
 
 | OS      | Profile directory                                     |
 | ------- | ----------------------------------------------------- |
 | Linux   | `~/.config/google-chrome/Default`                     |
 | macOS   | `~/Library/Application Support/Google/Chrome/Default` |
-| Windows | `%LOCALAPPDATA%\Google\Chrome\User Data\Default`      |
+| Windows | `~/AppData/Local/Google/Chrome/User Data/Default`     |
+
+If the profile directory does not exist, the sync fails with a clear message and
+nothing is deleted. A profile without a `Bookmarks` file has no bookmarks; a
+`Bookmarks` file in a format the connector does not recognize fails the sync.
 
 `history_range` indexes only pages whose last visit falls within the window
-(`all` removes the window). Pages never actually loaded are skipped.
+(`all` removes the window). Like Chrome's own history list, a page is indexed
+only if it has a visible visit in the window: one that ends a redirect chain and
+is not a subframe load. Redirect sources and subframe-only pages are skipped, as
+are pages never actually loaded.
 
 ## Sync behavior
 
 - **Incremental history** via a `last_visit_time` high-water-mark cursor: each
-  poll re-emits only pages visited since the last poll.
+  poll re-emits pages visited since the last poll, plus any in-range page not
+  indexed yet (after widening the range, re-enabling history, or turning off the
+  non-web filter).
 - **Bookmarks** are re-scanned in full each poll (small) and upserted
   idempotently.
 - **Deletes stay in sync**: the connector remembers indexed ids in state and
-  emits `del()` for bookmarks/history that disappear or fall out of scope.
+  emits `del()` for bookmarks/history that disappear or fall out of scope. A
+  cancelled poll emits no deletes.
 
-Chrome keeps the live `History` DB locked and may hold recent writes in a WAL,
-so each poll copies `History` (+ `-wal`/`-shm`) to a temp dir and reads the
-copy.
+Chrome keeps the live `History` DB locked and may hold in-flight writes in a
+rollback journal or a WAL, so each poll copies `History` (+ `-journal`/`-wal`/
+`-shm`) to a temp dir and reads the copy.
 
 ## Build
 
@@ -70,19 +80,19 @@ committed; `deno task build` writes it). After editing source, rebuild and use
 ## Local runner
 
 ```bash
-cp .env.example .env       # sets GETY_CONFIG_HISTORY_RANGE (required)
+cp .env.example .env       # optional config overrides
 deno task runner -- --reset-state
 deno task runner -- --polls 2
 ```
 
-`history_range` is required, so set `GETY_CONFIG_HISTORY_RANGE` in `.env` (e.g.
-`90d`). Output is written under `dev/runs/<timestamp>/` (summary, state
-before/after, updates/deletes, and per-doc snapshots).
+The runner sandboxes the connector with the manifest `permissions`. Output is
+written under `dev/runs/<timestamp>/` (summary, state before/after,
+updates/deletes, and per-doc snapshots).
 
 ## Install in Gety
 
 1. Open Gety's Custom Connectors settings.
 2. Install from npm (`@gety-connectors/chrome`), or run `deno task build` and
    install from this local folder (build output is not committed).
-3. Choose a `history_range` (and toggle bookmarks/history if desired).
+3. Optionally change `history_range` (and toggle bookmarks/history).
 4. Wait for the first poll, then search, e.g. `gety search <term>`.

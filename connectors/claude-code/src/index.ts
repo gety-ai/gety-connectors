@@ -564,31 +564,41 @@ function sanitizeFileMap(
 }
 
 /**
- * Documents of files that a complete scan no longer found, and the file
- * entries to keep. After a partial scan nothing is deleted, and files it did
- * not reach keep their entries until a complete scan decides.
+ * Documents to delete, and the file entries to keep. A document is deleted
+ * when its file is gone from a complete scan, or was re-read and no longer
+ * has an indexable conversation. After a partial scan nothing is deleted:
+ * files it did not reach, and files whose document it would have deleted,
+ * keep their previous entries until a complete scan decides.
  */
 export function reconcileFiles(
 	prior: Record<string, FileFingerprint>,
 	current: Record<string, FileFingerprint>,
 	complete: boolean,
 ): { deletedDocIds: string[]; files: Record<string, FileFingerprint> } {
+	const files = { ...current };
+	const deletedDocIds: string[] = [];
+	for (const [relPath, fingerprint] of Object.entries(current)) {
+		const priorDocId = prior[relPath]?.docId;
+		if (fingerprint.docId || !priorDocId) continue;
+		if (complete) {
+			deletedDocIds.push(priorDocId);
+		} else {
+			files[relPath] = prior[relPath];
+		}
+	}
 	const stale = staleIds(Object.keys(prior), {
 		seen: new Set(Object.keys(current)),
 		complete,
 	});
-	const files = { ...current };
+	for (const relPath of stale) {
+		if (prior[relPath].docId) deletedDocIds.push(prior[relPath].docId);
+	}
 	if (!complete) {
 		for (const [relPath, fingerprint] of Object.entries(prior)) {
 			files[relPath] ??= fingerprint;
 		}
 	}
-	return {
-		deletedDocIds: stale.flatMap((relPath) =>
-			prior[relPath].docId ? [prior[relPath].docId] : []
-		),
-		files,
-	};
+	return { deletedDocIds, files };
 }
 
 /**
@@ -656,8 +666,6 @@ export async function* pollClaudeCode(
 		};
 		if (doc != null) {
 			yield { updates: [upsert(doc)] };
-		} else if (prev?.docId) {
-			yield { updates: [del(prev.docId)] };
 		}
 	}
 

@@ -1130,6 +1130,59 @@ Deno.test('pollClaudeCode keeps sessions whose file vanished before it was read'
 	await Deno.remove(tmp, { recursive: true });
 });
 
+Deno.test('pollClaudeCode deletes an emptied session only after a complete poll', async () => {
+	const tmp = await Deno.makeTempDir();
+	await Deno.writeTextFile(`${tmp}/a.jsonl`, jsonl(exchange('a', 'A1', 'r')));
+	await Deno.writeTextFile(`${tmp}/b.jsonl`, jsonl(exchange('b', 'B1', 'r')));
+	const config = { root: tmp, homeDir: '', includeSubagents: false };
+	const signal = new AbortController().signal;
+	const first = await collect(pollClaudeCode(config, null, signal));
+	const firstState = first.at(-1)?.state as {
+		files: Record<string, { docId: string }>;
+	};
+	const aDocId = firstState.files['a.jsonl'].docId;
+
+	// a.jsonl loses its conversation; b.jsonl changes and cannot be read.
+	await Deno.writeTextFile(`${tmp}/a.jsonl`, jsonl([{ type: 'mode' }]));
+	await Deno.writeTextFile(`${tmp}/b.jsonl`, jsonl(exchange('b', 'B22', 'r')));
+	const failRead = (error: Error) => (path: string) => {
+		if (path.endsWith('b.jsonl')) throw error;
+	};
+
+	// A poll that fails emits nothing before failing.
+	const failed: PollResult[] = [];
+	await assert.rejects(
+		() =>
+			withFileReadSpy(
+				failRead(new Deno.errors.PermissionDenied('b')),
+				async () => {
+					for await (
+						const batch of pollClaudeCode(config, firstState, signal)
+					) failed.push(batch);
+				},
+			),
+		Deno.errors.PermissionDenied,
+	);
+	assert.deepEqual(failed.flatMap((batch) => batch.updates), []);
+
+	// An incomplete poll deletes nothing and keeps a.jsonl's document.
+	const partial = await withFileReadSpy(
+		failRead(new Deno.errors.NotFound('b')),
+		() => collect(pollClaudeCode(config, firstState, signal)),
+	);
+	assert.deepEqual(partial.flatMap((batch) => batch.updates), []);
+	const partialState = partial.at(-1)?.state as typeof firstState;
+	assert.deepEqual(partialState.files['a.jsonl'], firstState.files['a.jsonl']);
+
+	// The next complete poll deletes it.
+	const complete = await collect(pollClaudeCode(config, partialState, signal));
+	const deleted = complete.flatMap((batch) => batch.updates).flatMap((update) =>
+		update.kind === 'delete' ? [update.id] : []
+	);
+	assert.deepEqual(deleted, [aDocId]);
+	await Deno.remove(tmp, { recursive: true });
+});
+
 Deno.test('buildDocFromRecords keeps whole rounds within the UTF-8 byte budget', async () => {
 	// Title `q`, no session block: everything before the answer is fixed.
 	const prefix = '# q\n\n---\n\n## User\n\nq\n\n## Claude Code\n\n';

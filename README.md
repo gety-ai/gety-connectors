@@ -19,8 +19,8 @@ A connector's directory name is its short name, and both its npm package name
 `deno task sync:check` enforces this.
 
 `packages/catalog` is `@gety-connectors/catalog`, the generated list of these
-connectors (name, description, icon) that Gety's connector gallery reads; see
-[its README](packages/catalog/README.md).
+connectors (name, description, icon, latest npm version) that Gety's connector
+gallery reads; see [its README](packages/catalog/README.md).
 
 `packages/utils` (`@gety-connectors/utils`) and `packages/testing`
 (`@gety-connectors/testing`) are workspace-only Deno packages, never published:
@@ -144,16 +144,28 @@ Releases are driven by [changesets](https://changesets.dev) and
    push; when none is open, a maintainer opens it from the link in the job
    summary. Its version step (`pnpm version-packages`, `scripts/version.ts`)
    runs `changeset version` (versions, CHANGELOG.md), then the sync script
-   (manifest.json, `gety`), then regenerates the catalog. When the catalog
-   content changed (a connector's name, description or icon) and no changeset
-   already bumped the catalog, the catalog gets a patch bump and a changelog
-   entry so it is republished. The catalog's `getyCatalog` field is written only
-   here; never edit it by hand.
+   (manifest.json, `gety`).
 3. Merging that pull request makes the workflow build every connector, verify
    the tarballs (`deno task verify:packs`), pack the packages whose version is
    not on npm yet, publish them and push `<package>@<version>` tags. No GitHub
    Releases are created: Gety's "Install from GitHub" would treat them as
    connector releases without the assets it requires.
+4. The same publish job then generates the catalog (`scripts/catalog.ts`): the
+   connectors' names, descriptions and icons at the merged commit, with each
+   connector's `latest` version and publish time read from the registry. Every
+   connector must be on npm at its `package.json` version; the step waits a few
+   minutes for the registry's cache to catch up and then fails, naming the
+   connectors it could not find. When the generated `getyCatalog` differs from
+   the published one, the job publishes it with `npm publish` as the published
+   catalog version plus a patch; otherwise it publishes nothing. The catalog is
+   not managed by changesets (its `package.json` is `private` and has no
+   version): a change to a connector's name, description or icon ships with that
+   connector's release, and no catalog changeset is needed.
+
+If the publish job fails partway (a package or the catalog), re-run the failed
+job: changesets skips the packages already on npm, and the catalog is generated
+again. A run without anything to publish does not regenerate the catalog;
+`deno task catalog` (without `--out`) prints what it would publish.
 
 Only the publish job can mint an OIDC token (`id-token: write`); the version job
 has `contents: write` to push its branch and `pull-requests: read` to find the
@@ -188,12 +200,12 @@ upgrading pnpm.)
 ### First publish (bootstrap)
 
 npm can only configure a trusted publisher for a package that already exists, so
-the first version of every package is published by a maintainer. Use an npm
+the first version of every package is published by a maintainer: the connectors
+first, then the catalog, which lists them at their npm versions. Use an npm
 account that owns the `@gety-connectors` org and has two-factor authentication
 enabled. The repository starts with one changeset per connector, which makes the
 first npm release 0.2.0 for every connector (0.1.0 was the pre-npm version from
-the connector's own repository). The catalog keeps its own version and is first
-published at 0.1.0.
+the connector's own repository). The catalog's first version is 0.1.0.
 
 1. Push `main`. The release workflow finds the pending changesets and pushes the
    version changes to `changeset-release/main` (connectors at 0.2.0). Open the
@@ -211,7 +223,8 @@ published at 0.1.0.
    deno task verify:packs
    ```
 
-4. Publish every package at its current version and push the tags:
+4. Publish every connector at its current version and push the tags (the catalog
+   is `private`, so changesets skips it):
 
    ```sh
    npm login
@@ -220,11 +233,20 @@ published at 0.1.0.
    ```
 
    If the one-time password expires partway through, run the command again with
-   a new one; packages already on npm are skipped. Publish with
-   `changeset
-   publish` (pnpm), not `npm publish`, so the LICENSE is packed.
+   a new one; packages already on npm are skipped. Publish the connectors with
+   `changeset publish` (pnpm), not `npm publish`, so the LICENSE is packed.
 
-5. For each package (the six connectors and `@gety-connectors/catalog`),
+5. Generate the catalog from the registry and publish it. The command waits
+   until the registry serves every connector at its `package.json` version (its
+   cache can lag a few minutes behind a publish) and fails if one is missing;
+   the directory must not exist yet, and it contains the LICENSE:
+
+   ```sh
+   deno task catalog --out /tmp/gety-connectors-catalog
+   npm publish /tmp/gety-connectors-catalog --otp <one-time password>
+   ```
+
+6. For each package (the six connectors and `@gety-connectors/catalog`),
    configure the trusted publisher and allow it to publish. `npm trust` needs
    npm 11.10 or later and `--allow-publish` needs 11.15 or later, hence
    `npx npm@11`:
@@ -243,12 +265,13 @@ published at 0.1.0.
    GitHub Actions, organization `gety-ai`, repository `gety-connectors`,
    workflow `release.yml`, no environment) and enable "Allow npm publish".
 
-6. Enable the Release workflow again.
-7. Within two days, validate the setup with a release from CI: merge a pull
-   request with a changeset for every package (for example a patch "Publish from
-   CI with provenance"), then merge the "chore: version packages" pull request
-   and check that the release workflow publishes all seven packages.
-8. On each package's Settings page, set Publishing access to "Require two-factor
+7. Enable the Release workflow again.
+8. Within two days, validate the setup with a release from CI: merge a pull
+   request with a changeset for every connector (for example a patch "Publish
+   from CI with provenance"), then merge the "chore: version packages" pull
+   request and check that the release workflow publishes the six connectors and,
+   because their versions changed, catalog 0.1.1.
+9. On each package's Settings page, set Publishing access to "Require two-factor
    authentication and disallow tokens", so only the trusted publisher (and
    maintainers with 2FA) can publish.
 
@@ -262,13 +285,18 @@ published at 0.1.0.
    `connectors/<short>`), `publishConfig.access: public`, and a `CHANGELOG.md`
    with an entry for that version (copy an existing connector's files); run
    `deno task sync`.
-3. Add a changeset for the catalog so the next release includes the new
-   connector. The first publish of the new package is manual: follow the
-   bootstrap steps for that one package.
+3. Publish the new package's first version by hand before the next release run
+   (bootstrap steps 3, 4 and 6, for that one package): the release workflow
+   cannot publish a package npm does not know, and its catalog step fails while
+   a connector in the repository is not on npm. The catalog lists the new
+   connector from the next release on; no catalog changeset is needed. To list
+   it right away, run bootstrap step 5.
 
 ## License
 
 [Apache-2.0](LICENSE). Packages carry no copy of the license: pnpm packs the
 workspace root `LICENSE` into every package that has none of its own, and
 `deno task verify:packs` checks it is there. Plain `npm pack`/`npm publish`
-would leave it out, so publish only through changesets (which uses pnpm here).
+would leave it out, so publish the connectors only through changesets (which
+uses pnpm here). The catalog is the exception: `scripts/catalog.ts` copies the
+`LICENSE` into the directory it writes, which is published with `npm publish`.

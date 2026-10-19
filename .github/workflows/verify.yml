@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check versions, manifests and catalog are in sync
+      - name: Check versions and manifests are in sync
         run: deno task sync:check
 
       - name: Check the vendored Gety SDK is unmodified

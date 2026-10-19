@@ -3,18 +3,22 @@
 #
 # On every push to main, select-mode decides what to do:
 # - version: pending changesets exist, so the version job runs
-#   `pnpm version-packages` (versions, CHANGELOG.md, manifest.json, package.json
-#   `gety` and the catalog, see scripts/version.ts) and force-pushes the result
+#   `pnpm version-packages` (versions, CHANGELOG.md, manifest.json and
+#   package.json `gety`, see scripts/version.ts) and force-pushes the result
 #   to the changeset-release/main branch. The organization does not let
 #   GITHUB_TOKEN create pull requests, so the job does not open one: an open
 #   pull request from that branch updates with the push; otherwise the job
 #   summary links to opening it.
 # - publish: some package version is not on npm yet (the version PR was
 #   merged), so the pack job builds and packs them and the publish job
-#   publishes the tarballs and pushes `<package>@<version>` tags.
+#   publishes the tarballs, pushes `<package>@<version>` tags, then generates
+#   @gety-connectors/catalog from the registry and publishes it when it
+#   changed. The catalog is `private` in the workspace, so changesets neither
+#   versions nor packs it.
 #
 # Only the publish job can mint an OIDC token, following
-# https://changesets.dev/guide/automating#trusted-publishing.
+# https://changesets.dev/guide/automating#trusted-publishing. A publish job
+# that failed can be re-run: changesets skips the packages already on npm.
 
 name: Release
 
@@ -149,7 +153,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check versions, manifests and catalog are in sync
+      - name: Check versions and manifests are in sync
         run: deno task sync:check
 
       - name: Build connectors
@@ -185,12 +189,18 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.8.1
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # `changeset publish` runs `pnpm publish`, which pnpm 10 delegates to the
-      # npm CLI next to the Node.js binary; npm does the OIDC exchange and
-      # needs version 11.5.1 or later for trusted publishing.
+      # npm CLI next to the Node.js binary; npm does the OIDC exchange (also
+      # for the catalog's `npm publish`) and needs version 11.5.1 or later for
+      # trusted publishing.
       - name: Check npm supports trusted publishing
         run: |
           npm_version="$(npm --version)"
@@ -207,3 +217,21 @@ jobs:
         with:
           pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
           create-github-releases: false
+
+      # Lists every connector at its npm `latest` and publish time, so it runs
+      # after the connectors are published. It fails when a connector at this
+      # commit is not on npm at its package.json version (after waiting out
+      # the registry's cache), and writes the package directory only when the
+      # catalog differs from the published one.
+      - name: Generate the catalog
+        run: deno task catalog --out "${RUNNER_TEMP}/catalog"
+
+      # `npm publish`, not pnpm: the directory is outside the workspace and
+      # already contains the LICENSE.
+      - name: Publish the catalog
+        run: |
+          if [ -d "${RUNNER_TEMP}/catalog" ]; then
+            npm publish "${RUNNER_TEMP}/catalog"
+          else
+            echo 'The published catalog is up to date.'
+          fi

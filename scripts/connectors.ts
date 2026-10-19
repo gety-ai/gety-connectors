@@ -125,20 +125,3 @@ function sortKeys(value: unknown): unknown {
 	}
 	return value;
 }
-
-/** Changesets files waiting for the next version step. */
-export async function pendingChangesets(): Promise<string[]> {
-	const dir = new URL('.changeset/', repoRoot);
-	const names: string[] = [];
-	if (!(await exists(dir))) {
-		return names;
-	}
-	for await (const entry of Deno.readDir(dir)) {
-		if (
-			entry.isFile && entry.name.endsWith('.md') && entry.name !== 'README.md'
-		) {
-			names.push(entry.name);
-		}
-	}
-	return names.sort();
-}

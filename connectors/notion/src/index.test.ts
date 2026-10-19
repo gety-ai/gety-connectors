@@ -399,6 +399,74 @@ Deno.test('each changed page is its own batch and only the last carries state', 
 	});
 });
 
+Deno.test('a page edited in the current minute is fetched again next poll', async () => {
+	// Notion rounds last_edited_time down to the minute: an edit later in
+	// this minute would keep the timestamp, so it must not be trusted yet.
+	const thisMinute = new Date(Math.floor(Date.now() / 60_000) * 60_000)
+		.toISOString();
+	const notion = fakeNotion(
+		[page('recent', thisMinute), page('settled', TS_NEW)],
+		{ recent: [paragraph('R')], settled: [paragraph('S')] },
+	);
+
+	const first = await runPoll(new TestConnector(notion), { config: CONFIG });
+	const second = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: first.committedState,
+	});
+
+	assert.deepEqual(updateIds(first.updates), [
+		['upsert', 'recent'],
+		['upsert', 'settled'],
+	]);
+	assert.deepEqual(updateIds(second.updates), [['upsert', 'recent']]);
+});
+
+Deno.test('a same-minute edit is not lost when the block fetch runs minutes after search', async () => {
+	// The title comes from the search response; a slow page before it delays
+	// its block fetch past the settle window, but the search data stays old.
+	const realNow = Date.now;
+	let now = Date.parse('2026-10-19T10:00:20.000Z');
+	Date.now = () => now;
+	try {
+		const edited = '2026-10-19T10:00:00.000Z';
+		let title = 'BEFORE EDIT';
+		const fetchFn = (url: string) => {
+			if (url.endsWith('/search')) {
+				return Promise.resolve(jsonResponse({
+					results: [
+						page('slow', TS_NEW),
+						page('target', edited, { properties: titleProperty(title) }),
+					],
+					has_more: false,
+					next_cursor: null,
+				}));
+			}
+			if (url.includes('/blocks/slow/')) {
+				now += 3 * 60_000;
+			}
+			return Promise.resolve(jsonResponse({ results: [], has_more: false }));
+		};
+
+		const first = await runPoll(new TestConnector(fetchFn), { config: CONFIG });
+		title = 'AFTER EDIT';
+		now += 60_000;
+		const second = await runPoll(new TestConnector(fetchFn), {
+			config: CONFIG,
+			lastState: first.committedState,
+		});
+
+		const titles = (run: { updates: unknown[] }) =>
+			(run.updates as { doc: { id: string; title: string } }[])
+				.filter((update) => update.doc.id === 'target')
+				.map((update) => update.doc.title);
+		assert.deepEqual(titles(first), ['BEFORE EDIT']);
+		assert.deepEqual(titles(second), ['AFTER EDIT']);
+	} finally {
+		Date.now = realNow;
+	}
+});
+
 Deno.test('a cancelled poll deletes nothing and commits no state', async () => {
 	const controller = new AbortController();
 	const notion = fakeNotion([page('a', TS_NEW), page('b', TS_NEW)], {

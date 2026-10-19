@@ -26,6 +26,13 @@ const DOC_TYPE = 'notion:page';
 /** Stay under Gety's ~10 MB per-document content limit. */
 const MAX_CONTENT_BYTES = 8_000_000;
 const TRUNCATION_NOTICE = '\n\n…(content truncated)';
+/**
+ * Notion rounds `last_edited_time` down to the minute, so an edit later in
+ * the same minute leaves the timestamp unchanged. A fetched page's timestamp
+ * is recorded only when that minute ended this long before the poll began
+ * (one minute of rounding plus one of clock skew).
+ */
+const EDIT_TIME_SETTLED_MS = 2 * 60_000;
 
 /** Extracts the page title from whichever property has type `title`. */
 export function pageTitle(page: NotionPage): string {
@@ -184,6 +191,12 @@ export default class NotionConnector extends Connector<
 		/** Next state: every listed, readable page → its recorded edit time. */
 		const pages: Record<string, string> = {};
 		let fetched = 0;
+		/**
+		 * Taken before the search: the title and properties in each document
+		 * come from the search response, which can be minutes older than the
+		 * page's block fetch.
+		 */
+		const pollStartedAt = Date.now();
 
 		for await (const results of client.searchPages()) {
 			for (const page of results) {
@@ -210,7 +223,12 @@ export default class NotionConnector extends Connector<
 					}
 					throw error;
 				}
-				pages[page.id] = lastEdited;
+				// An unsettled timestamp is recorded as '' so the next poll fetches
+				// the page again and picks up edits made later in that minute.
+				pages[page.id] =
+					pollStartedAt - Date.parse(lastEdited) >= EDIT_TIME_SETTLED_MS
+						? lastEdited
+						: '';
 				fetched += 1;
 				yield { updates: [upsert(buildPageDoc(page, markdown))] };
 			}

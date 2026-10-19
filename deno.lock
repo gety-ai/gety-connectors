@@ -503,13 +503,47 @@
     }
   },
   "workspace": {
-    "dependencies": [
-      "jsr:@luca/esbuild-deno-loader@~0.11.1",
-      "npm:@linear/sdk@86.0.0",
-      "npm:@types/mdast@^4.0.4",
-      "npm:esbuild@~0.24.2",
-      "npm:mdast-util-from-markdown@^2.0.3",
-      "npm:mdast-util-to-markdown@^2.1.2"
-    ]
+    "members": {
+      "connectors/chrome": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:esbuild@~0.24.2"
+        ]
+      },
+      "connectors/claude-code": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:esbuild@~0.24.2"
+        ]
+      },
+      "connectors/codex": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:esbuild@~0.24.2"
+        ]
+      },
+      "connectors/lark": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:esbuild@~0.24.2"
+        ]
+      },
+      "connectors/linear": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:@linear/sdk@86.0.0",
+          "npm:@types/mdast@^4.0.4",
+          "npm:esbuild@~0.24.2",
+          "npm:mdast-util-from-markdown@^2.0.3",
+          "npm:mdast-util-to-markdown@^2.1.2"
+        ]
+      },
+      "connectors/notion": {
+        "dependencies": [
+          "jsr:@luca/esbuild-deno-loader@~0.11.1",
+          "npm:esbuild@~0.24.2"
+        ]
+      }
+    }
   }
 }

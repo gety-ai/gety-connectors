@@ -1,0 +1,32 @@
+{
+	"workspace": [
+		"./connectors/linear",
+		"./connectors/codex",
+		"./connectors/claude-code",
+		"./connectors/chrome",
+		"./connectors/notion",
+		"./connectors/lark"
+	],
+	"fmt": {
+		"useTabs": true,
+		"indentWidth": 2,
+		"singleQuote": true,
+		"lineWidth": 80,
+		"exclude": [
+			"**/dist/",
+			"node_modules/",
+			"**/CHANGELOG.md",
+			".changeset/*.md"
+		]
+	},
+	"lint": {
+		"include": [
+			"scripts/"
+		],
+		"rules": {
+			"tags": [
+				"recommended"
+			]
+		}
+	}
+}

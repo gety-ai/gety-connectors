@@ -4,48 +4,66 @@
 	height="48"
 	viewBox="0 0 48 48"
 >
-	<defs><linearGradient
+	<defs>
+		<linearGradient
 			id="a"
 			x1="3.2173"
 			x2="44.7812"
 			y1="15"
 			y2="15"
 			gradientUnits="userSpaceOnUse"
-		><stop offset="0" stop-color="#d93025" /><stop
+		>
+			<stop offset="0" stop-color="#d93025" />
+			<stop
 				offset="1"
 				stop-color="#ea4335"
-			/></linearGradient><linearGradient
+			/>
+		</linearGradient>
+		<linearGradient
 			id="b"
 			x1="20.7219"
 			x2="41.5039"
 			y1="47.6791"
 			y2="11.6837"
 			gradientUnits="userSpaceOnUse"
-		><stop offset="0" stop-color="#fcc934" /><stop
+		>
+			<stop offset="0" stop-color="#fcc934" />
+			<stop
 				offset="1"
 				stop-color="#fbbc04"
-			/></linearGradient><linearGradient
+			/>
+		</linearGradient>
+		<linearGradient
 			id="c"
 			x1="26.5981"
 			x2="5.8161"
 			y1="46.5015"
 			y2="10.506"
 			gradientUnits="userSpaceOnUse"
-		><stop offset="0" stop-color="#1e8e3e" /><stop
+		>
+			<stop offset="0" stop-color="#1e8e3e" />
+			<stop
 				offset="1"
 				stop-color="#34a853"
-			/></linearGradient></defs><circle
+			/>
+		</linearGradient>
+	</defs>
+	<circle
 		cx="24"
 		cy="23.9947"
 		r="12.5"
 		fill="#fff"
-	/><path
+	/>
+	<path
 		fill="url(#a)"
 		d="M24 12h20.7812a23.9939 23.9939 0 0 0-41.5639.0029L13.6079 30l.0093-.0024A11.9852 11.9852 0 0 1 24 12"
-	/><circle cx="24" cy="24" r="9.5" fill="#1a73e8" /><path
+	/>
+	<circle cx="24" cy="24" r="9.5" fill="#1a73e8" />
+	<path
 		fill="url(#b)"
 		d="M34.3913 30.0029 24.0007 48A23.994 23.994 0 0 0 44.78 12.0031H23.9989l-.0025.0093a11.985 11.985 0 0 1 10.3949 17.9905"
-	/><path
+	/>
+	<path
 		fill="url(#c)"
 		d="M13.6086 30.0031 3.218 12.006A23.994 23.994 0 0 0 24.0025 48l10.3906-17.9971-.0067-.0068a11.9852 11.9852 0 0 1-20.7778.007"
 	/>

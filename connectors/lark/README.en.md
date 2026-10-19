@@ -7,11 +7,12 @@ content through a locally authenticated
 [lark-cli](https://github.com/larksuite/cli):
 
 - **Cloud documents** — docx documents and wiki pages you can access, exported
-  as markdown. Documents that disappear from the source (deleted, or access
-  lost) are removed from the index during sync.
+  as markdown. Documents confirmed deleted at the source, or no longer
+  accessible, are removed from the index during sync.
 - **Chat history** _(optional, on by default)_ — group chats and direct
   messages, grouped into one searchable document per chat per ISO week
-  (default), per day, or ungrouped (one document per chat).
+  (default), per day, or ungrouped (one document per chat covering the lookback
+  window).
 
 The connector never stores Lark credentials itself. All API calls go through
 `lark-cli`, which keeps its own OAuth tokens.
@@ -19,7 +20,19 @@ The connector never stores Lark credentials itself. All API calls go through
 ## Prerequisites
 
 1. Install [lark-cli](https://github.com/larksuite/cli) (1.0.58 or newer) and
-   make sure it is on your `PATH`, or set its path in the connector settings.
+   make sure `lark-cli` is on the **`PATH` Gety starts with**. The manifest only
+   grants running a program named `lark-cli` (`permissions.run`); a custom path
+   is no longer supported.
+   - On macOS, Gety adds `/opt/homebrew/bin` and `/usr/local/bin` to `PATH`, so
+     a Homebrew install works as is.
+   - With a Node version manager (nvm, fnm, volta, …), a global npm install puts
+     `lark-cli` only on that tool's shell `PATH`, and npm's launcher relies on
+     `env node`, which fails inside Gety. Link the package's native executable
+     into a directory on `PATH` instead:
+
+     ```bash
+     sudo ln -sf "$(npm root -g)/@larksuite/cli/bin/lark-cli" /usr/local/bin/lark-cli
+     ```
 2. Sign in and grant scopes in one step. `lark-cli auth login` **requires**
    explicit scopes — running it bare fails with "please specify the scopes to
    authorize". Use:
@@ -48,12 +61,11 @@ The connector never stores Lark credentials itself. All API calls go through
    (build output is not committed).
 3. Fill in the settings (labels are in Chinese):
 
-   | Setting (中文)   | Default     | Meaning                                                                                                             |
-   | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
-   | 索引聊天记录     | checked     | Index group chats and direct messages. Unchecking removes previously indexed chats.                                 |
-   | 聊天记录聚合粒度 | 按周 (week) | Group each chat's messages per ISO week, per day, or not at all (one doc per chat). Changing this re-indexes chats. |
-   | 聊天记录回溯天数 | 30          | How many days of chat history to backfill on the first sync.                                                        |
-   | lark-cli 路径    | `lark-cli`  | Path to the lark-cli executable if it is not on the `PATH` inherited by Gety.                                       |
+   | Setting (中文)   | Default     | Meaning                                                                                                                   |
+   | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+   | 索引聊天记录     | checked     | Index group chats and direct messages. Unchecking removes previously indexed chats.                                       |
+   | 聊天记录聚合粒度 | 按周 (week) | Group each chat's messages per ISO week, per day, or not at all (one doc per chat within the lookback). Re-indexes chats. |
+   | 聊天记录回溯天数 | 30          | Days of chat history to backfill on the first sync; in ungrouped mode also the span each chat document covers.            |
 
 After source edits, rebuild (`deno task build`) and click **Restart** for this
 connector in Gety. After manifest edits, reinstall the connector.
@@ -68,28 +80,37 @@ connector in Gety. After manifest edits, reinstall the connector.
 
 Week docs key on the week's Monday and display a date range such as
 `2026-07-06 ~ 2026-07-12`; day docs use `2026-07-10`; ungrouped mode keeps the
-whole chat in one document with per-day sections.
+chat's messages within the lookback window in one document with per-day
+sections.
 
 Sync behavior:
 
 - Documents are discovered by a full two-pass Search v2 enumeration (the two
   sort orders have complementary recall and are unioned). Content is refetched
   only for documents whose content or source context changed, or which are not
-  yet in the index, so a transient fetch failure is retried on the next poll
-  instead of being lost.
+  yet in the index, so a transient fetch failure is retried on the next poll.
 - Search enumeration recall is unstable between polls, so a document missing
-  from a completed enumeration is deleted only after a direct fetch confirms it
-  is no longer accessible. An empty enumeration is treated as a source-side
-  glitch and skips the deletion pass.
+  from a completed enumeration is deleted only when a direct fetch fails with
+  lark-cli's `not_found` or `permission_denied` error; network errors, timeouts
+  and any other failure keep it. An incomplete enumeration (e.g. a missing
+  search scope) or an empty one skips the deletion pass.
+- Sync state is committed only when a poll finishes successfully; a cancelled
+  poll restarts from the last committed state. Document source positions are
+  cached in the connector's data directory, not in the sync state.
 - Each chat keeps a cursor; the still-open period (current day or week) is
-  refetched in full so its transcript stays complete. In ungrouped mode a cheap
-  probe checks for new messages first, and only then is the lookback window
-  refetched to rebuild that chat's document; oversized chats drop their oldest
-  days to fit the content cap.
-- Switching the grouping deletes all chat docs and rebuilds them from the
-  lookback window with the new grouping.
+  refetched in full so its transcript stays complete, and is not re-uploaded
+  when unchanged. In ungrouped mode a cheap probe checks for new messages first,
+  and only then is the lookback window refetched to rebuild that chat's
+  document; oversized chats drop their oldest days to fit the content cap.
+- If listing chats fails, chats are skipped for that poll and documents still
+  commit; a failing chat skips only that chat.
+- Switching the grouping rebuilds the chat docs from the lookback window with
+  the new grouping; the old chat docs stay searchable and are deleted only once
+  a rebuild completes (the chat list and every chat's messages listed).
 - Document and transcript content is capped at 8 MB, below Gety's per-document
   limit.
+- Each `lark-cli` call is limited to 5 minutes; rate limits and errors lark-cli
+  marks retryable are retried with backoff.
 
 ## Source context in Markdown
 
@@ -111,11 +132,9 @@ state, never as display text. No additional authentication token is needed:
 lookups use the signed-in `lark-cli` user.
 
 Moves and parent or space renames refresh source context even when the document
-edit time is unchanged. The first poll after upgrading refreshes existing
-documents without resetting state. Permission or temporary lookup failures do
-not block content indexing and preserve previously resolved context. Drive paths
-come from the accessible folder tree; shared documents may have no discoverable
-full path.
+edit time is unchanged. Permission or temporary lookup failures do not block
+content indexing and preserve previously resolved context. Drive paths come from
+the accessible folder tree; shared documents may have no discoverable full path.
 
 ## Local development
 
@@ -140,3 +159,7 @@ Runner config overrides go into `.env` (see `.env.example`), e.g.
   edited documents — a kept URL would be a broken image at view time.
 - The connector shells out to `lark-cli`, so Gety must run on a machine where
   `lark-cli` is installed and authenticated.
+- lark-cli 1.0.98 does not classify the error for a deleted docx as `not_found`
+  yet, so such documents may stay in the index until lark-cli reports a definite
+  error type.
+- The `lark-cli.cmd` launcher of an npm install on Windows is unverified.

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import manifest from '../manifest.json' with { type: 'json' };
 import {
 	bookmarkDocId,
 	type BookmarkEntry,
 	buildBookmarkDoc,
 	buildHistoryDoc,
 	computeDeletes,
-	defaultChromeProfileDir,
+	defaultChromeProfilePath,
 	flattenBookmarks,
 	historyCutoffWebkitMicros,
 	historyDocId,
@@ -50,43 +50,18 @@ Deno.test('isWebUrl only accepts http(s)', () => {
 	assert.equal(isWebUrl(''), false);
 });
 
-Deno.test('defaultChromeProfileDir resolves per-OS paths', () => {
-	const home = '/home/tester';
-	assert.equal(
-		defaultChromeProfileDir('linux', home),
-		join(home, '.config', 'google-chrome', 'Default'),
-	);
-	assert.equal(
-		defaultChromeProfileDir('darwin', home),
-		join(home, 'Library', 'Application Support', 'Google', 'Chrome', 'Default'),
-	);
-	// Windows honors LOCALAPPDATA and falls back to AppData/Local.
-	assert.equal(
-		defaultChromeProfileDir(
-			'win32',
-			'C:/Users/me',
-			'C:/Users/me/AppData/Local',
-		),
-		join(
-			'C:/Users/me/AppData/Local',
-			'Google',
-			'Chrome',
-			'User Data',
-			'Default',
-		),
-	);
-	assert.equal(
-		defaultChromeProfileDir('win32', '/home/tester'),
-		join(
-			'/home/tester',
-			'AppData',
-			'Local',
-			'Google',
-			'Chrome',
-			'User Data',
-			'Default',
-		),
-	);
+Deno.test('defaultChromeProfilePath matches the manifest read grants', () => {
+	const osKey: Record<string, string> = {
+		linux: 'linux',
+		macos: 'darwin',
+		windows: 'windows',
+	};
+	const grants = manifest.permissions.read;
+	assert.equal(grants.length, 3);
+	for (const grant of grants) {
+		assert.equal(grant.os.length, 1);
+		assert.equal(defaultChromeProfilePath(osKey[grant.os[0]]), grant.path);
+	}
 });
 
 Deno.test('historyRangeToMaxAgeDays maps ranges', () => {

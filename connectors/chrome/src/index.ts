@@ -14,8 +14,7 @@ import {
 	rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { homedir, platform, tmpdir } from 'node:os';
-import process from 'node:process';
+import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -72,33 +71,18 @@ export function isWebUrl(url: string): boolean {
 }
 
 /**
- * Default Chrome "Default" profile directory for the host OS. The connector
- * targets whatever platform it runs on, so the profile location is built in
- * rather than configured.
+ * The Chrome "Default" profile directory for a `Deno.build.os` value, as a
+ * `~/` path. These are exactly the `permissions.read` paths in manifest.json;
+ * the connector reads nothing outside them.
  */
-export function defaultChromeProfileDir(
-	os: string,
-	home: string,
-	localAppData?: string,
-): string {
+export function defaultChromeProfilePath(os: string): string {
 	switch (os) {
 		case 'darwin':
-			return join(
-				home,
-				'Library',
-				'Application Support',
-				'Google',
-				'Chrome',
-				'Default',
-			);
-		case 'win32': {
-			const base = localAppData && localAppData.trim()
-				? localAppData
-				: join(home, 'AppData', 'Local');
-			return join(base, 'Google', 'Chrome', 'User Data', 'Default');
-		}
+			return '~/Library/Application Support/Google/Chrome/Default';
+		case 'windows':
+			return '~/AppData/Local/Google/Chrome/User Data/Default';
 		default: // linux and other unix-likes
-			return join(home, '.config', 'google-chrome', 'Default');
+			return '~/.config/google-chrome/Default';
 	}
 }
 
@@ -288,10 +272,8 @@ export function computeDeletes(
 
 export default class ChromeConnector extends Connector<ManifestConfig, State> {
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const profileDir = defaultChromeProfileDir(
-			platform(),
-			homedir(),
-			process.env.LOCALAPPDATA,
+		const profileDir = this.expandHome(
+			defaultChromeProfilePath(Deno.build.os),
 		);
 		const indexBookmarks = this.config.index_bookmarks !== false;
 		const indexHistory = this.config.index_history !== false;

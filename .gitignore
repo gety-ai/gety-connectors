@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Connector build output (built in CI before packing; never committed)
+connectors/*/dist/
+
+# Package tarballs
+*.tgz
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/

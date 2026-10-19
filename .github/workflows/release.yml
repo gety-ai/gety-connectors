@@ -65,6 +65,10 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v7
         with:
+          # `changeset version` looks up the commit that added each changeset
+          # for the changelog; in a shallow clone it runs `git fetch --deepen`,
+          # which has no credentials here (persist-credentials: false).
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm

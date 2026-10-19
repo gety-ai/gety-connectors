@@ -10,12 +10,14 @@
 	"nodeModulesDir": "none",
 	"imports": {
 		"@std/encoding": "jsr:@std/encoding@^1.0.10",
+		"@std/tar": "jsr:@std/tar@^0.1.10",
 		"fast-png": "npm:fast-png@8.0.0"
 	},
 	"tasks": {
 		"sync": "deno run --allow-read --allow-write scripts/sync.ts",
 		"sync:check": "deno run --allow-read scripts/sync.ts --check",
 		"catalog": "deno run --allow-read scripts/catalog.ts",
+		"verify:packs": "deno run --allow-read --allow-write --allow-run scripts/verify-packs.ts",
 		"version-packages": "deno run --allow-read --allow-write --allow-run scripts/version.ts"
 	},
 	"fmt": {

@@ -5,7 +5,8 @@
 		"./connectors/claude-code",
 		"./connectors/chrome",
 		"./connectors/notion",
-		"./connectors/lark"
+		"./connectors/lark",
+		"./packages/utils"
 	],
 	"nodeModulesDir": "none",
 	"imports": {

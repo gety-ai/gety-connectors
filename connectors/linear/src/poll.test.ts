@@ -439,6 +439,31 @@ Deno.test('enabling comments mid issue pass rebuilds from the first page', async
 	assert.equal(fake.requests[0].variables.after, undefined);
 });
 
+Deno.test('poll deletes archived and trashed issues', async () => {
+	const fake = new FakeLinear();
+	fake.issues = [
+		issue(1),
+		issue(2, { archivedAt: '2026-06-03T01:00:00.000Z' }),
+		issue(3, { trashed: true }),
+	];
+
+	const run = await poll(fake);
+
+	assert.equal(run.outcome, 'done', String(run.error));
+	assert.deepEqual(
+		run.updates.map((update) =>
+			update.kind === 'delete'
+				? `delete ${update.id}`
+				: `upsert ${update.doc.id}`
+		),
+		[
+			'upsert linear:issue:issue-1',
+			'delete linear:issue:issue-2',
+			'delete linear:issue:issue-3',
+		],
+	);
+});
+
 function docContent(updates: DocUpdate[], id: string): string {
 	const update = updates.find((u) => u.kind === 'upsert' && u.doc.id === id);
 	assert.ok(update?.kind === 'upsert', `no upsert for ${id}`);

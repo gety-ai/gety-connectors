@@ -1,0 +1,24 @@
+{
+	"gety_commit": "cf2adc55f8bc5c43dd5405a096fbfb1c94d14358",
+	"gety_version": "0.6.3",
+	"protocol_version": "0.2.0",
+	"files": {
+		"host/runner.ts": "b5c83d055b5aaa1d809866deb4a4f2a7033db6784f466b5d0c4b37fd0cff2881",
+		"host/start_frame.ts": "c3c1dc89d865e423641cc4997fef76a6a6062ec575e2726e01d640c1f5541abe",
+		"manifest.schema.json": "0d164aba341e47c3cf37f04018664df194e484ad405a5a4a28e638c3e9262a4a",
+		"sdk/src/connector.ts": "8b8d1859faef220b7d6e21cf736e94140f5088b6b3959be3d46f34c49275ceba",
+		"sdk/src/helpers.ts": "6f62e9d7d4e2c03db4f81e2553cdf21f5aa5d7882b06d4092c137049776d6744",
+		"sdk/src/ipc.ts": "30893159775ede693e95e1e2de80a18ff64ca6fd0982089e00afc53d859bb6ce",
+		"sdk/src/mod.ts": "e30dc19b0e60aeac064dbed527355ff5f30e833380e4ee8a295d4d31ca61ae05",
+		"sdk/src/types.ts": "d218e606874c7ef9919be9a1f589ed6dad93592844a3afae88795af94c11192c",
+		"wire.schema.json": "f7bb4485463eeb442aa63380145a34f19bbb43e445f86abf3e536a25b75801c6"
+	},
+	"mirrored": {
+		"libs/gety-deno-connectors/src/launch.rs": "d0d2829e79263e2826b8d870db1c51001ad923898fafd238b430c15467122695",
+		"libs/gety-deno-connectors/src/permissions/parse.rs": "50a46eeff696c64f2b0323316ea8a587a4464a8b79764416cf498e3b9894e23c",
+		"libs/gety-deno-connectors/src/permissions/derive.rs": "148fbae28ddaf267a8f57a17b21e87fa9f66e22cd832196ecc0052331bb9f325",
+		"libs/gety-deno-connectors/src/permissions/report.rs": "35693f29692320f35467d9f1b75049e8c228aca245fd5b7780d81ac7d92616d7",
+		"gety-core/src/connector/impls/deno/connector.rs": "b13a67c3270493cbff9c21b48a70e38233671aeb01a9d0ac0e7e253d818b04c0",
+		"gety-core/src/core/connector_manager/connector_wrapper.rs": "ab8272acb70966108c8306a5110703db27d2d68ad88d3cda8798f21f131c88e8"
+	}
+}

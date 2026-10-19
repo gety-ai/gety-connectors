@@ -9,6 +9,7 @@
 	],
 	"nodeModulesDir": "none",
 	"imports": {
+		"@gety-ai/connector-sdk": "./vendor/gety-deno/sdk/src/mod.ts",
 		"@std/encoding": "jsr:@std/encoding@^1.0.10",
 		"@std/tar": "jsr:@std/tar@^0.1.10",
 		"fast-png": "npm:fast-png@8.0.0"
@@ -16,6 +17,9 @@
 	"tasks": {
 		"sync": "deno run --allow-read --allow-write scripts/sync.ts",
 		"sync:check": "deno run --allow-read scripts/sync.ts --check",
+		"sync-sdk": "deno run --allow-read --allow-write --allow-run tools/sync-sdk.ts",
+		"sync-sdk:check": "deno run --allow-read tools/sync-sdk.ts --check",
+		"check:tools": "deno check tools/ vendor/gety-deno/host/runner.ts",
 		"catalog": "deno run --allow-read scripts/catalog.ts",
 		"verify:packs": "deno run --allow-read --allow-write --allow-run scripts/verify-packs.ts",
 		"version-packages": "deno run --allow-read --allow-write --allow-run scripts/version.ts"
@@ -30,12 +34,14 @@
 			"node_modules/",
 			"**/CHANGELOG.md",
 			"pnpm-lock.yaml",
-			".changeset/*.md"
+			".changeset/*.md",
+			"vendor/gety-deno/"
 		]
 	},
 	"lint": {
 		"include": [
-			"scripts/"
+			"scripts/",
+			"tools/"
 		],
 		"rules": {
 			"tags": [

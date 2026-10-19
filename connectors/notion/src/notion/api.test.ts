@@ -328,6 +328,63 @@ Deno.test('fetchBlockTree recurses children, skips child pages, resolves synced 
 	assert.ok(!calls.some((url) => url.includes('/blocks/b2/')));
 });
 
+const NOT_FOUND = { object: 'error', code: 'object_not_found', message: 'x' };
+
+Deno.test('a 404 below the page skips only that subtree', async () => {
+	const childrenByParent: Record<string, unknown[]> = {
+		'page-1': [
+			{
+				id: 'b1',
+				type: 'synced_block',
+				has_children: true,
+				synced_block: { synced_from: { block_id: 'unshared-original' } },
+			},
+			{ id: 'b2', type: 'toggle', has_children: true, toggle: {} },
+			{ id: 'b3', type: 'paragraph', has_children: false, paragraph: {} },
+		],
+	};
+	const client = makeClient((url) => {
+		const id = url.match(/blocks\/([^/?]+)\/children/)?.[1] ?? '';
+		const children = childrenByParent[id];
+		return children === undefined
+			? jsonResponse(NOT_FOUND, { status: 404 })
+			: jsonResponse({ results: children, has_more: false });
+	});
+
+	const tree = await client.fetchBlockTree('page-1');
+
+	assert.deepEqual(tree.map((node) => node.block.id), ['b1', 'b2', 'b3']);
+	assert.deepEqual(tree.map((node) => node.children.length), [0, 0, 0]);
+});
+
+Deno.test('a 404 for the page itself is thrown', async () => {
+	const client = makeClient(() => jsonResponse(NOT_FOUND, { status: 404 }));
+
+	await assert.rejects(
+		() => client.fetchBlockTree('page-1'),
+		(error: unknown) => error instanceof HttpError && error.status === 404,
+	);
+});
+
+Deno.test('a 404 without a Notion object_not_found body is not a missing block', async () => {
+	const client = makeClient((url) =>
+		url.includes('/blocks/page-1/')
+			? jsonResponse({
+				results: [{ id: 'b1', type: 'toggle', has_children: true }],
+				has_more: false,
+			})
+			: new Response('<html>proxy route not found</html>', {
+				status: 404,
+				headers: { 'content-type': 'text/html' },
+			})
+	);
+
+	await assert.rejects(
+		() => client.fetchBlockTree('page-1'),
+		(error: unknown) => error instanceof HttpError && error.status === 404,
+	);
+});
+
 Deno.test('block children pagination follows next_cursor', async () => {
 	const client = makeClient((url) => {
 		const second = url.includes('start_cursor=cursor-2');

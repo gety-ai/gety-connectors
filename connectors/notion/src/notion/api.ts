@@ -40,9 +40,15 @@ export interface NotionClientOptions {
 	logger?: Logger;
 }
 
-/** True when the API reports the object is gone or not shared with us. */
+/**
+ * True when Notion itself reports the object as gone or not shared with the
+ * integration: a 404 carrying Notion's `object_not_found` error body. Any
+ * other 404 (a proxy or routing error) proves nothing about the object.
+ */
 export function isObjectNotFound(error: unknown): boolean {
-	return error instanceof HttpError && error.status === 404;
+	return error instanceof HttpError && error.status === 404 &&
+		isRecord(error.body) && error.body.object === 'error' &&
+		error.body.code === 'object_not_found';
 }
 
 export class NotionClient {
@@ -102,7 +108,12 @@ export class NotionClient {
 		}
 	}
 
-	/** Fetches the full block tree of a page (without descending into child pages). */
+	/**
+	 * Fetches the full block tree of a page (without descending into child
+	 * pages). A 404 for the page itself is thrown; a 404 below it (a block
+	 * or a synced block's original that is not shared with the integration)
+	 * leaves that subtree empty and keeps the rest of the page.
+	 */
 	async fetchBlockTree(pageId: string): Promise<BlockNode[]> {
 		return await this.#fetchDescendants(pageId, new Set([pageId]), 0);
 	}
@@ -115,7 +126,18 @@ export class NotionClient {
 		if (depth >= MAX_BLOCK_DEPTH) {
 			return [];
 		}
-		const blocks = await this.#fetchAllChildren(parentId);
+		let blocks: NotionBlock[];
+		try {
+			blocks = await this.#fetchAllChildren(parentId);
+		} catch (error) {
+			if (depth === 0 || !isObjectNotFound(error)) {
+				throw error;
+			}
+			this.#logger.warn('Skipping blocks Notion reports as not found', {
+				block: parentId,
+			});
+			return [];
+		}
 		const nodes: BlockNode[] = [];
 		for (const block of blocks) {
 			const node: BlockNode = { block, children: [] };

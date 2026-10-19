@@ -152,6 +152,87 @@ Deno.test('a 200 HTML search response fails the poll and deletes nothing', async
 	assert.equal(run.committedState, undefined);
 });
 
+Deno.test('an unshared synced original keeps the page indexed', async () => {
+	const connector = new TestConnector((url) => {
+		if (url.endsWith('/search')) {
+			return Promise.resolve(jsonResponse({
+				results: [{
+					object: 'page',
+					id: 'a',
+					last_edited_time: TS_NEW,
+					properties: titleProperty('With synced block'),
+				}],
+				has_more: false,
+			}));
+		}
+		if (url.includes('/blocks/a/children')) {
+			return Promise.resolve(jsonResponse({
+				results: [
+					{
+						id: 'sync',
+						type: 'synced_block',
+						has_children: true,
+						synced_block: { synced_from: { block_id: 'unshared' } },
+					},
+					{
+						id: 'para',
+						type: 'paragraph',
+						paragraph: { rich_text: [{ plain_text: 'Own text.' }] },
+					},
+				],
+				has_more: false,
+			}));
+		}
+		return Promise.resolve(jsonResponse(
+			{ object: 'error', code: 'object_not_found', message: 'x' },
+			{ status: 404 },
+		));
+	});
+
+	const run = await runPoll(connector, {
+		config: { personal_access_token: 'test-token' },
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(
+		run.updates.map((update) =>
+			update.kind === 'upsert'
+				? [update.kind, update.doc.id, update.doc.content]
+				: [update.kind, update.id]
+		),
+		[['upsert', 'a', 'Own text.\n']],
+	);
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { a: TS_NEW },
+	});
+});
+
+Deno.test('a page that is gone when its blocks are fetched is deleted', async () => {
+	const connector = new TestConnector((url) => {
+		if (url.endsWith('/search')) {
+			return Promise.resolve(jsonResponse({
+				results: [{ object: 'page', id: 'a', last_edited_time: TS_NEW }],
+				has_more: false,
+			}));
+		}
+		return Promise.resolve(jsonResponse(
+			{ object: 'error', code: 'object_not_found', message: 'x' },
+			{ status: 404 },
+		));
+	});
+
+	const run = await runPoll(connector, {
+		config: { personal_access_token: 'test-token' },
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(run.updates, [{ kind: 'delete', id: 'a' }]);
+	assert.deepEqual(run.committedState, { version: STATE_VERSION, pages: {} });
+});
+
 Deno.test('poll upserts changed pages, skips unchanged ones, deletes gone ones', async () => {
 	const requested: string[] = [];
 	const connector = new TestConnector((url, init) => {

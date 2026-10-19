@@ -1,0 +1,66 @@
+{
+	"name": "@gety-connectors/codex",
+	"version": "0.1.0",
+	"description": "Indexes local Codex session JSONL logs as searchable markdown documents.",
+	"keywords": [
+		"gety",
+		"gety-connector"
+	],
+	"homepage": "https://github.com/gety-ai/gety-connectors/tree/main/connectors/codex#readme",
+	"bugs": "https://github.com/gety-ai/gety-connectors/issues",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gety-ai/gety-connectors.git",
+		"directory": "connectors/codex"
+	},
+	"files": [
+		"dist/main.js",
+		"dist/main.js.map",
+		"assets/codex-color.svg",
+		"CHANGELOG.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"gety": {
+		"id": "codex_sessions",
+		"name": "Codex",
+		"version": "0.1.0",
+		"min_gety_app_version": "0.5.1",
+		"capabilities": [
+			"data-source"
+		],
+		"entry": "dist/main.js",
+		"icon": "assets/codex-color.svg",
+		"description": "Indexes local Codex session JSONL logs as searchable markdown documents.",
+		"author": {
+			"name": "Gety"
+		},
+		"schedule": {
+			"strategy": "interval",
+			"interval_seconds": 600
+		},
+		"config": {
+			"fields": [
+				{
+					"id": "include_tool_calls",
+					"title": "Include tool calls",
+					"type": "checkbox",
+					"description": "Include brief tool call summaries. Tool outputs are never indexed.",
+					"default_value": false
+				},
+				{
+					"id": "include_archived_sessions",
+					"title": "Include archived sessions",
+					"type": "checkbox",
+					"description": "Also index JSONL files under the local archived_sessions directory.",
+					"default_value": true
+				}
+			]
+		},
+		"doc_link": {
+			"kind": "url",
+			"field": "url"
+		}
+	}
+}

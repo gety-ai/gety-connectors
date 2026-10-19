@@ -13,6 +13,8 @@
 		"fast-png": "npm:fast-png@8.0.0"
 	},
 	"tasks": {
+		"sync": "deno run --allow-read --allow-write scripts/sync.ts",
+		"sync:check": "deno run --allow-read scripts/sync.ts --check",
 		"catalog": "deno run --allow-read scripts/catalog.ts"
 	},
 	"fmt": {

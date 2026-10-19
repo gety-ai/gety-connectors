@@ -1,0 +1,60 @@
+{
+	"name": "@gety-connectors/claude-code",
+	"version": "0.1.0",
+	"description": "Search your local Claude Code sessions in Gety.",
+	"keywords": [
+		"gety",
+		"gety-connector"
+	],
+	"homepage": "https://github.com/gety-ai/gety-connectors/tree/main/connectors/claude-code#readme",
+	"bugs": "https://github.com/gety-ai/gety-connectors/issues",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gety-ai/gety-connectors.git",
+		"directory": "connectors/claude-code"
+	},
+	"files": [
+		"dist/main.js",
+		"dist/main.js.map",
+		"assets/claude-code.svg",
+		"CHANGELOG.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"gety": {
+		"id": "claude-code",
+		"name": "Claude Code",
+		"version": "0.1.0",
+		"min_gety_app_version": "0.5.1",
+		"capabilities": [
+			"data-source"
+		],
+		"entry": "dist/main.js",
+		"icon": "assets/claude-code.svg",
+		"description": "Search your local Claude Code sessions in Gety.",
+		"author": {
+			"name": "Gety"
+		},
+		"schedule": {
+			"strategy": "interval",
+			"interval_seconds": 3600
+		},
+		"doc_link": {
+			"kind": "url",
+			"field": "url"
+		},
+		"config": {
+			"fields": [
+				{
+					"id": "include_subagents",
+					"type": "checkbox",
+					"title": "Include subagent sessions",
+					"description": "Index Claude Code subagent and workflow JSONL logs in addition to top-level sessions.",
+					"required": true,
+					"default_value": false
+				}
+			]
+		}
+	}
+}

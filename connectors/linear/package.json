@@ -1,0 +1,66 @@
+{
+	"name": "@gety-connectors/linear",
+	"version": "0.1.0",
+	"description": "Indexes Linear issues as searchable markdown documents.",
+	"keywords": [
+		"gety",
+		"gety-connector"
+	],
+	"homepage": "https://github.com/gety-ai/gety-connectors/tree/main/connectors/linear#readme",
+	"bugs": "https://github.com/gety-ai/gety-connectors/issues",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gety-ai/gety-connectors.git",
+		"directory": "connectors/linear"
+	},
+	"files": [
+		"dist/main.js",
+		"dist/main.js.map",
+		"assets/linear.webp",
+		"CHANGELOG.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"gety": {
+		"id": "linear",
+		"name": "Linear",
+		"version": "0.1.0",
+		"min_gety_app_version": "0.5.1",
+		"entry": "dist/main.js",
+		"icon": "assets/linear.webp",
+		"description": "Indexes Linear issues as searchable markdown documents.",
+		"author": {
+			"name": "Gety"
+		},
+		"capabilities": [
+			"data-source"
+		],
+		"schedule": {
+			"strategy": "interval",
+			"interval_seconds": 300
+		},
+		"config": {
+			"fields": [
+				{
+					"id": "api_key",
+					"title": "Linear API key",
+					"type": "password",
+					"description": "Create a personal API key in Linear settings.",
+					"required": true
+				},
+				{
+					"id": "index_comments",
+					"title": "Index comments",
+					"type": "checkbox",
+					"description": "Append Linear issue comments to each issue markdown document.",
+					"default_value": true
+				}
+			]
+		},
+		"doc_link": {
+			"kind": "url",
+			"field": "url"
+		}
+	}
+}

@@ -202,11 +202,13 @@ published at 0.1.0.
 ## Adding a connector
 
 1. Create `connectors/<short>/` with the connector (same layout and tasks as the
-   existing ones) and add it to `workspace` in `deno.json`.
+   existing ones; manifest `id` set to `<short>`) and add it to `workspace` in
+   `deno.json`.
 2. Add `package.json` with `name` `@gety-connectors/<short>`, `version` equal to
-   the manifest's, `repository` (`directory`: `connectors/<short>`),
-   `publishConfig.access: public`, and a `CHANGELOG.md` with an entry for that
-   version (copy an existing connector's files); run `deno task sync`.
+   the manifest's, `license` `Apache-2.0`, `repository` (`directory`:
+   `connectors/<short>`), `publishConfig.access: public`, and a `CHANGELOG.md`
+   with an entry for that version (copy an existing connector's files); run
+   `deno task sync`.
 3. Add a changeset for the catalog so the next release includes the new
    connector. The first publish of the new package is manual: follow the
    bootstrap steps for that one package.

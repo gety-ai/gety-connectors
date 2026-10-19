@@ -63,7 +63,8 @@ only check.
   in their own `deno.json`; esbuild bundles them. Do not add npm dependencies to
   any `package.json` (the root one only holds `@changesets/cli`). After
   dependency changes, commit the updated root `deno.lock`.
-- **Adding a connector**: add it to `workspace` in `deno.json`, give it a
+- **Adding a connector**: add it to `workspace` in `deno.json`, set its manifest
+  `id` to the directory name (`sync:check` enforces it), give it a
   `package.json` and `CHANGELOG.md` like the others, run `deno task sync`, and
   add a changeset for `@gety-connectors/catalog`. Its first npm publish is
   manual (README, "First publish").

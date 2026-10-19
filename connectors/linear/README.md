@@ -27,8 +27,10 @@ See `docs/advanced-sync.md` for webhook and deeper incremental sync notes.
 - `manifest.json` declares the connector metadata, config form, and
   `dist/main.js` runtime entry.
 - `src/index.ts` contains the connector source code.
-- `dist/main.js` is the committed build output loaded by Gety.
-- `dist/main.js.map` is committed to make debugging the bundled entry easier.
+- `dist/main.js` is the build output loaded by Gety (`deno task build`; not
+  committed).
+- `dist/main.js.map` is its source map, published with it to make debugging the
+  bundled entry easier.
 - `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
   and the build script do not require the Gety SDK to be installed.
 - `src/gen/manifest.d.ts` is generated from `manifest.json` by
@@ -106,7 +108,8 @@ deno task runner -- --state dev/.runner/linear-state.json --out-dir dev/runs
 
 1. Create a personal API key in Linear settings.
 2. Open Gety's Custom Connectors settings page.
-3. Install from local folder and select this repository.
+3. Install from npm (`@gety-connectors/linear`), or run `deno task build` and
+   install from this local folder (build output is not committed).
 4. Enter the Linear API key.
 5. Wait for the first poll to finish, then search for a Linear issue key or
    title.

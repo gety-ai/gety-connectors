@@ -47,8 +47,10 @@ sessions when their source file disappears.
 - `src/index.ts` contains the connector poll/state logic.
 - `src/codex_log.ts` contains Codex JSONL scanning, parsing, and markdown
   rendering.
-- `dist/main.js` is the committed build output loaded by Gety.
-- `dist/main.js.map` is committed to make debugging the bundled entry easier.
+- `dist/main.js` is the build output loaded by Gety (`deno task build`; not
+  committed).
+- `dist/main.js.map` is its source map, published with it to make debugging the
+  bundled entry easier.
 - `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
   and the build script do not require the Gety SDK to be installed.
 - `src/gen/manifest.d.ts` is generated from `manifest.json` by
@@ -124,7 +126,8 @@ deno task runner -- --state dev/.runner/codex-state.json --out-dir dev/runs
 ## Install In Gety
 
 1. Open Gety's Custom Connectors settings page.
-2. Install from local folder and select this repository.
+2. Install from npm (`@gety-connectors/codex`), or run `deno task build` and
+   install from this local folder (build output is not committed).
 3. Configure whether tool call summaries and archived sessions should be
    indexed.
 4. Wait for the first poll to finish, then search for a Codex session title or

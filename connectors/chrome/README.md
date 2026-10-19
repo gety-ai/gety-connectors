@@ -63,8 +63,9 @@ deno task verify   # fmt + lint + type-check + test + build
 deno task build    # just rebuild dist/main.js
 ```
 
-`src/index.ts` is the source; `dist/main.js` is the committed entry Gety loads.
-After editing source, rebuild and use **Restart** in Gety.
+`src/index.ts` is the source; `dist/main.js` is the built entry Gety loads (not
+committed; `deno task build` writes it). After editing source, rebuild and use
+**Restart** in Gety.
 
 ## Local runner
 
@@ -81,6 +82,7 @@ before/after, updates/deletes, and per-doc snapshots).
 ## Install in Gety
 
 1. Open Gety's Custom Connectors settings.
-2. Install from this local folder.
+2. Install from npm (`@gety-connectors/chrome`), or run `deno task build` and
+   install from this local folder (build output is not committed).
 3. Choose a `history_range` (and toggle bookmarks/history if desired).
 4. Wait for the first poll, then search, e.g. `gety search <term>`.

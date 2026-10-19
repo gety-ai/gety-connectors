@@ -44,8 +44,10 @@ in the connector settings.
 
 ### Install
 
-Install this connector in Gety and paste the token into the required **Personal
-Access Token** setting.
+Install this connector in Gety from npm (`@gety-connectors/notion`), or run
+`deno task build` and install from this local folder (build output is not
+committed). Then paste the token into the required **Personal Access Token**
+setting.
 
 ## Files
 
@@ -60,7 +62,8 @@ Access Token** setting.
 - `src/notion/markdown.ts` renders Notion block trees as Markdown.
 - `src/notion/properties.ts` renders database-page properties (status, tags,
   dates, people, …) as a Markdown list that is prepended to the content.
-- `dist/main.js` is the committed build output loaded by Gety.
+- `dist/main.js` is the build output loaded by Gety (`deno task build`; not
+  committed).
 - `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
   and the build script do not require the npm SDK to be installed.
 - `src/gen/manifest.d.ts` is generated from `manifest.json` by

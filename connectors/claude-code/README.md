@@ -98,8 +98,10 @@ Deletions never fire on transient scan/read errors:
 - `manifest.json` declares the connector metadata and uses `dist/main.js` as the
   Gety runtime entry.
 - `src/index.ts` contains the connector source code.
-- `dist/main.js` is the committed build output loaded by Gety.
-- `dist/main.js.map` is committed to make debugging the bundled entry easier.
+- `dist/main.js` is the build output loaded by Gety (`deno task build`; not
+  committed).
+- `dist/main.js.map` is its source map, published with it to make debugging the
+  bundled entry easier.
 - `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
   and the build script do not require the npm SDK to be installed.
 - `src/gen/manifest.d.ts` is generated from `manifest.json` by
@@ -182,7 +184,8 @@ deno task runner -- --state dev/.runner/state.json --out-dir dev/runs
 ## Install In Gety
 
 1. Open Gety's Custom Connectors settings page.
-2. Install from local folder and select this repository.
+2. Install from npm (`@gety-connectors/claude-code`), or run `deno task build`
+   and install from this local folder (build output is not committed).
 3. Wait for the first poll to finish, then search for Claude Code sessions.
 
 After changing `src/index.ts`, run `deno task build`, then use Restart in Gety

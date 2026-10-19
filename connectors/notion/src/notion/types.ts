@@ -38,9 +38,10 @@ export interface NotionPage {
 	url?: string;
 	created_time?: string;
 	last_edited_time?: string;
-	/** Pre-2026 API versions; replaced by `is_archived` in 2026-03-11. */
-	archived?: boolean;
-	is_archived?: boolean;
+	/**
+	 * True for a page in the trash. API version 2026-03-11, which the client
+	 * pins, renamed the older `archived` field to `in_trash`.
+	 */
 	in_trash?: boolean;
 	parent?: unknown;
 	properties?: Record<string, unknown>;

@@ -21,7 +21,11 @@ export type NotionState = {
 	pages?: Record<string, string>;
 };
 
-/** Bump when the state layout changes; old state then triggers a full resync. */
+/**
+ * Layout version of `NotionState`. A state with another version is ignored:
+ * every page is fetched again, but documents known only to that state are
+ * not deleted.
+ */
 export const STATE_VERSION = 1;
 
 const DOC_TYPE = 'notion:page';
@@ -119,12 +123,6 @@ function parentPageId(page: NotionPage): string | null {
 	return null;
 }
 
-/** True when the source marks the page archived or trashed (any API version). */
-export function isGonePage(page: NotionPage): boolean {
-	return page.archived === true || page.is_archived === true ||
-		page.in_trash === true;
-}
-
 /** Extracts the known-pages map, discarding stale or malformed state. */
 export function knownPagesFromState(
 	state: NotionState | null | undefined,
@@ -161,9 +159,11 @@ export default class NotionConnector extends Connector<
 		const token = (this.config.personal_access_token ?? '').trim();
 		if (token.length === 0) {
 			throw new Error(
-				'Notion Personal Access Token is required. Create an internal ' +
-					'integration at https://www.notion.so/my-integrations and set ' +
-					'its secret in the connector settings.',
+				'Notion Personal Access Token is required. Paste an internal ' +
+					'connection token from the Notion Developer portal ' +
+					'(https://www.notion.so/developers) or a personal access token ' +
+					'(https://www.notion.so/developers/tokens) into the connector ' +
+					'settings.',
 			);
 		}
 
@@ -186,7 +186,9 @@ export default class NotionConnector extends Connector<
 
 		for await (const results of client.searchPages()) {
 			for (const page of results) {
-				if (isGonePage(page)) {
+				// Trashed pages (`in_trash`, called `archived` before API version
+				// 2026-03-11) are not indexed; known ones are deleted below.
+				if (page.in_trash === true) {
 					continue;
 				}
 				const lastEdited = typeof page.last_edited_time === 'string'
@@ -224,7 +226,7 @@ export default class NotionConnector extends Connector<
 		}
 
 		// The search above ran to completion (any failure throws), so a known
-		// page missing from `pages` is gone from Notion, archived or unshared.
+		// page missing from `pages` is gone from Notion, trashed or unshared.
 		const deleted = staleIds(Object.keys(known), {
 			seen: new Set(Object.keys(pages)),
 			complete: true,

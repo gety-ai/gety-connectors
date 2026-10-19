@@ -547,25 +547,21 @@ Deno.test('a cancelled poll deletes nothing and commits no state', async () => {
 	assert.equal(run.committedState, undefined);
 });
 
-Deno.test('poll skips archived pages entirely', async () => {
-	const notion = fakeNotion([page('zzz', TS_NEW, { archived: true })]);
+Deno.test('trashed pages are not fetched and known ones are deleted', async () => {
+	const notion = fakeNotion([
+		page('known', TS_NEW, { in_trash: true }),
+		page('new', TS_NEW, { in_trash: true }),
+	]);
 
 	const run = await runPoll(new TestConnector(notion), {
 		config: CONFIG,
-		lastState: { version: STATE_VERSION, pages: { zzz: TS_OLD } },
+		lastState: { version: STATE_VERSION, pages: { known: TS_OLD } },
 	});
 
-	assert.deepEqual(updateIds(run.updates), [['delete', 'zzz']]);
+	assert.deepEqual(updateIds(run.updates), [['delete', 'known']]);
 	assert.deepEqual(run.committedState, { version: STATE_VERSION, pages: {} });
-});
-
-Deno.test('poll skips pages flagged is_archived (2026-03-11 field name)', async () => {
-	const notion = fakeNotion([page('yyy', TS_NEW, { is_archived: true })]);
-
-	const run = await runPoll(new TestConnector(notion), {
-		config: CONFIG,
-		lastState: { version: STATE_VERSION, pages: {} },
-	});
-
-	assert.deepEqual(run.updates, []);
+	assert.deepEqual(
+		notion.requests.filter((url) => url.includes('/blocks/')),
+		[],
+	);
 });

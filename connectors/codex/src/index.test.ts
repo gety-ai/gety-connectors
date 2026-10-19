@@ -434,6 +434,121 @@ Deno.test('poll keeps sessions whose file vanished before it was read', async ()
 	});
 });
 
+Deno.test('poll indexes every segment of a paginated session as one document', async () => {
+	await withHome(async (home) => {
+		// Written newest first, so file mtimes do not match the session order.
+		await writeSession(home, SEGMENT_PATHS[2], [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', 'Second prompt'),
+			message('assistant', 'Second answer.', 'final_answer'),
+		]);
+		await writeSession(home, SEGMENT_PATHS[1], [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', 'First prompt'),
+			message('assistant', 'First answer.', 'final_answer'),
+			message('user', 'Second prompt'),
+		]);
+		await writeSession(home, SEGMENT_PATHS[0], [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', 'First prompt'),
+		]);
+
+		const run = await poll(home, {}, null);
+		assert.equal(run.outcome, 'done');
+		assert.equal(run.updates.length, 1);
+		const [update] = run.updates;
+		if (update.kind !== 'upsert') throw new Error('expected an upsert');
+		assert.equal(update.doc.id, `codex:session:${PARENT_ID}`);
+		assert.equal(update.doc.title, 'First prompt');
+		const content = update.doc.content ?? '';
+		assert.ok(content.includes('First answer.'), content);
+		assert.ok(
+			content.indexOf('First answer.') < content.indexOf('Second answer.'),
+			content,
+		);
+		let totalSize = 0;
+		for (const path of SEGMENT_PATHS) {
+			totalSize += (await Deno.stat(join(home, '.codex', path))).size;
+		}
+		assert.equal(update.doc.original_file_size, totalSize);
+		assert.equal(
+			(update.doc.metadata as Record<string, unknown>).source_path,
+			join(home, '.codex', SEGMENT_PATHS[0]),
+		);
+	});
+});
+
+Deno.test('poll rebuilds a paginated session from all segments when one changes', async () => {
+	await withHome(async (home) => {
+		const segment = (prompt: string, answer: string) => [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', prompt),
+			message('assistant', answer, 'final_answer'),
+		];
+		await writeSession(home, SEGMENT_PATHS[0], segment('One', 'Answer one.'));
+		await writeSession(home, SEGMENT_PATHS[1], segment('Two', 'Answer two.'));
+		const first = await poll(home, {}, null);
+
+		// Appending to the last segment re-reads the first one too.
+		await writeSession(home, SEGMENT_PATHS[1], [
+			...segment('Two', 'Answer two.'),
+			message('user', 'Three'),
+			message('assistant', 'Answer three.', 'final_answer'),
+		]);
+		const second = await poll(home, {}, first.committedState);
+		const [update] = second.updates;
+		if (second.updates.length !== 1 || update.kind !== 'upsert') {
+			throw new Error('expected one upsert');
+		}
+		assert.match(update.doc.content ?? '', /Answer one\.[^]*Answer three\./);
+
+		// Losing a segment rebuilds the session from the rest.
+		await Deno.remove(join(home, '.codex', SEGMENT_PATHS[1]));
+		const third = await poll(home, {}, second.committedState);
+		const [rebuilt] = third.updates;
+		if (third.updates.length !== 1 || rebuilt.kind !== 'upsert') {
+			throw new Error('expected one upsert');
+		}
+		assert.match(rebuilt.doc.content ?? '', /Answer one\./);
+		assert.doesNotMatch(rebuilt.doc.content ?? '', /Answer two\./);
+
+		// Only when the last segment is gone is the session deleted.
+		await Deno.remove(join(home, '.codex', SEGMENT_PATHS[0]));
+		const fourth = await poll(home, {}, third.committedState);
+		assert.deepEqual(fourth.updates, [
+			{ kind: 'delete', id: `codex:session:${PARENT_ID}` },
+		]);
+	});
+});
+
+Deno.test('poll keeps a paginated session whose segment vanished before it was read', async () => {
+	await withHome(async (home) => {
+		await writeSession(home, SEGMENT_PATHS[0], sessionLines(PARENT_ID));
+		await writeSession(home, SEGMENT_PATHS[1], sessionLines(PARENT_ID));
+		const first = await poll(home, {}, null);
+
+		await writeSession(home, SEGMENT_PATHS[1], sessionLines(PARENT_ID, 2));
+		const vanished = join(home, '.codex', SEGMENT_PATHS[0]);
+		const second = await withOpenSpy((path) => {
+			if (path === vanished) {
+				throw new Deno.errors.NotFound(`No such file: ${path}`);
+			}
+		}, () => poll(home, {}, first.committedState));
+		assert.equal(second.outcome, 'done');
+		assert.deepEqual(second.updates, []);
+		assert.deepEqual(
+			(second.committedState as CodexState).indexed_sessions,
+			[PARENT_ID],
+		);
+
+		await Deno.remove(vanished);
+		const third = await poll(home, {}, second.committedState);
+		assert.deepEqual(upserts(third), [
+			{ id: `codex:session:${PARENT_ID}`, title: `Prompt 1 for ${PARENT_ID}` },
+		]);
+	});
+});
+
 Deno.test('nextState stores sorted file fingerprints, indexed sessions and options', () => {
 	assert.deepEqual(
 		nextState(
@@ -499,6 +614,20 @@ Deno.test('initialState resets file fingerprints when an option changes', () => 
 
 const PARENT_ID = '019e8abc-1234-7abc-8def-123456789abc';
 const CHILD_ID = '019e8abc-5678-7abc-8def-123456789abc';
+const SEGMENT_IDS = [
+	'019e8abc-9001-7abc-8def-123456789abc',
+	'019e8abc-9002-7abc-8def-123456789abc',
+];
+/** One session continued in two segment files, in session order. */
+const SEGMENT_PATHS = [
+	`sessions/2026/09/14/rollout-2026-09-14T12-00-12-${PARENT_ID}.jsonl`,
+	`sessions/2026/09/14/rollout-2026-09-14T12-01-03-${PARENT_ID}_${
+		SEGMENT_IDS[0]
+	}.jsonl`,
+	`sessions/2026/09/14/rollout-2026-09-14T13-42-11-${PARENT_ID}_${
+		SEGMENT_IDS[1]
+	}.jsonl`,
+];
 
 const DEFAULT_OPTIONS: CodexOptions = {
 	includeToolCalls: false,

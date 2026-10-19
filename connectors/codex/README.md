@@ -5,7 +5,11 @@ markdown documents.
 
 ## Scope
 
-- Creates one `codex:session` document per Codex JSONL session file.
+- Creates one `codex:session` document per Codex session. Codex continues a long
+  session in segment files (`rollout-<time>-<session id>_<segment
+  id>.jsonl`);
+  all segments of a session are merged, in order, into its document, and a
+  change to any of them rebuilds it from all of them.
 - Uses the session summary as the title when available, otherwise falls back to
   the first user prompt.
 - Adds a short session block with workspace roots and model when available.

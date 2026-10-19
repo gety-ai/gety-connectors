@@ -6,10 +6,13 @@ import {
 	buildCodexSessionDelete,
 	buildCodexSessionUpdate,
 	type CodexSession,
+	type CodexSessionGroup,
 	type CodexSessionRoot,
+	groupCodexSessionFiles,
 	isIndexableCodexSession,
 	listCodexSessionFiles,
-	parseCodexSessionFile,
+	parseCodexSessionFiles,
+	sessionGroupKey,
 } from './codex_log.ts';
 
 export interface CodexFileState {
@@ -70,56 +73,61 @@ export default class CodexConnector extends Connector<
 		this.signal.throwIfAborted();
 
 		let complete = listing.complete;
+		const previousGroupSizes = new Map<string, number>();
+		for (const stateKey of Object.keys(previousFiles)) {
+			const key = sessionGroupKey(stateKey);
+			previousGroupSizes.set(key, (previousGroupSizes.get(key) ?? 0) + 1);
+		}
 		const currentFiles: Record<string, CodexFileState> = {};
 		const currentIndexed = new Set<string>();
-		for (const file of listing.files) {
+		for (const group of groupCodexSessionFiles(listing.files)) {
 			this.signal.throwIfAborted();
-			const previousFile = previousFiles[file.stateKey];
-			if (
-				previousFile != null &&
-				sameFingerprint(
-					{ mtimeMs: previousFile.mtime_ms, size: previousFile.size },
-					file,
-				)
-			) {
-				currentFiles[file.stateKey] = previousFile;
-				if (previousFile.indexed && previousFile.session_id != null) {
-					currentIndexed.add(previousFile.session_id);
+			if (isUnchangedGroup(group, previousFiles, previousGroupSizes)) {
+				for (const file of group.files) {
+					const previousFile = previousFiles[file.stateKey];
+					currentFiles[file.stateKey] = previousFile;
+					if (previousFile.indexed && previousFile.session_id != null) {
+						currentIndexed.add(previousFile.session_id);
+					}
 				}
 				continue;
 			}
 
 			let session: CodexSession;
 			try {
-				session = await parseCodexSessionFile(file, {
+				session = await parseCodexSessionFiles(group.files, {
 					includeToolCalls: options.includeToolCalls,
 					skipSubagents: !options.includeSubagents,
 				}, this.signal);
 			} catch (error) {
 				if (error instanceof Deno.errors.NotFound) {
-					// Removed since the walk: the next poll deletes its session.
+					// A file was removed since the walk: keep what the previous poll
+					// knew about this session, and let the next poll decide.
 					complete = false;
+					for (const file of group.files) {
+						const previousFile = previousFiles[file.stateKey];
+						if (previousFile != null) {
+							currentFiles[file.stateKey] = previousFile;
+						}
+					}
 					continue;
 				}
 				throw error;
 			}
-			if (isIndexableCodexSession(session, options.includeSubagents)) {
-				currentFiles[file.stateKey] = {
-					session_id: session.id,
-					mtime_ms: file.mtimeMs,
-					size: file.size,
-					indexed: true,
-				};
+			const indexable = isIndexableCodexSession(
+				session,
+				options.includeSubagents,
+			);
+			for (const file of group.files) {
+				const fingerprint = { mtime_ms: file.mtimeMs, size: file.size };
+				currentFiles[file.stateKey] = indexable
+					? { session_id: session.id, ...fingerprint, indexed: true }
+					: { ...fingerprint, indexed: false };
+			}
+			if (indexable) {
 				currentIndexed.add(session.id);
 				yield { updates: [buildCodexSessionUpdate(session)] };
-				continue;
 			}
-
-			currentFiles[file.stateKey] = {
-				mtime_ms: file.mtimeMs,
-				size: file.size,
-				indexed: false,
-			};
 		}
 
 		const { deleted, indexed } = reconcileSessions(
@@ -132,6 +140,26 @@ export default class CodexConnector extends Connector<
 			state: nextState(currentFiles, indexed, options),
 		};
 	}
+}
+
+/**
+ * The session's files are exactly the ones the previous poll saw, with the
+ * same fingerprints, so its document is current without reading them.
+ */
+function isUnchangedGroup(
+	group: CodexSessionGroup,
+	previousFiles: Readonly<Record<string, CodexFileState>>,
+	previousGroupSizes: ReadonlyMap<string, number>,
+): boolean {
+	return previousGroupSizes.get(group.key) === group.files.length &&
+		group.files.every((file) => {
+			const previousFile = previousFiles[file.stateKey];
+			return previousFile != null &&
+				sameFingerprint(
+					{ mtimeMs: previousFile.mtime_ms, size: previousFile.size },
+					file,
+				);
+		});
 }
 
 /**

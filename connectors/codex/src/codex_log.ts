@@ -17,6 +17,18 @@ export interface CodexSessionFile {
 	size: number;
 }
 
+/**
+ * The log files of one session, in session order. Codex continues a long
+ * session in segment files named `rollout-<time>-<session id>_<segment
+ * id>.jsonl` next to the first `rollout-<time>-<session id>.jsonl`; each
+ * segment holds only the turns written after the previous one.
+ */
+export interface CodexSessionGroup {
+	/** See `sessionGroupKey`. */
+	key: string;
+	files: CodexSessionFile[];
+}
+
 /** A directory of session logs; `stateKey` prefixes its files' state keys. */
 export interface CodexSessionRoot {
 	path: string;
@@ -172,24 +184,68 @@ export async function listCodexSessionFiles(
 	return { files, complete };
 }
 
-/** Streams one session log. Errors opening it (e.g. `NotFound`) propagate. */
-export async function parseCodexSessionFile(
-	file: CodexSessionFile,
+/**
+ * The session a log file belongs to: the session id in its Codex file name,
+ * or, for a name that does not follow the Codex pattern, its own state key.
+ * A pure function of the state key, so the session of a file that is gone
+ * can still be found from the previous state.
+ */
+export function sessionGroupKey(stateKey: string): string {
+	return ROLLOUT_FILE_NAME.exec(basename(stateKey))?.[1] ?? stateKey;
+}
+
+/**
+ * Groups `files` (as listed) by session. Segments are ordered by the time in
+ * their name; sessions by their newest file, oldest first.
+ */
+export function groupCodexSessionFiles(
+	files: readonly CodexSessionFile[],
+): CodexSessionGroup[] {
+	const groups = new Map<string, CodexSessionFile[]>();
+	const byNewest = [...files].sort((a, b) =>
+		b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path)
+	);
+	for (const file of byNewest) {
+		const key = sessionGroupKey(file.stateKey);
+		const group = groups.get(key);
+		if (group == null) {
+			groups.set(key, [file]);
+		} else {
+			group.push(file);
+		}
+	}
+	return [...groups].reverse().map(([key, group]) => ({
+		key,
+		files: group.sort((a, b) =>
+			basename(a.path).localeCompare(basename(b.path)) ||
+			a.stateKey.localeCompare(b.stateKey)
+		),
+	}));
+}
+
+/**
+ * Streams the log files of one session, in order, into one session. Errors
+ * opening any of them (e.g. `NotFound`) propagate.
+ */
+export async function parseCodexSessionFiles(
+	files: readonly CodexSessionFile[],
 	options: ParseCodexSessionOptions,
 	signal: AbortSignal,
 ): Promise<CodexSession> {
 	const accumulator = emptyAccumulator();
-	const records = readJsonl(file.path, {
-		signal,
-		prefilter: (line) => shouldParseLine(line, options),
-	});
-	for await (const record of records) {
-		applyEvent(accumulator, record as LogEvent, options);
-		if (options.skipSubagents && accumulator.subagent) {
-			break;
+	for (const file of files) {
+		const records = readJsonl(file.path, {
+			signal,
+			prefilter: (line) => shouldParseLine(line, options),
+		});
+		for await (const record of records) {
+			applyEvent(accumulator, record as LogEvent, options);
+			if (options.skipSubagents && accumulator.subagent) {
+				return sessionFromAccumulator(accumulator, files);
+			}
 		}
 	}
-	return sessionFromAccumulator(accumulator, file);
+	return sessionFromAccumulator(accumulator, files);
 }
 
 export function parseCodexSessionLines(
@@ -209,7 +265,7 @@ export function parseCodexSessionLines(
 		}
 	}
 
-	return sessionFromAccumulator(accumulator, file);
+	return sessionFromAccumulator(accumulator, [file]);
 }
 
 function emptyAccumulator(): ParseAccumulator {
@@ -226,15 +282,19 @@ function emptyAccumulator(): ParseAccumulator {
 	};
 }
 
+/** `files` are the session's log files in order; the first one starts it. */
 function sessionFromAccumulator(
 	accumulator: ParseAccumulator,
-	file: CodexSessionFile,
+	files: readonly CodexSessionFile[],
 ): CodexSession {
 	finishCurrentRound(accumulator);
 
-	const id = accumulator.id ?? sessionIdFromPath(file.path);
-	const title = titleForSession(accumulator, file.path);
-	const updatedAt = new Date(file.mtimeMs).toISOString();
+	const first = files[0];
+	const id = accumulator.id ?? sessionIdFromPath(first.path);
+	const title = titleForSession(accumulator, first.path);
+	const updatedAt = new Date(
+		Math.max(...files.map((file) => file.mtimeMs)),
+	).toISOString();
 	const contentResult = renderSessionContent(title, accumulator.rounds, {
 		cwd: accumulator.cwd,
 		workspaceRoots: accumulator.workspaceRoots,
@@ -244,9 +304,9 @@ function sessionFromAccumulator(
 	return {
 		id,
 		title,
-		sourcePath: file.path,
-		sourceSize: file.size,
-		url: pathToFileURL(file.path).href,
+		sourcePath: first.path,
+		sourceSize: files.reduce((total, file) => total + file.size, 0),
+		url: pathToFileURL(first.path).href,
 		startedAt: accumulator.startedAt,
 		updatedAt,
 		cwd: accumulator.cwd,
@@ -680,11 +740,13 @@ function isInjectedUserContext(text: string): boolean {
 		text.startsWith('<INSTRUCTIONS>');
 }
 
+/** `rollout-<time>-<session id>[_<segment id>].jsonl` */
+const ROLLOUT_FILE_NAME =
+	/^rollout-.+?-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\.jsonl$/i;
+
 function sessionIdFromPath(path: string): string {
-	const filename = basename(path, '.jsonl');
-	const match = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-		.exec(filename);
-	return match?.[0] ?? filename;
+	return ROLLOUT_FILE_NAME.exec(basename(path))?.[1] ??
+		basename(path, '.jsonl');
 }
 
 function oneLine(value: string): string {

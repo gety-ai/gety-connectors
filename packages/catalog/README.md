@@ -24,7 +24,8 @@ downloading the tarball:
 - `package` is the connector's npm package; install it to get its manifest and
   permissions.
 - `name` and `description` come from the connector's `manifest.json`; `icon` is
-  its icon as a `data:` URL (raster icons larger than 128 px are downscaled).
+  its icon as a `data:` URL. PNG icons larger than 128 px are downscaled to 128
+  px; WebP icons must be at most 128 px in both dimensions.
 - `version` is the connector's `latest` version on npm, and `publishedAt` the
   time npm published that version (ISO 8601, UTC).
 - Changes to this shape are additive only: `getyCatalog` and its entries may

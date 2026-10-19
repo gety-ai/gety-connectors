@@ -358,6 +358,14 @@ async function iconDataUrl(path: URL): Promise<string> {
 		if (image.width > catalogIconSize || image.height > catalogIconSize) {
 			bytes = encode(downscale(path, image), { zlib: { level: 9 } });
 		}
+	} else if (mimeType === 'image/webp') {
+		// There is no WebP encoder here to downscale with; authors pre-size them.
+		const { width, height } = webpDimensions(path, bytes);
+		if (width > catalogIconSize || height > catalogIconSize) {
+			throw new Error(
+				`${path.pathname}: WebP icon is ${width}x${height}; WebP icons must be at most ${catalogIconSize}x${catalogIconSize} (larger PNGs are downscaled)`,
+			);
+		}
 	}
 	if (bytes.length > maxIconBytes) {
 		throw new Error(
@@ -365,6 +373,45 @@ async function iconDataUrl(path: URL): Promise<string> {
 		);
 	}
 	return `data:${mimeType};base64,${encodeBase64(bytes)}`;
+}
+
+/**
+ * Canvas size from a WebP file header: the VP8X extended header, a VP8L
+ * lossless header or a VP8 lossy key frame header
+ * (https://developers.google.com/speed/webp/docs/riff_container).
+ */
+export function webpDimensions(
+	path: URL,
+	bytes: Uint8Array,
+): { width: number; height: number } {
+	const ascii = (start: number, end: number) =>
+		String.fromCharCode(...bytes.subarray(start, end));
+	const uint24 = (offset: number) =>
+		bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16);
+	const chunk = bytes.length >= 20 && ascii(0, 4) === 'RIFF' &&
+			ascii(8, 12) === 'WEBP'
+		? ascii(12, 16)
+		: undefined;
+	if (chunk === 'VP8X' && bytes.length >= 30) {
+		return { width: uint24(24) + 1, height: uint24(27) + 1 };
+	}
+	if (chunk === 'VP8L' && bytes.length >= 25 && bytes[20] === 0x2f) {
+		const bits = (uint24(21) | (bytes[24] << 24)) >>> 0;
+		return {
+			width: (bits & 0x3fff) + 1,
+			height: ((bits >>> 14) & 0x3fff) + 1,
+		};
+	}
+	if (
+		chunk === 'VP8 ' && bytes.length >= 30 && bytes[23] === 0x9d &&
+		bytes[24] === 0x01 && bytes[25] === 0x2a
+	) {
+		return {
+			width: uint24(26) & 0x3fff,
+			height: uint24(28) & 0x3fff,
+		};
+	}
+	throw new Error(`${path.pathname}: not a WebP file with a readable size`);
 }
 
 /**

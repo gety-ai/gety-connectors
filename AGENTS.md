@@ -69,7 +69,8 @@ sandbox and state semantics (`-- --help` lists its options).
   changeset for `@gety-connectors/catalog`. After the connectors are published,
   the release workflow builds it (`scripts/catalog.ts`) from the manifests'
   `name`, `description` and icon and each connector's npm `latest` version and
-  publish time, and publishes it with a patch bump when it changed.
+  publish time, and publishes it with a patch bump when it changed. Raster icons
+  are PNG (downscaled to 128 px) or WebP at most 128 px.
 - **Shared packages**: utils is not versioned; its code ships inside each
   connector bundle. A change to `packages/utils` needs a changeset listing every
   connector that imports the changed module. Do not add a `package.json` to

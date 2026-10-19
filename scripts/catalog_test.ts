@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import {
 	buildCatalogPackage,
 	type Catalog,
+	catalogIconSize,
 	firstCatalogVersion,
+	generateCatalog,
 	nextCatalogVersion,
 	type RegistryOptions,
+	webpDimensions,
 	writeCatalogPackage,
 } from './catalog.ts';
 import { listConnectors, type PackageJson, readJson } from './connectors.ts';
@@ -260,5 +263,94 @@ Deno.test('writeCatalogPackage writes a new directory only', async () => {
 		await assert.rejects(writeCatalogPackage(dir, build.pkg));
 	} finally {
 		await Deno.remove(parent, { recursive: true });
+	}
+});
+
+/** A WebP file whose first chunk is `fourCC` with `payload` (headers only). */
+function webp(fourCC: string, payload: number[]): Uint8Array {
+	const chunk = [
+		...new TextEncoder().encode(fourCC),
+		...uint32(payload.length),
+	];
+	const body = [...new TextEncoder().encode('WEBP'), ...chunk, ...payload];
+	return new Uint8Array([
+		...new TextEncoder().encode('RIFF'),
+		...uint32(body.length),
+		...body,
+	]);
+}
+
+function uint32(value: number): number[] {
+	return [
+		value & 0xff,
+		(value >> 8) & 0xff,
+		(value >> 16) & 0xff,
+		value >>> 24,
+	];
+}
+
+function webpVp8x(width: number, height: number): Uint8Array {
+	return webp('VP8X', [
+		0x10,
+		0,
+		0,
+		0,
+		...uint32(width - 1).slice(0, 3),
+		...uint32(height - 1).slice(0, 3),
+	]);
+}
+
+const webpPath = new URL('file:///icon.webp');
+
+Deno.test('webpDimensions reads VP8X, VP8L and VP8 headers', () => {
+	assert.deepEqual(webpDimensions(webpPath, webpVp8x(300, 200)), {
+		width: 300,
+		height: 200,
+	});
+	const lossless = (299 | (199 << 14)) >>> 0;
+	assert.deepEqual(
+		webpDimensions(webpPath, webp('VP8L', [0x2f, ...uint32(lossless), 0])),
+		{ width: 300, height: 200 },
+	);
+	assert.deepEqual(
+		webpDimensions(
+			webpPath,
+			webp('VP8 ', [0, 0, 0, 0x9d, 0x01, 0x2a, 44, 1, 200, 0]),
+		),
+		{ width: 300, height: 200 },
+	);
+	assert.throws(() => webpDimensions(webpPath, webp('VP8X', [0, 0])));
+	assert.throws(() => webpDimensions(webpPath, new Uint8Array(40)));
+});
+
+Deno.test('a WebP icon larger than the catalog icon size fails the catalog', async () => {
+	const dir = await Deno.makeTempDir();
+	try {
+		const connector = {
+			short: 'sample',
+			dir: new URL(`file://${dir}/`),
+			packageName: '@gety-connectors/sample',
+		};
+		await Deno.writeTextFile(
+			`${dir}/manifest.json`,
+			JSON.stringify({ name: 'Sample', icon: 'icon.webp' }),
+		);
+		const releases = new Map([[connector.packageName, {
+			version: '1.0.0',
+			publishedAt: '2026-10-01T08:00:00.000Z',
+		}]]);
+		await Deno.writeFile(
+			`${dir}/icon.webp`,
+			webpVp8x(catalogIconSize, catalogIconSize),
+		);
+		const catalog = await generateCatalog([connector], releases);
+		assert.match(catalog.connectors[0].icon, /^data:image\/webp;base64,/);
+		await Deno.writeFile(
+			`${dir}/icon.webp`,
+			webpVp8x(catalogIconSize + 1, catalogIconSize),
+		);
+		await assert.rejects(generateCatalog([connector], releases));
+	} finally {
+		await Deno.remove(dir, { recursive: true });
 	}
 });

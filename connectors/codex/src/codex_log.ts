@@ -1,5 +1,13 @@
 import { del, type DocUpdate, upsert } from '@gety-ai/connector-sdk';
-import { basename, join } from 'node:path';
+import { walkFiles } from '@gety-connectors/utils/fs';
+import {
+	isRecord,
+	parseJsonObject,
+	stringValue,
+} from '@gety-connectors/utils/json';
+import { readJsonl } from '@gety-connectors/utils/jsonl';
+import { clampUtf8, MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
+import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export interface CodexSessionFile {
@@ -9,12 +17,31 @@ export interface CodexSessionFile {
 	size: number;
 }
 
-export interface ListCodexSessionFilesOptions {
-	includeArchivedSessions: boolean;
+/** A directory of session logs; `stateKey` prefixes its files' state keys. */
+export interface CodexSessionRoot {
+	path: string;
+	stateKey: string;
+	/**
+	 * A missing required root fails the poll; a missing optional root counts
+	 * as an empty directory.
+	 */
+	required: boolean;
+}
+
+export interface CodexSessionListing {
+	/** Sorted by mtime, oldest first, then by path. */
+	files: CodexSessionFile[];
+	/** False when an entry vanished during the walk or it was aborted. */
+	complete: boolean;
 }
 
 export interface ParseCodexSessionOptions {
 	includeToolCalls: boolean;
+	/**
+	 * Stop reading once the session's own `session_meta` marks it as a
+	 * subagent session: its content is not needed when subagents are excluded.
+	 */
+	skipSubagents?: boolean;
 }
 
 export interface CodexSession {
@@ -35,12 +62,18 @@ export interface CodexSession {
 	userMessageCount: number;
 	codexMessageCount: number;
 	toolCallCount: number;
+	/** Spawned by another session (Codex multi-agent), per its own meta. */
+	subagent: boolean;
 	contentTruncated: boolean;
 	content: string;
 }
 
-export function isIndexableCodexSession(session: CodexSession): boolean {
-	return session.userMessageCount > 0 && session.codexMessageCount > 0;
+export function isIndexableCodexSession(
+	session: CodexSession,
+	includeSubagents: boolean,
+): boolean {
+	return (includeSubagents || !session.subagent) &&
+		session.userMessageCount > 0 && session.codexMessageCount > 0;
 }
 
 interface LogEvent {
@@ -76,6 +109,9 @@ interface SessionContentMeta {
 }
 
 interface ParseAccumulator {
+	/** The first `session_meta` was applied; later ones are ignored. */
+	sawSessionMeta: boolean;
+	subagent: boolean;
 	id?: string;
 	summary?: string;
 	firstPrompt?: string;
@@ -95,71 +131,62 @@ interface ParseAccumulator {
 }
 
 const SESSION_DOC_TYPE = 'codex:session';
-const MAX_CONTENT_CHARS = 900_000;
-const READ_CHUNK_SIZE = 64 * 1024;
 
+/**
+ * Lists the `.jsonl` files under `roots`. Throws when a required root does
+ * not exist: a missing source is an error, never an empty one (otherwise the
+ * poll would delete every indexed session). Sandbox and permission errors
+ * are thrown as well.
+ */
 export async function listCodexSessionFiles(
-	options: ListCodexSessionFilesOptions,
-): Promise<CodexSessionFile[]> {
-	const root = resolveCodexHome();
-	const roots = [
-		{ path: join(root, 'sessions'), stateKey: 'sessions' },
-	];
-	if (options.includeArchivedSessions) {
-		roots.push({
-			path: join(root, 'archived_sessions'),
-			stateKey: 'archived_sessions',
-		});
-	}
-
+	roots: readonly CodexSessionRoot[],
+	signal: AbortSignal,
+): Promise<CodexSessionListing> {
 	const files: CodexSessionFile[] = [];
-	for (const sessionRoot of roots) {
-		files.push(...await listJsonlFiles(sessionRoot.path, sessionRoot.stateKey));
+	let complete = true;
+	for (const root of roots) {
+		const walk = await walkFiles(root.path, {
+			include: (relPath) => relPath.endsWith('.jsonl'),
+			signal,
+		});
+		if (walk.rootMissing) {
+			if (root.required) {
+				throw new Error(
+					`Codex sessions directory not found: ${root.path}. Run Codex at least once to create it.`,
+				);
+			}
+			continue;
+		}
+		complete &&= walk.complete;
+		for (const entry of walk.files) {
+			files.push({
+				path: entry.absPath,
+				stateKey: `${root.stateKey}/${entry.relPath}`,
+				mtimeMs: entry.mtimeMs,
+				size: entry.size,
+			});
+		}
 	}
 
 	files.sort((a, b) => a.mtimeMs - b.mtimeMs || a.path.localeCompare(b.path));
-	return files;
+	return { files, complete };
 }
 
-export function resolveCodexHome(
-	env: Record<string, string | undefined> = Deno.env.toObject(),
-	os: typeof Deno.build.os = Deno.build.os,
-): string {
-	const explicit = env.CODEX_HOME?.trim();
-	if (explicit) {
-		return explicit;
-	}
-
-	if (os === 'windows') {
-		const profile = env.USERPROFILE?.trim();
-		if (profile) {
-			return join(profile, '.codex');
-		}
-
-		const homeDrive = env.HOMEDRIVE?.trim();
-		const homePath = env.HOMEPATH?.trim();
-		if (homeDrive && homePath) {
-			return join(`${homeDrive}${homePath}`, '.codex');
-		}
-	}
-
-	const home = env.HOME?.trim() || env.USERPROFILE?.trim();
-	if (home) {
-		return join(home, '.codex');
-	}
-
-	return '.codex';
-}
-
+/** Streams one session log. Errors opening it (e.g. `NotFound`) propagate. */
 export async function parseCodexSessionFile(
 	file: CodexSessionFile,
 	options: ParseCodexSessionOptions,
+	signal: AbortSignal,
 ): Promise<CodexSession> {
 	const accumulator = emptyAccumulator();
-	for await (const line of readJsonlLines(file.path)) {
-		const event = parseRelevantLine(line, options);
-		if (event != null) {
-			applyEvent(accumulator, event, options);
+	const records = readJsonl(file.path, {
+		signal,
+		prefilter: (line) => shouldParseLine(line, options),
+	});
+	for await (const record of records) {
+		applyEvent(accumulator, record as LogEvent, options);
+		if (options.skipSubagents && accumulator.subagent) {
+			break;
 		}
 	}
 	return sessionFromAccumulator(accumulator, file);
@@ -177,6 +204,9 @@ export function parseCodexSessionLines(
 			continue;
 		}
 		applyEvent(accumulator, event, options);
+		if (options.skipSubagents && accumulator.subagent) {
+			break;
+		}
 	}
 
 	return sessionFromAccumulator(accumulator, file);
@@ -184,6 +214,8 @@ export function parseCodexSessionLines(
 
 function emptyAccumulator(): ParseAccumulator {
 	return {
+		sawSessionMeta: false,
+		subagent: false,
 		workspaceRoots: [],
 		messageCount: 0,
 		userMessageCount: 0,
@@ -227,6 +259,7 @@ function sessionFromAccumulator(
 		userMessageCount: accumulator.userMessageCount,
 		codexMessageCount: accumulator.codexMessageCount,
 		toolCallCount: accumulator.toolCallCount,
+		subagent: accumulator.subagent,
 		contentTruncated: contentResult.truncated,
 		content: contentResult.content,
 	};
@@ -271,75 +304,6 @@ function codexSessionDocId(sessionId: string): string {
 	return `codex:session:${sessionId}`;
 }
 
-async function listJsonlFiles(
-	root: string,
-	stateKey: string,
-): Promise<CodexSessionFile[]> {
-	const files: CodexSessionFile[] = [];
-
-	try {
-		for await (const entry of Deno.readDir(root)) {
-			const path = join(root, entry.name);
-			const childStateKey = `${stateKey}/${entry.name}`;
-			if (entry.isDirectory) {
-				files.push(...await listJsonlFiles(path, childStateKey));
-				continue;
-			}
-			if (!entry.isFile || !entry.name.endsWith('.jsonl')) {
-				continue;
-			}
-
-			const stat = await Deno.stat(path);
-			files.push({
-				path,
-				stateKey: childStateKey,
-				mtimeMs: stat.mtime?.getTime() ?? 0,
-				size: stat.size,
-			});
-		}
-	} catch (error) {
-		if (error instanceof Deno.errors.NotFound) {
-			return files;
-		}
-		throw error;
-	}
-
-	return files;
-}
-
-async function* readJsonlLines(path: string): AsyncGenerator<string> {
-	const file = await Deno.open(path, { read: true });
-	const decoder = new TextDecoder();
-	const chunk = new Uint8Array(READ_CHUNK_SIZE);
-	let buffer = '';
-
-	try {
-		while (true) {
-			const bytesRead = await file.read(chunk);
-			if (bytesRead == null) {
-				break;
-			}
-
-			buffer += decoder.decode(chunk.subarray(0, bytesRead), {
-				stream: true,
-			});
-			let lineEnd = buffer.indexOf('\n');
-			while (lineEnd >= 0) {
-				yield trimLineEnding(buffer.slice(0, lineEnd));
-				buffer = buffer.slice(lineEnd + 1);
-				lineEnd = buffer.indexOf('\n');
-			}
-		}
-
-		buffer += decoder.decode();
-		if (buffer.trim() !== '') {
-			yield trimLineEnding(buffer);
-		}
-	} finally {
-		file.close();
-	}
-}
-
 function parseRelevantLine(
 	line: string,
 	options: ParseCodexSessionOptions,
@@ -347,12 +311,7 @@ function parseRelevantLine(
 	if (!shouldParseLine(line, options)) {
 		return null;
 	}
-
-	try {
-		return JSON.parse(line) as LogEvent;
-	} catch {
-		return null;
-	}
+	return (parseJsonObject(line) as LogEvent | undefined) ?? null;
 }
 
 function shouldParseLine(
@@ -409,25 +368,30 @@ function applyEvent(
 	}
 }
 
+/**
+ * Applies the file's first `session_meta` only. A forked or subagent session
+ * starts with its own meta and then repeats its parent's; letting a later
+ * meta win would file the child under the parent's id.
+ */
 function applySessionMeta(
 	accumulator: ParseAccumulator,
 	event: LogEvent,
 ): void {
 	const payload = event.payload;
-	if (payload == null) {
+	if (!isRecord(payload) || accumulator.sawSessionMeta) {
 		return;
 	}
 
-	accumulator.id = stringValue(payload.id) ?? accumulator.id;
+	accumulator.sawSessionMeta = true;
+	accumulator.subagent = payload.thread_source === 'subagent' ||
+		(isRecord(payload.source) && payload.source.subagent != null);
+	accumulator.id = stringValue(payload.id);
 	accumulator.startedAt = stringValue(payload.timestamp) ??
-		stringValue(event.timestamp) ??
-		accumulator.startedAt;
+		stringValue(event.timestamp);
 	accumulator.cwd = stringValue(payload.cwd) ?? accumulator.cwd;
-	accumulator.cliVersion = stringValue(payload.cli_version) ??
-		accumulator.cliVersion;
-	accumulator.source = stringValue(payload.source) ?? accumulator.source;
-	accumulator.modelProvider = stringValue(payload.model_provider) ??
-		accumulator.modelProvider;
+	accumulator.cliVersion = stringValue(payload.cli_version);
+	accumulator.source = stringValue(payload.source);
+	accumulator.modelProvider = stringValue(payload.model_provider);
 }
 
 function applyTurnContext(
@@ -577,7 +541,11 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 
 	const input = item.arguments ?? item.input;
 	if (name === 'exec_command') {
-		const args = parseJsonObject(input);
+		const args = isRecord(input)
+			? input
+			: typeof input === 'string'
+			? parseJsonObject(input)
+			: undefined;
 		const cmd = stringValue(args?.cmd);
 		return cmd == null ? name : `${name}: ${oneLine(cmd)}`;
 	}
@@ -593,22 +561,6 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 	}
 
 	return name;
-}
-
-function parseJsonObject(value: unknown): Record<string, unknown> | null {
-	if (isRecord(value)) {
-		return value;
-	}
-	if (typeof value !== 'string') {
-		return null;
-	}
-
-	try {
-		const parsed = JSON.parse(value);
-		return isRecord(parsed) ? parsed : null;
-	} catch {
-		return null;
-	}
 }
 
 function renderSessionContent(
@@ -653,14 +605,12 @@ function renderSessionContent(
 		}
 	}
 
-	const content = lines.join('\n');
-	if (content.length <= MAX_CONTENT_CHARS) {
-		return { content, truncated: false };
-	}
-
+	// UTF-8 bytes, the host's unit; the cut may land inside a message. The
+	// truncation is recorded in metadata, not in the body.
+	const clamped = clampUtf8(lines.join('\n'), MAX_CONTENT_BYTES, '');
 	return {
-		content: content.slice(0, MAX_CONTENT_CHARS).trimEnd(),
-		truncated: true,
+		content: clamped.truncated ? clamped.content.trimEnd() : clamped.content,
+		truncated: clamped.truncated,
 	};
 }
 
@@ -741,10 +691,6 @@ function oneLine(value: string): string {
 	return value.replace(/\s+/g, ' ').trim();
 }
 
-function stringValue(value: unknown): string | undefined {
-	return typeof value === 'string' ? value : undefined;
-}
-
 function stringArrayValue(value: unknown): string[] | undefined {
 	if (!Array.isArray(value)) {
 		return undefined;
@@ -754,12 +700,4 @@ function stringArrayValue(value: unknown): string[] | undefined {
 		typeof item === 'string' && item.trim() !== ''
 	);
 	return strings.length > 0 ? [...new Set(strings)] : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function trimLineEnding(line: string): string {
-	return line.endsWith('\r') ? line.slice(0, -1) : line;
 }

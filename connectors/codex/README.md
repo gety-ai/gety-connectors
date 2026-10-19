@@ -18,26 +18,34 @@ markdown documents.
   by default.
 - Can include archived sessions through a config checkbox. This is on by
   default.
+- Can include subagent sessions (sessions Codex spawned for another session)
+  through a config checkbox. This is off by default. Each session, subagent or
+  not, is filed under its own session id.
 - Scans all candidate logs during the first poll, yielding real document updates
   as each indexable session is parsed.
 - On later polls, lists and stats candidate logs, but only parses files whose
   mtime or size changed.
 - Tracks lightweight file fingerprints in connector state so changed files,
   removed files, and config changes can update only the affected session docs.
+  Gety commits the state only when a poll succeeds.
+- Limits each document's content to 8,000,000 UTF-8 bytes; longer sessions are
+  cut there and marked with `content_truncated` in the metadata.
 
-The connector does not expose a session directory config. It resolves the Codex
-home directory from the current platform:
+The connector reads only `~/.codex/sessions` and `~/.codex/archived_sessions`,
+which are the only read permissions its manifest requests (it cannot read the
+rest of `~/.codex`, such as `auth.json`). `~` is the home directory Gety passes
+in; `CODEX_HOME` is not supported. The `archived_sessions` directory is read
+only when archived sessions are enabled.
 
-- `CODEX_HOME` if the environment variable is set.
-- Windows: `%USERPROFILE%\.codex`, then `%HOMEDRIVE%%HOMEPATH%\.codex`.
-- Linux/macOS: `$HOME/.codex`.
-
-It scans `sessions/` and, when enabled, `archived_sessions/` under that Codex
-home directory.
+A missing `~/.codex/sessions` directory fails the poll instead of counting as an
+empty one, so the index is never cleared because the directory could not be
+found. A missing `archived_sessions` directory counts as empty, since Codex may
+not have archived any session yet.
 
 Normal incremental polls do not reread unchanged JSONL content. They compare the
 current file list with the stored fingerprints and remove previously indexed
-sessions when their source file disappears.
+sessions when their source file disappears. If a file disappears while a poll is
+running, that poll deletes nothing; the next one does.
 
 ## Files
 
@@ -79,8 +87,8 @@ deno task verify
 ```
 
 Unit tests use Deno's built-in test runner and cover JSONL parsing, markdown
-rendering, platform path resolution, and state transitions. They do not read
-your real Codex history.
+rendering, state transitions, and whole polls against temporary directories.
+They do not read your real Codex history.
 
 ## Live Runner
 
@@ -102,6 +110,7 @@ Config environment variables are derived from manifest field IDs:
 
 - `GETY_CONFIG_INCLUDE_TOOL_CALLS` or `INCLUDE_TOOL_CALLS`
 - `GETY_CONFIG_INCLUDE_ARCHIVED_SESSIONS` or `INCLUDE_ARCHIVED_SESSIONS`
+- `GETY_CONFIG_INCLUDE_SUBAGENTS` or `INCLUDE_SUBAGENTS`
 
 Runner output is written outside git:
 
@@ -131,8 +140,8 @@ deno task runner -- --state dev/.runner/codex-state.json --out-dir dev/runs
 1. Open Gety's Custom Connectors settings page.
 2. Install from npm (`@gety-connectors/codex`), or run `deno task build` and
    install from this local folder (build output is not committed).
-3. Configure whether tool call summaries and archived sessions should be
-   indexed.
+3. Configure whether tool call summaries, archived sessions and subagent
+   sessions should be indexed.
 4. Wait for the first poll to finish, then search for a Codex session title or
    prompt.
 

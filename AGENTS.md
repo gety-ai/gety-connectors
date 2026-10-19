@@ -10,6 +10,11 @@ full picture (layout, release flow, bootstrap).
 - `packages/catalog/`: `@gety-connectors/catalog`; its `getyCatalog` field is
   generated.
 - `scripts/`: repository scripts, run through the tasks in the root `deno.json`.
+- `tools/`: tooling every connector's tasks call (`build.ts`,
+  `generate-manifest-config.ts`, `dev-runner.ts` with its sandbox derivation
+  `sandbox.ts`) and `sync-sdk.ts`.
+- `vendor/gety-deno/`: byte-exact copy of Gety's Deno connector SDK and host
+  runner; the root import map points `@gety-ai/connector-sdk` at it.
 - The root `deno.json` is a Deno workspace listing every connector; there is a
   single root `deno.lock`. pnpm is used only for package metadata and
   changesets.
@@ -24,14 +29,17 @@ deno task --recursive check     # type-check (also regenerates src/gen/manifest.
 deno task --recursive test
 deno task --recursive build     # connectors/*/dist/, needed before verify:packs
 deno fmt --check && deno lint
+deno task check:tools           # type-check tools/ and the vendored runner
+deno task test:tools
 deno task sync:check            # versions, manifests, gety, catalog drift
+deno task sync-sdk:check        # vendor/gety-deno matches SOURCE.json
 deno task verify:packs          # pack every package and inspect the tarballs
 ```
 
 `deno task <name>` inside `connectors/<short>/` runs that connector's tasks
-(`verify`, `runner`, ...). Note that a connector's `verify` and `fix` tasks
-rewrite files (`deno fmt`, `deno lint --fix`); use `fmt:check` and `lint` to
-only check.
+(`verify`, `runner`, ...). `verify` only checks; `fix` rewrites files
+(`deno fmt`, `deno lint --fix`). `runner` runs the connector under Gety's
+sandbox and state semantics (`-- --help` lists its options).
 
 ## Rules
 
@@ -59,6 +67,12 @@ only check.
 - **Generated files**: `connectors/*/src/gen/manifest.d.ts` is generated from
   `manifest.json` by the connector's `check`/`build` tasks and is committed; CI
   fails if it is stale.
+- **Vendored SDK**: never edit `vendor/gety-deno/`; `sync-sdk:check` fails on
+  any change. Refresh it with `deno task sync-sdk <gety checkout> --ref <rev>`
+  and review `tools/sandbox.ts`/`tools/dev-runner.ts` when it reports that the
+  mirrored Gety files changed.
+- **Connector tooling**: connector `deno.json` tasks call the shared scripts in
+  `tools/`; do not copy them back into a connector.
 - **Dependencies**: connectors import dependencies as `npm:`/`jsr:` specifiers
   in their own `deno.json`; esbuild bundles them. Do not add npm dependencies to
   any `package.json` (the root one only holds `@changesets/cli`). After

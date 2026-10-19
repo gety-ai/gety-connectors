@@ -27,9 +27,12 @@ Each connector directory keeps the git history of the repository it came from.
 ## Layout
 
 ```text
-connectors/<short>/   one connector: manifest.json, src/, scripts/build.ts,
-                      package.json (npm metadata), CHANGELOG.md
+connectors/<short>/   one connector: manifest.json, src/, package.json (npm
+                      metadata), CHANGELOG.md
 packages/catalog/     @gety-connectors/catalog
+tools/                connector tooling shared by every connector (build,
+                      config types, dev runner, SDK sync)
+vendor/gety-deno/     byte-exact copy of Gety's Deno connector SDK and runner
 scripts/              repository scripts (sync, catalog, version step, pack checks)
 .changeset/           pending changesets
 deno.json             Deno workspace (all connectors) and repository tasks
@@ -49,23 +52,56 @@ Two tools, two jobs:
 
 ## Development
 
-Requirements: Deno 2.x, Node.js 22.14 or later (24 recommended) and pnpm 10
-(`corepack enable` picks the version in `package.json`).
+Requirements: Deno 2.x (CI pins 2.8.1, the version Gety bundles), Node.js 22.14
+or later (24 recommended) and pnpm 10 (`corepack enable` picks the version in
+`package.json`).
 
 ```sh
 pnpm install                    # changesets CLI
 deno task --recursive check     # type-check every connector
 deno task --recursive test
 deno task --recursive build     # writes connectors/*/dist/
-deno fmt && deno lint
+deno fmt --check && deno lint
+deno task check:tools && deno task test:tools
+deno task sync-sdk:check        # vendor/gety-deno is unmodified
 ```
 
 Inside a connector directory the connector's own tasks work as before
-(`deno task verify`, `deno task runner`, ...); see its README.
+(`deno task verify`, `deno task runner`, ...); see its README. They call the
+shared scripts in `tools/`; `verify` only checks and never rewrites files
+(`deno task fix` formats and applies lint fixes).
 
 Build output (`dist/`) is not committed: CI builds it before packing, and npm is
 the distribution channel. To install a connector from a local folder, run
 `deno task build` in it first.
+
+### Gety SDK
+
+`@gety-ai/connector-sdk` is not published; the root `deno.json` maps it to
+`vendor/gety-deno/sdk/src/mod.ts`, a copy of Gety's `connectors/deno` runtime
+(SDK, host runner, schemas). Bundles keep the SDK import external: Gety provides
+it at run time. `vendor/gety-deno/SOURCE.json` records the Gety commit and the
+hash of every file; CI fails if a vendored file is edited. Refresh it from a
+Gety checkout instead:
+
+```sh
+deno task sync-sdk ../gety --ref <commit>
+```
+
+The command also reports whether the Gety files that `tools/dev-runner.ts`
+mirrors (sandbox arguments, state commit) changed since the last sync.
+
+### Dev runner
+
+`deno task runner` in a connector directory builds it and runs
+`tools/dev-runner.ts`, which runs the connector the way Gety does: the vendored
+host runner in a separate Deno process, with the sandbox arguments Gety derives
+from the manifest `permissions` (a manifest without `permissions` runs
+unrestricted, as in Gety), and Gety's state semantics: the state is committed
+only when the poll ends successfully. Try a `permissions` value before putting
+it in the manifest with `--permissions '<json>'`; `--full-access` runs
+unrestricted, `--deno <path>` picks the Deno binary. See
+`deno task runner -- --help`.
 
 ## Versions and manifests
 

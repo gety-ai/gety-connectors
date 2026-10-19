@@ -51,8 +51,8 @@ sessions when their source file disappears.
   committed).
 - `dist/main.js.map` is its source map, published with it to make debugging the
   bundled entry easier.
-- `dev/gety-connector-sdk/mod.ts` is a local development shim so `deno check`
-  and the build script do not require the Gety SDK to be installed.
+- `@gety-ai/connector-sdk` resolves to the repository's vendored copy of the
+  Gety SDK (`vendor/gety-deno`); the bundle keeps it external.
 - `src/gen/manifest.d.ts` is generated from `manifest.json` by
   `deno task generate`, `deno task check`, or `deno task build`.
 
@@ -66,8 +66,9 @@ deno task build
 The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
 runtime through its import map.
 
-`deno task verify` formats code, applies safe lint fixes, runs type checking,
-then builds. `deno task build` only regenerates `dist/main.js` and
+`deno task verify` checks formatting and lint, runs type checking and tests,
+then builds; it does not rewrite files (`deno task fix` formats and applies safe
+lint fixes). `deno task build` only regenerates `dist/main.js` and
 `dist/main.js.map` for fast local iteration.
 
 ## Test
@@ -88,12 +89,14 @@ cp .env.example .env
 deno task runner -- --reset-state
 ```
 
-`dev/runner.ts` is a generic local runner for the Gety connector runtime
-contract. It reads `manifest.json`, imports the manifest `entry` (`dist/main.js`
-by default), builds config values from `.env`, injects `config`, `lastState`,
-and `signal`, then runs `onLoad()` and `poll()`. Each poll cycle creates a fresh
-connector instance and runs `onLoad()`, matching Gety's one-shot Deno runner
-lifecycle.
+`deno task runner` builds the connector and runs the repository's
+`tools/dev-runner.ts`, which runs it the way Gety does: Gety's host runner in a
+separate Deno process, sandboxed by the manifest `permissions` (unrestricted
+when the manifest declares none), with config values from `.env`, the last
+committed state, and the data and home directories. Each poll cycle is a fresh
+process, matching Gety's one-shot Deno runner lifecycle, and its state is
+committed only when the poll ends successfully. `deno task runner -- --help`
+lists the options.
 
 Config environment variables are derived from manifest field IDs:
 

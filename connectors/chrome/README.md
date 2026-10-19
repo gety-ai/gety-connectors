@@ -59,7 +59,7 @@ copy.
 ## Build
 
 ```bash
-deno task verify   # fmt + lint + type-check + test + build
+deno task verify   # fmt/lint check + type-check + test + build
 deno task build    # just rebuild dist/main.js
 ```
 

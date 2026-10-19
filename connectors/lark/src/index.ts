@@ -734,8 +734,10 @@ export default class FeishuConnector extends Connector<
 		state: FeishuState,
 		grouping: ChatGrouping,
 	): AsyncGenerator<PollResult> {
-		const lookbackDays = this.config.chat_history_days > 0
-			? this.config.chat_history_days
+		// `chat_history_days` is optional (`required: false`). `undefined > 0` is
+		// false, so the assertions only hold where the value is a positive number.
+		const lookbackDays = this.config.chat_history_days! > 0
+			? this.config.chat_history_days!
 			: DEFAULT_CHAT_LOOKBACK_DAYS;
 		const defaultStartDay = localDateString(
 			new Date(Date.now() - lookbackDays * 86_400_000),

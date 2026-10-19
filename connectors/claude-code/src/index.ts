@@ -2,13 +2,15 @@ import {
 	Connector,
 	del,
 	type Doc,
-	type JsonValue,
 	type PollResult,
 	upsert,
 } from '@gety-ai/connector-sdk';
 import { basename, join, normalize, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+
+// The SDK does not export its JSON value type; derive it from doc metadata.
+type JsonValue = Exclude<Doc['metadata'], undefined>;
 
 /**
  * Claude Code stores chat sessions as JSONL files under a per-platform

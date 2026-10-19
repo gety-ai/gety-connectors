@@ -1,7 +1,6 @@
 import {
 	Connector,
 	del,
-	type JsonValue,
 	type PollResult,
 	upsert,
 	type WireDoc,
@@ -19,6 +18,9 @@ import { homedir, platform, tmpdir } from 'node:os';
 import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+
+// The SDK does not export its JSON value type; derive it from doc metadata.
+type JsonValue = Exclude<WireDoc['metadata'], undefined>;
 
 // Chrome/WebKit timestamps count microseconds since 1601-01-01 UTC.
 // Subtract the offset to 1970-01-01 to get a Unix timestamp.

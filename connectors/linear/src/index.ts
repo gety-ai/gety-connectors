@@ -11,6 +11,7 @@ import {
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { LinearGraphQL, nextPageCursor, retryReason } from './graphql.ts';
 import {
+	buildIssueDelete,
 	buildIssueUpdate,
 	fetchIssueById,
 	fetchIssuePage,
@@ -291,6 +292,11 @@ export default class LinearConnector
 				this.indexComments,
 				this.syncOptions.issueCommentPageSize,
 			);
+			if (issue == null) {
+				updates.push(buildIssueDelete(issueId));
+				issueCount += 1;
+				continue;
+			}
 			const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(
 				issue,
 				this.client,

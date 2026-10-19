@@ -284,3 +284,49 @@ Deno.test('poll skips changed comments that belong to no issue', async () => {
 	const state = run.committedState as Record<string, unknown>;
 	assert.equal(state.last_comment_updated_at, '2026-06-03T00:20:00.000Z');
 });
+
+function changedComment(id: string, issueId: string, minute: number) {
+	const time = new Date(Date.UTC(2026, 5, 3, 0, minute)).toISOString();
+	return { id, issueId, body: id, createdAt: time, updatedAt: time };
+}
+
+Deno.test('poll deletes an issue that Linear reports as not found', async () => {
+	const fake = new FakeLinear();
+	fake.issues = [issue(1)];
+	fake.comments = [
+		changedComment('c1', 'issue-gone', 20),
+		changedComment('c2', 'issue-1', 21),
+	];
+
+	const run = await poll(fake, { lastState: CAUGHT_UP });
+
+	assert.equal(run.outcome, 'done', String(run.error));
+	assert.deepEqual(
+		run.updates.map((update) =>
+			update.kind === 'delete'
+				? `delete ${update.id}`
+				: `upsert ${update.doc.id}`
+		),
+		['delete linear:issue:issue-gone', 'upsert linear:issue:issue-1'],
+	);
+});
+
+Deno.test('poll keeps an issue when fetching it fails for another reason', async () => {
+	const fake = new FakeLinear();
+	fake.comments = [changedComment('c1', 'issue-1', 20)];
+	fake.intercept = ({ operation }) => {
+		if (operation === 'GetyLinearIssue') {
+			return jsonResponse(errorsOf({
+				message: 'You do not have access to this resource',
+				path: ['issue'],
+				extensions: { code: 'FORBIDDEN', type: 'forbidden' },
+			}));
+		}
+	};
+
+	const run = await poll(fake, { lastState: CAUGHT_UP });
+
+	assert.equal(run.outcome, 'error');
+	assert.deepEqual(run.updates, []);
+	assert.equal(run.committedState, undefined);
+});

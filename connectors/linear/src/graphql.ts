@@ -172,6 +172,25 @@ export class LinearGraphQL {
 	}
 }
 
+/**
+ * True when every error of `error` says that the entity requested at the root
+ * field `field` does not exist. Any other error, a not-found error on a nested
+ * field included, is no proof that the entity is gone.
+ *
+ * Linear's wording is not part of its schema: both `extensions.code`
+ * `ENTITY_NOT_FOUND` and the message `Entity not found...` (reported with
+ * `INVALID_INPUT`) are accepted.
+ */
+export function isEntityNotFound(error: unknown, field: string): boolean {
+	return error instanceof GraphQLError &&
+		error.errors.every((entry) =>
+			(entry.code === 'ENTITY_NOT_FOUND' ||
+				/^Entity not found\b/i.test(entry.message)) &&
+			(entry.path === undefined ||
+				(entry.path.length === 1 && entry.path[0] === field))
+		);
+}
+
 /** A short reason for a retry log line. */
 export function retryReason(error: unknown): string {
 	if (error instanceof HttpError) {

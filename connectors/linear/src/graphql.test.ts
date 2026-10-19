@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { jsonResponse } from '@gety-connectors/testing';
-import { GraphQLError, LinearGraphQL, rateLimitDelayMs } from './graphql.ts';
+import {
+	GraphQLError,
+	type GraphQLErrorEntry,
+	isEntityNotFound,
+	LinearGraphQL,
+	rateLimitDelayMs,
+} from './graphql.ts';
 
 const NOW = Date.UTC(2026, 5, 3);
 const QUERY = 'query GetyLinearIssue($id: String!) { issue(id: $id) { id } }';
@@ -109,4 +115,40 @@ Deno.test('LinearGraphQL rejects a 2xx response with errors', async () => {
 		code: 'INVALID_INPUT',
 		type: 'invalid input',
 	}]);
+});
+
+Deno.test('isEntityNotFound accepts only a not-found error on the field', () => {
+	const notFound = (entries: GraphQLErrorEntry[]) =>
+		new GraphQLError('GetyLinearIssue', undefined, entries);
+	const invalidInput: GraphQLErrorEntry = {
+		message: 'Entity not found: Issue',
+		path: ['issue'],
+		code: 'INVALID_INPUT',
+	};
+	const coded: GraphQLErrorEntry = {
+		message: 'Entity not found',
+		path: ['issue'],
+		code: 'ENTITY_NOT_FOUND',
+	};
+
+	assert.equal(isEntityNotFound(notFound([invalidInput]), 'issue'), true);
+	assert.equal(isEntityNotFound(notFound([coded]), 'issue'), true);
+	assert.equal(
+		isEntityNotFound(
+			notFound([{ ...coded, path: ['issue', 'project'] }]),
+			'issue',
+		),
+		false,
+	);
+	assert.equal(
+		isEntityNotFound(
+			notFound([invalidInput, { message: 'Internal error' }]),
+			'issue',
+		),
+		false,
+	);
+	assert.equal(
+		isEntityNotFound(new Error('Entity not found: Issue'), 'issue'),
+		false,
+	);
 });

@@ -6,6 +6,7 @@ import {
 } from './comment.ts';
 import {
 	type Connection,
+	isEntityNotFound,
 	type LinearGraphQL,
 	requireConnection,
 	requireRecord,
@@ -230,17 +231,29 @@ export async function fetchIssuePage(
 	return connection;
 }
 
+/**
+ * The issue `id`, or null when Linear reports that it does not exist (for
+ * example after a hard delete). Any other error is thrown.
+ */
 export async function fetchIssueById(
 	client: LinearGraphQL,
 	id: string,
 	includeComments: boolean,
 	commentFirst: number,
-): Promise<LinearIssue> {
-	const data = await client.request<{ issue?: unknown }>(ISSUE_QUERY, {
-		commentFirst,
-		id,
-		includeComments,
-	});
+): Promise<LinearIssue | null> {
+	let data: { issue?: unknown };
+	try {
+		data = await client.request(ISSUE_QUERY, {
+			commentFirst,
+			id,
+			includeComments,
+		});
+	} catch (error) {
+		if (isEntityNotFound(error, 'issue')) {
+			return null;
+		}
+		throw error;
+	}
 	return requireIssue(data.issue, includeComments, 'issue');
 }
 

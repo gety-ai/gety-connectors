@@ -5,14 +5,18 @@ TypeScript program run by Gety's Deno host, published to npm as its own package,
 and installable with "Install from npm" in Gety or
 `gety connector install --npm <package>`.
 
-| Connector     | Directory                | npm package                    | Manifest id      |
-| ------------- | ------------------------ | ------------------------------ | ---------------- |
-| Linear        | `connectors/linear`      | `@gety-connectors/linear`      | `linear`         |
-| Codex         | `connectors/codex`       | `@gety-connectors/codex`       | `codex_sessions` |
-| Claude Code   | `connectors/claude-code` | `@gety-connectors/claude-code` | `claude-code`    |
-| Google Chrome | `connectors/chrome`      | `@gety-connectors/chrome`      | `chrome`         |
-| Notion        | `connectors/notion`      | `@gety-connectors/notion`      | `notion`         |
-| Feishu        | `connectors/lark`        | `@gety-connectors/lark`        | `feishu`         |
+| Connector     | Directory                | npm package                    |
+| ------------- | ------------------------ | ------------------------------ |
+| Linear        | `connectors/linear`      | `@gety-connectors/linear`      |
+| Codex         | `connectors/codex`       | `@gety-connectors/codex`       |
+| Claude Code   | `connectors/claude-code` | `@gety-connectors/claude-code` |
+| Google Chrome | `connectors/chrome`      | `@gety-connectors/chrome`      |
+| Notion        | `connectors/notion`      | `@gety-connectors/notion`      |
+| Feishu        | `connectors/lark`        | `@gety-connectors/lark`        |
+
+A connector's directory name is its short name, and both its npm package name
+(`@gety-connectors/<short>`) and its manifest `id` use it;
+`deno task sync:check` enforces this.
 
 `packages/catalog` is `@gety-connectors/catalog`, the generated list of these
 connectors (name, description, icon) that Gety's connector gallery reads; see

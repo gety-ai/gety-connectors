@@ -62,6 +62,11 @@ async function syncConnector(
 	const syncedManifestText = setManifestVersion(manifestText, pkg.version);
 	const manifest = JSON.parse(syncedManifestText) as Manifest;
 
+	if (manifest.id !== connector.short) {
+		result.errors.push(
+			`${label}/manifest.json: id must be "${connector.short}", the directory and package short name`,
+		);
+	}
 	if (pkg.name !== connector.packageName) {
 		result.errors.push(
 			`${label}/package.json: name must be ${connector.packageName}`,

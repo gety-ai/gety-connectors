@@ -24,7 +24,7 @@
 		"access": "public"
 	},
 	"gety": {
-		"id": "codex_sessions",
+		"id": "codex",
 		"name": "Codex",
 		"version": "0.1.0",
 		"min_gety_app_version": "0.5.1",

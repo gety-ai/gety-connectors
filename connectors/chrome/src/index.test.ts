@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import manifest from '../manifest.json' with { type: 'json' };
 import {
 	bookmarkDocId,
 	type BookmarkEntry,
 	buildBookmarkDoc,
 	buildHistoryDoc,
-	computeDeletes,
-	defaultChromeProfileDir,
+	defaultChromeProfilePath,
 	flattenBookmarks,
 	historyCutoffWebkitMicros,
 	historyDocId,
@@ -50,43 +49,18 @@ Deno.test('isWebUrl only accepts http(s)', () => {
 	assert.equal(isWebUrl(''), false);
 });
 
-Deno.test('defaultChromeProfileDir resolves per-OS paths', () => {
-	const home = '/home/tester';
-	assert.equal(
-		defaultChromeProfileDir('linux', home),
-		join(home, '.config', 'google-chrome', 'Default'),
-	);
-	assert.equal(
-		defaultChromeProfileDir('darwin', home),
-		join(home, 'Library', 'Application Support', 'Google', 'Chrome', 'Default'),
-	);
-	// Windows honors LOCALAPPDATA and falls back to AppData/Local.
-	assert.equal(
-		defaultChromeProfileDir(
-			'win32',
-			'C:/Users/me',
-			'C:/Users/me/AppData/Local',
-		),
-		join(
-			'C:/Users/me/AppData/Local',
-			'Google',
-			'Chrome',
-			'User Data',
-			'Default',
-		),
-	);
-	assert.equal(
-		defaultChromeProfileDir('win32', '/home/tester'),
-		join(
-			'/home/tester',
-			'AppData',
-			'Local',
-			'Google',
-			'Chrome',
-			'User Data',
-			'Default',
-		),
-	);
+Deno.test('defaultChromeProfilePath matches the manifest read grants', () => {
+	const osKey: Record<string, string> = {
+		linux: 'linux',
+		macos: 'darwin',
+		windows: 'windows',
+	};
+	const grants = manifest.permissions.read;
+	assert.equal(grants.length, 3);
+	for (const grant of grants) {
+		assert.equal(grant.os.length, 1);
+		assert.equal(defaultChromeProfilePath(osKey[grant.os[0]]), grant.path);
+	}
 });
 
 Deno.test('historyRangeToMaxAgeDays maps ranges', () => {
@@ -156,10 +130,10 @@ Deno.test('flattenBookmarks builds folder breadcrumbs and stable ids', () => {
 	assert.equal(nested.dateModified, 13377617858724200n);
 });
 
-Deno.test('flattenBookmarks tolerates missing/garbage input', () => {
-	assert.deepEqual(flattenBookmarks(null), []);
-	assert.deepEqual(flattenBookmarks({}), []);
-	assert.deepEqual(flattenBookmarks({ roots: 5 }), []);
+Deno.test('flattenBookmarks rejects input without a roots object', () => {
+	for (const input of [null, {}, { roots: 5 }, { roots: [] }]) {
+		assert.throws(() => flattenBookmarks(input), /Unrecognized/);
+	}
 });
 
 Deno.test('buildBookmarkDoc emits a linkable web doc', () => {
@@ -220,15 +194,6 @@ Deno.test('buildHistoryDoc falls back to url when title is blank', () => {
 		lastVisit: WEBKIT_UNIX_EPOCH,
 	});
 	assert.equal(doc.title, 'https://example.com/x');
-});
-
-Deno.test('computeDeletes returns ids no longer present', () => {
-	assert.deepEqual(
-		computeDeletes(['a', 'b', 'c'], new Set(['a', 'c'])),
-		['b'],
-	);
-	assert.deepEqual(computeDeletes(undefined, new Set(['a'])), []);
-	assert.deepEqual(computeDeletes(['a'], new Set(['a'])), []);
 });
 
 Deno.test('doc id helpers are stable', () => {

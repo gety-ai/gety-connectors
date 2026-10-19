@@ -6,16 +6,17 @@ import {
 	type WireDoc,
 } from '@gety-ai/connector-sdk';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+import { staleIds } from '@gety-connectors/utils/reconcile';
+import { isRecord } from '@gety-connectors/utils/json';
 import {
 	copyFileSync,
-	existsSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { homedir, platform, tmpdir } from 'node:os';
-import process from 'node:process';
+import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -72,34 +73,25 @@ export function isWebUrl(url: string): boolean {
 }
 
 /**
- * Default Chrome "Default" profile directory for the host OS. The connector
- * targets whatever platform it runs on, so the profile location is built in
- * rather than configured.
+ * The Chrome "Default" profile directory for a `Deno.build.os` value, as a
+ * `~/` path. These are exactly the `permissions.read` paths in manifest.json;
+ * the connector reads nothing outside them.
  */
-export function defaultChromeProfileDir(
-	os: string,
-	home: string,
-	localAppData?: string,
-): string {
+export function defaultChromeProfilePath(os: string): string {
 	switch (os) {
 		case 'darwin':
-			return join(
-				home,
-				'Library',
-				'Application Support',
-				'Google',
-				'Chrome',
-				'Default',
-			);
-		case 'win32': {
-			const base = localAppData && localAppData.trim()
-				? localAppData
-				: join(home, 'AppData', 'Local');
-			return join(base, 'Google', 'Chrome', 'User Data', 'Default');
-		}
+			return '~/Library/Application Support/Google/Chrome/Default';
+		case 'windows':
+			return '~/AppData/Local/Google/Chrome/User Data/Default';
 		default: // linux and other unix-likes
-			return join(home, '.config', 'google-chrome', 'Default');
+			return '~/.config/google-chrome/Default';
 	}
+}
+
+/** True when `error` is a filesystem "not found" error. */
+function isNotFound(error: unknown): boolean {
+	return (error as { code?: unknown } | null)?.code === 'ENOENT' ||
+		error instanceof Deno.errors.NotFound;
 }
 
 /** Maps a `history_range` dropdown value to a max age in days (null = no limit). */
@@ -158,20 +150,36 @@ const ROOT_LABELS: Record<string, string> = {
 	synced: 'Mobile bookmarks',
 };
 
+/**
+ * Every bookmark under the file's `roots`. Fails closed: a shape it does not
+ * recognize throws instead of being skipped, because a silently dropped
+ * subtree would read as deleted bookmarks.
+ */
 export function flattenBookmarks(bookmarksJson: unknown): BookmarkEntry[] {
 	const out: BookmarkEntry[] = [];
-	const roots = (bookmarksJson as { roots?: unknown })?.roots;
-	if (roots == null || typeof roots !== 'object') return out;
-
+	const roots = (bookmarksJson as { roots?: unknown } | null)?.roots;
+	if (!isRecord(roots)) {
+		throw new Error('Unrecognized Chrome Bookmarks format: no roots object.');
+	}
 	for (const [rootKey, rootNode] of Object.entries(roots)) {
-		if (rootNode == null || typeof rootNode !== 'object') continue;
-		const node = rootNode as Record<string, unknown>;
 		const label = ROOT_LABELS[rootKey] ??
-			(typeof node.name === 'string' ? node.name : rootKey);
-		const children = Array.isArray(node.children) ? node.children : [];
-		for (const child of children) walkBookmarkNode(child, [label], out);
+			(isRecord(rootNode) && typeof rootNode.name === 'string'
+				? rootNode.name
+				: rootKey);
+		for (const child of folderChildren(rootNode, `roots.${rootKey}`)) {
+			walkBookmarkNode(child, [label], out);
+		}
 	}
 	return out;
+}
+
+function folderChildren(node: unknown, where: string): unknown[] {
+	if (!isRecord(node) || !Array.isArray(node.children)) {
+		throw new Error(
+			`Unrecognized Chrome Bookmarks format: ${where} is not a folder.`,
+		);
+	}
+	return node.children;
 }
 
 function walkBookmarkNode(
@@ -179,31 +187,38 @@ function walkBookmarkNode(
 	trail: string[],
 	out: BookmarkEntry[],
 ): void {
-	if (node == null || typeof node !== 'object') return;
-	const n = node as Record<string, unknown>;
-	const type = n.type;
-
-	if (type === 'url') {
-		const url = typeof n.url === 'string' ? n.url : '';
-		const guid = typeof n.guid === 'string' && n.guid ? n.guid : url;
-		if (!guid) return;
+	const where = [...trail, isRecord(node) ? String(node.name ?? '') : '']
+		.join(' / ');
+	if (isRecord(node) && node.type === 'url' && typeof node.url === 'string') {
+		const guid = typeof node.guid === 'string' && node.guid
+			? node.guid
+			: node.url;
+		if (!guid) {
+			throw new Error(
+				`Unrecognized Chrome Bookmarks format: bookmark without guid or url at ${where}.`,
+			);
+		}
 		out.push({
 			guid,
-			name: typeof n.name === 'string' ? n.name : '',
-			url,
+			name: typeof node.name === 'string' ? node.name : '',
+			url: node.url,
 			folder: trail.join(' / '),
-			dateAdded: parseWebkitTimestamp(n.date_added as string),
-			dateModified: parseWebkitTimestamp(n.date_modified as string),
+			dateAdded: parseWebkitTimestamp(node.date_added as string),
+			dateModified: parseWebkitTimestamp(node.date_modified as string),
 		});
 		return;
 	}
-
-	if (type === 'folder' || Array.isArray(n.children)) {
-		const name = typeof n.name === 'string' ? n.name : '';
+	if (isRecord(node) && node.type === 'folder') {
+		const name = typeof node.name === 'string' ? node.name : '';
 		const nextTrail = name ? [...trail, name] : trail;
-		const children = Array.isArray(n.children) ? n.children : [];
-		for (const child of children) walkBookmarkNode(child, nextTrail, out);
+		for (const child of folderChildren(node, where)) {
+			walkBookmarkNode(child, nextTrail, out);
+		}
+		return;
 	}
+	throw new Error(
+		`Unrecognized Chrome Bookmarks format: unknown node at ${where}.`,
+	);
 }
 
 export function buildBookmarkDoc(entry: BookmarkEntry): WireDoc {
@@ -270,16 +285,20 @@ export function buildHistoryDoc(row: HistoryRow): WireDoc {
 	return doc;
 }
 
-export function computeDeletes(
-	previousIds: string[] | undefined,
-	currentIds: Set<string>,
-): string[] {
-	if (!previousIds) return [];
-	const deletes: string[] = [];
-	for (const id of previousIds) {
-		if (!currentIds.has(id)) deletes.push(id);
-	}
-	return deletes;
+/** The poll's enumeration of one source: every doc id in scope. */
+interface Scan {
+	seen: Set<string>;
+	/** False when the scan stopped early (abort); then nothing is deleted. */
+	complete: boolean;
+}
+
+/**
+ * The one place deletes are decided. A disabled source drops every id it had
+ * indexed; an enabled one drops the ids its complete scan no longer saw.
+ */
+function sourceDeletes(previousIds: string[] | undefined, scan: Scan | null) {
+	if (scan == null) return previousIds ?? [];
+	return staleIds(previousIds ?? [], scan);
 }
 
 // --------------------------------------------------------------------------
@@ -288,127 +307,129 @@ export function computeDeletes(
 
 export default class ChromeConnector extends Connector<ManifestConfig, State> {
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const profileDir = defaultChromeProfileDir(
-			platform(),
-			homedir(),
-			process.env.LOCALAPPDATA,
+		const profileDir = this.expandHome(
+			defaultChromeProfilePath(Deno.build.os),
 		);
 		const indexBookmarks = this.config.index_bookmarks !== false;
 		const indexHistory = this.config.index_history !== false;
 		const range = String(this.config.history_range ?? '90d');
 		const skipNonWeb = this.config.history_skip_non_web !== false;
-
 		const prev: State = this.lastState ?? {};
-		// State carried across yields. The delete-diff id sets (`*_ids`) are only
-		// committed in the final yield, after a full scan proves what survived.
-		const state: State = {
-			history_cursor: prev.history_cursor,
-			history_ids: prev.history_ids,
-			bookmark_ids: prev.bookmark_ids,
-		};
 
-		// ---- Bookmarks ----
-		const currentBookmarkIds = new Set<string>();
-		let bookmarksScanned = false;
+		// A missing profile is an error, never "everything was deleted".
+		let profileFound: boolean;
+		try {
+			profileFound = statSync(profileDir).isDirectory();
+		} catch (error) {
+			if (!isNotFound(error)) throw error;
+			profileFound = false;
+		}
+		if (!profileFound) {
+			throw new Error(
+				`Chrome profile not found at ${profileDir}. Open Google Chrome with its Default profile once, then sync again.`,
+			);
+		}
+
+		// Intermediate batches carry updates only; the final batch commits
+		// state once every enabled source has been scanned.
+		let bookmarkScan: Scan | null = null;
 		if (indexBookmarks) {
-			const bookmarksPath = join(profileDir, 'Bookmarks');
-			if (existsSync(bookmarksPath)) {
-				bookmarksScanned = true;
-				const parsed = JSON.parse(readFileSync(bookmarksPath, 'utf8'));
-				const updates = [];
-				for (const entry of flattenBookmarks(parsed)) {
-					const doc = buildBookmarkDoc(entry);
-					if (currentBookmarkIds.has(doc.id)) continue;
-					currentBookmarkIds.add(doc.id);
-					updates.push(upsert(doc));
-				}
-				if (updates.length > 0) {
-					yield { updates, state };
-				}
+			const updates = [];
+			bookmarkScan = { seen: new Set(), complete: true };
+			for (const entry of readBookmarks(join(profileDir, 'Bookmarks'))) {
+				const doc = buildBookmarkDoc(entry);
+				if (bookmarkScan.seen.has(doc.id)) continue;
+				bookmarkScan.seen.add(doc.id);
+				updates.push(upsert(doc));
 			}
+			if (updates.length > 0) yield { updates };
 		}
 
-		// ---- History ----
-		const currentHistoryIds = new Set<string>();
-		let historyScanned = false;
+		let historyScan: HistoryScan | null = null;
 		if (indexHistory) {
-			const historyPath = join(profileDir, 'History');
-			if (existsSync(historyPath)) {
-				historyScanned = true;
-				for await (
-					const batch of this.scanHistory(historyPath, range, skipNonWeb, prev)
-				) {
-					if (batch.cursor != null) state.history_cursor = batch.cursor;
-					for (const id of batch.ids) currentHistoryIds.add(id);
-					if (batch.updates.length > 0) {
-						yield { updates: batch.updates, state };
-					}
-				}
-			}
+			historyScan = {
+				seen: new Set(),
+				complete: false,
+				cursor: parseWebkitTimestamp(prev.history_cursor) ?? 0n,
+			};
+			yield* this.scanHistory(
+				join(profileDir, 'History'),
+				range,
+				skipNonWeb,
+				prev,
+				historyScan,
+			);
 		}
+		// Cancelled: stop without deletes or state.
+		if (this.signal.aborted || historyScan?.complete === false) return;
 
-		// ---- Deletes + final state commit ----
-		const deletes = [];
-
-		if (!indexBookmarks) {
-			for (const id of prev.bookmark_ids ?? []) deletes.push(del(id));
-			state.bookmark_ids = [];
-		} else if (bookmarksScanned) {
-			for (const id of computeDeletes(prev.bookmark_ids, currentBookmarkIds)) {
-				deletes.push(del(id));
-			}
-			state.bookmark_ids = [...currentBookmarkIds];
-		} else {
-			state.bookmark_ids = prev.bookmark_ids;
-		}
-
-		if (!indexHistory) {
-			for (const id of prev.history_ids ?? []) deletes.push(del(id));
-			state.history_ids = [];
-		} else if (historyScanned) {
-			for (const id of computeDeletes(prev.history_ids, currentHistoryIds)) {
-				deletes.push(del(id));
-			}
-			state.history_ids = [...currentHistoryIds];
-		} else {
-			state.history_ids = prev.history_ids;
-		}
-
+		const deletes = [
+			...sourceDeletes(prev.bookmark_ids, bookmarkScan),
+			...sourceDeletes(prev.history_ids, historyScan),
+		].map((id) => del(id));
+		const state: State = {
+			history_cursor: historyScan && historyScan.cursor > 0n
+				? historyScan.cursor.toString()
+				: undefined,
+			history_ids: historyScan ? [...historyScan.seen] : [],
+			bookmark_ids: bookmarkScan ? [...bookmarkScan.seen] : [],
+		};
 		yield { updates: deletes, state };
 	}
 
+	/**
+	 * Upserts in-range history rows that are new since the cursor or not yet
+	 * indexed, and records every in-range id in `scan.seen`. Sets
+	 * `scan.complete` only after every row was read.
+	 */
 	private async *scanHistory(
 		historyPath: string,
 		range: string,
 		skipNonWeb: boolean,
 		prev: State,
-	): AsyncGenerator<
-		{
-			updates: ReturnType<typeof upsert>[];
-			ids: string[];
-			cursor: string | null;
-		}
-	> {
+		scan: HistoryScan,
+	): AsyncGenerator<PollResult> {
 		const cutoff = historyCutoffWebkitMicros(
 			historyRangeToMaxAgeDays(range),
 			Date.now(),
 		);
 		const prevCursor = parseWebkitTimestamp(prev.history_cursor);
+		// Ids the last committed poll indexed. An in-range row missing here
+		// (range widened, history re-enabled, filter relaxed) is backfilled
+		// even when it is older than the cursor.
+		const indexed = new Set(prev.history_ids ?? []);
 
-		// Chrome locks the live DB and may keep recent writes in a WAL, so copy
-		// History (+ -wal/-shm) to a throwaway dir and open the copy read-write
-		// so SQLite can apply the WAL.
+		// Chrome locks the live DB and keeps in-flight writes in a rollback
+		// journal or a WAL, so copy History with its -journal/-wal/-shm to a
+		// throwaway dir and open the copy read-write so SQLite can recover it.
 		const tmpRoot = mkdtempSync(join(tmpdir(), 'gety-chrome-'));
 		const tmpDb = join(tmpRoot, 'History');
 		try {
-			copyFileSync(historyPath, tmpDb);
-			for (const ext of ['-wal', '-shm']) {
-				if (existsSync(historyPath + ext)) {
+			try {
+				copyFileSync(historyPath, tmpDb);
+			} catch (error) {
+				if (!isNotFound(error)) throw error;
+				throw new Error(`Chrome History database not found at ${historyPath}.`);
+			}
+			for (const ext of ['-journal', '-wal', '-shm']) {
+				try {
 					copyFileSync(historyPath + ext, tmpDb + ext);
+				} catch (error) {
+					if (!isNotFound(error)) throw error;
 				}
 			}
 
-			// Hygiene: skip phantom rows that were never actually loaded.
+			// Index the pages Chrome's own history list shows: skip phantom rows
+			// never actually loaded, and require a visible visit in range, i.e.
+			// one ending a redirect chain (CHAIN_END) that is neither a subframe
+			// load (AUTO/MANUAL_SUBFRAME) nor KEYWORD_GENERATED. This drops
+			// redirect sources and subframe-only pages; `urls.hidden` is not
+			// used, as Chrome's history list does not use it either.
+			const visibleVisit = [
+				'v.url = urls.id',
+				'(v.transition & 0x20000000) != 0',
+				'(v.transition & 255) NOT IN (3, 4, 10)',
+			];
 			const conditions = [
 				'last_visit_time > 0',
 				'(visit_count > 0 OR typed_count > 0)',
@@ -416,8 +437,12 @@ export default class ChromeConnector extends Connector<ManifestConfig, State> {
 			const params: bigint[] = [];
 			if (cutoff != null) {
 				conditions.push('last_visit_time >= ?');
-				params.push(cutoff);
+				visibleVisit.push('v.visit_time >= ?');
+				params.push(cutoff, cutoff);
 			}
+			conditions.push(
+				`EXISTS (SELECT 1 FROM visits v WHERE ${visibleVisit.join(' AND ')})`,
+			);
 			const sql =
 				`SELECT url, title, visit_count, last_visit_time FROM urls WHERE ${
 					conditions.join(' AND ')
@@ -428,12 +453,9 @@ export default class ChromeConnector extends Connector<ManifestConfig, State> {
 				const stmt = db.prepare(sql);
 				stmt.setReadBigInts(true);
 
-				let updates: ReturnType<typeof upsert>[] = [];
-				const ids: string[] = [];
-				let maxCursor = prevCursor ?? 0n;
-
+				let updates: PollResult['updates'] = [];
 				for (const raw of stmt.iterate(...params)) {
-					if (this.signal.aborted) break;
+					if (this.signal.aborted) return;
 					const r = raw as Record<string, unknown>;
 					const url = typeof r.url === 'string' ? r.url : '';
 					if (!url) continue;
@@ -446,30 +468,24 @@ export default class ChromeConnector extends Connector<ManifestConfig, State> {
 						visitCount: Number(r.visit_count ?? 0),
 						lastVisit,
 					});
-					ids.push(doc.id);
-					if (lastVisit > maxCursor) maxCursor = lastVisit;
+					scan.seen.add(doc.id);
+					if (lastVisit > scan.cursor) scan.cursor = lastVisit;
 
-					// Only (re)emit rows new or updated since the last committed cursor.
-					// `>=` keeps the boundary row to avoid missing equal timestamps;
-					// re-upserting it is idempotent.
-					if (prevCursor == null || lastVisit >= prevCursor) {
+					// `>=` keeps the boundary row so equal timestamps are not
+					// missed; re-upserting it is idempotent.
+					if (
+						prevCursor == null || lastVisit >= prevCursor ||
+						!indexed.has(doc.id)
+					) {
 						updates.push(upsert(doc));
 						if (updates.length >= HISTORY_BATCH_SIZE) {
-							yield {
-								updates,
-								ids: ids.splice(0),
-								cursor: maxCursor.toString(),
-							};
+							yield { updates };
 							updates = [];
 						}
 					}
 				}
-
-				yield {
-					updates,
-					ids: ids.splice(0),
-					cursor: maxCursor.toString(),
-				};
+				if (updates.length > 0) yield { updates };
+				scan.complete = true;
 			} finally {
 				db.close();
 			}
@@ -477,4 +493,25 @@ export default class ChromeConnector extends Connector<ManifestConfig, State> {
 			rmSync(tmpRoot, { recursive: true, force: true });
 		}
 	}
+}
+
+interface HistoryScan extends Scan {
+	/** Highest `last_visit_time` seen (WebKit micros), starting at the old cursor. */
+	cursor: bigint;
+}
+
+/**
+ * Bookmarks in the profile's `Bookmarks` file. A missing file is a profile
+ * without bookmarks; an unrecognized format fails the poll (see
+ * flattenBookmarks) instead of deleting bookmarks.
+ */
+function readBookmarks(path: string): BookmarkEntry[] {
+	let text: string;
+	try {
+		text = readFileSync(path, 'utf8');
+	} catch (error) {
+		if (isNotFound(error)) return [];
+		throw error;
+	}
+	return flattenBookmarks(JSON.parse(text));
 }

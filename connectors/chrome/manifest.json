@@ -2,7 +2,7 @@
 	"id": "chrome",
 	"name": "Google Chrome",
 	"version": "0.1.0",
-	"min_gety_app_version": "0.5.1",
+	"min_gety_app_version": "0.7.0",
 	"entry": "dist/main.js",
 	"icon": "icon.png",
 	"description": "Indexes Google Chrome bookmarks and browsing history from a local Chrome profile.",
@@ -10,6 +10,19 @@
 		"name": "yuche"
 	},
 	"capabilities": ["data-source"],
+	"permissions": {
+		"read": [
+			{ "path": "~/.config/google-chrome/Default", "os": ["linux"] },
+			{
+				"path": "~/Library/Application Support/Google/Chrome/Default",
+				"os": ["macos"]
+			},
+			{
+				"path": "~/AppData/Local/Google/Chrome/User Data/Default",
+				"os": ["windows"]
+			}
+		]
+	},
 	"schedule": {
 		"strategy": "interval",
 		"interval_seconds": 3600
@@ -49,6 +62,7 @@
 				"title": "History time range",
 				"type": "dropdown",
 				"required": true,
+				"default_value": "90d",
 				"description": "How far back to index browsing history. Pick the time window to index — only pages visited within it are indexed.",
 				"options": [
 					{

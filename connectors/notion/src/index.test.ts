@@ -200,6 +200,21 @@ Deno.test('buildPageDoc prepends database properties to the content', () => {
 	assert.equal(plain.content, '# Body\n');
 });
 
+Deno.test('buildPageDoc truncates oversized content within the byte budget', () => {
+	// 3-byte characters, so the cut has to land on a code point boundary.
+	const doc = buildPageDoc(
+		{ object: 'page', id: 'big', properties: {} },
+		'界'.repeat(3_000_000),
+	);
+	const content = doc.content ?? '';
+	const bytes = new TextEncoder().encode(content).length;
+
+	assert.equal(doc.original_file_size, bytes);
+	assert.ok(bytes <= 8_000_000, `${bytes} bytes`);
+	assert.ok(bytes > 7_999_000, `${bytes} bytes`);
+	assert.match(content, /^界+\n\n…\(content truncated\)$/);
+});
+
 Deno.test('stale or malformed state triggers a full resync', () => {
 	assert.deepEqual(knownPagesFromState(undefined), {});
 	assert.deepEqual(knownPagesFromState({ pages: { a: TS_OLD } }), {});

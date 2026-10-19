@@ -1,3 +1,5 @@
+import { isRecord } from '@gety-connectors/utils/json';
+
 export interface NotionRichTextItem {
 	type?: string;
 	plain_text?: string;
@@ -42,10 +44,6 @@ export interface NotionPage {
 	in_trash?: boolean;
 	parent?: unknown;
 	properties?: Record<string, unknown>;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function blockPayload(block: NotionBlock): Record<string, unknown> {

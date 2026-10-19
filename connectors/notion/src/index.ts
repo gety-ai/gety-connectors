@@ -5,13 +5,15 @@ import {
 	upsert,
 	type WireDoc,
 } from '@gety-ai/connector-sdk';
+import { isRecord } from '@gety-connectors/utils/json';
 import { createLogger, type Logger } from '@gety-connectors/utils/log';
 import { staleIds } from '@gety-connectors/utils/reconcile';
+import { clampUtf8, MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { isObjectNotFound, NotionClient } from './notion/api.ts';
 import { blocksToMarkdown } from './notion/markdown.ts';
 import { propertiesToMarkdown } from './notion/properties.ts';
-import { isRecord, notionObjectUrl, type NotionPage } from './notion/types.ts';
+import { notionObjectUrl, type NotionPage } from './notion/types.ts';
 
 /** Persisted incremental state: page id → last seen `last_edited_time`. */
 export type NotionState = {
@@ -23,8 +25,6 @@ export type NotionState = {
 export const STATE_VERSION = 1;
 
 const DOC_TYPE = 'notion:page';
-/** Stay under Gety's ~10 MB per-document content limit. */
-const MAX_CONTENT_BYTES = 8_000_000;
 const TRUNCATION_NOTICE = '\n\n…(content truncated)';
 /**
  * Notion rounds `last_edited_time` down to the minute, so an edit later in
@@ -62,7 +62,11 @@ export function pageTitle(page: NotionPage): string {
 }
 
 export function buildPageDoc(page: NotionPage, markdown: string): WireDoc {
-	const { content, bytes } = clampContent(withProperties(page, markdown));
+	const { content, bytes } = clampUtf8(
+		withProperties(page, markdown),
+		MAX_CONTENT_BYTES,
+		TRUNCATION_NOTICE,
+	);
 	const metadata: Record<string, string> = {
 		url: typeof page.url === 'string' && page.url.length > 0
 			? page.url
@@ -135,28 +139,6 @@ export function knownPagesFromState(
 		}
 	}
 	return pages;
-}
-
-function clampContent(text: string): { content: string; bytes: number } {
-	const encoder = new TextEncoder();
-	const bytes = encoder.encode(text).length;
-	if (bytes <= MAX_CONTENT_BYTES) {
-		return { content: text, bytes };
-	}
-
-	const budget = MAX_CONTENT_BYTES - encoder.encode(TRUNCATION_NOTICE).length;
-	let end = Math.min(text.length, budget);
-	let sliced = text.slice(0, end);
-	while (end > 0 && encoder.encode(sliced).length > budget) {
-		end = Math.floor(end * 0.9);
-		sliced = text.slice(0, end);
-	}
-	// Do not end on a dangling surrogate half.
-	if (/[\uD800-\uDBFF]$/.test(sliced)) {
-		sliced = sliced.slice(0, -1);
-	}
-	const content = sliced + TRUNCATION_NOTICE;
-	return { content, bytes: encoder.encode(content).length };
 }
 
 export default class NotionConnector extends Connector<

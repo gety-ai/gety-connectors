@@ -1,7 +1,8 @@
+import { isRecord } from '@gety-connectors/utils/json';
+import { httpUrl, markdownLink, pipeTable } from '@gety-connectors/utils/text';
 import {
 	type BlockNode,
 	blockPayload,
-	isRecord,
 	notionObjectUrl,
 	type NotionRichTextItem,
 	richTextOf,
@@ -62,11 +63,13 @@ function renderRichTextItem(item: NotionRichTextItem): string {
 		}
 	}
 
-	const href = typeof item.href === 'string' && item.href.length > 0
-		? item.href
-		: null;
-	const decorated = href != null && core.length > 0
-		? `[${core}](${mdUrl(href)})`
+	// Links to Notion pages come as paths ("/<page id>"); resolve them against
+	// the Notion site. Anything that is not http(s) stays plain text.
+	const href = typeof item.href === 'string'
+		? httpUrl(URL.parse(item.href, 'https://www.notion.so')?.href)
+		: undefined;
+	const decorated = href !== undefined && core.length > 0
+		? `[${core}](<${href}>)`
 		: core;
 	return leading + decorated + trailing;
 }
@@ -165,14 +168,14 @@ function renderNode(
 			};
 		}
 		case 'image': {
-			const url = fileUrl(payload);
-			if (url == null) {
+			const href = httpUrl(fileUrl(payload));
+			if (href === undefined) {
 				return null;
 			}
 			const caption = richTextToPlain(richTextOf(payload, 'caption')).trim();
 			const alt = caption.length > 0 ? caption : 'image';
 			return {
-				text: `${indent}![${escapeBrackets(alt)}](${mdUrl(url)})`,
+				text: `${indent}!${markdownLink(alt, href)}`,
 				listItem: false,
 			};
 		}
@@ -191,7 +194,7 @@ function renderNode(
 			const caption = richTextToPlain(richTextOf(payload, 'caption')).trim();
 			const label = caption.length > 0 ? caption : url;
 			return {
-				text: `${indent}[${escapeBrackets(label)}](${mdUrl(url)})`,
+				text: `${indent}${markdownLink(label, url)}`,
 				listItem: false,
 			};
 		}
@@ -205,7 +208,9 @@ function renderNode(
 				return null;
 			}
 			return {
-				text: `${indent}[Linked page](${notionObjectUrl(target)})`,
+				text: `${indent}${
+					markdownLink('Linked page', notionObjectUrl(target))
+				}`,
 				listItem: false,
 			};
 		}
@@ -215,9 +220,9 @@ function renderNode(
 			const icon = block.type === 'child_page' ? '📄' : '🗃️';
 			const label = title.length > 0 ? title : 'Untitled';
 			return {
-				text: `${indent}${icon} [${escapeBrackets(label)}](${
-					notionObjectUrl(block.id)
-				})`,
+				text: `${indent}${icon} ${
+					markdownLink(label, notionObjectUrl(block.id))
+				}`,
 				listItem: false,
 			};
 		}
@@ -342,14 +347,14 @@ function attachmentChunk(
 	indent: string,
 ): Chunk | null {
 	const url = fileUrl(payload);
-	if (url == null) {
+	if (url === undefined) {
 		return null;
 	}
 	const caption = richTextToPlain(richTextOf(payload, 'caption')).trim();
 	const name = typeof payload.name === 'string' ? payload.name.trim() : '';
 	const label = caption.length > 0 ? caption : name.length > 0 ? name : type;
 	return {
-		text: `${indent}[${escapeBrackets(label)}](${mdUrl(url)})`,
+		text: `${indent}${markdownLink(label, url)}`,
 		listItem: false,
 	};
 }
@@ -367,37 +372,19 @@ function tableChunk(
 				return [];
 			}
 			return cells.map((cell) =>
-				tableCellText(Array.isArray(cell) ? cell.filter(isRecord) : [])
+				richTextToMarkdown(
+					Array.isArray(cell) ? cell.filter(isRecord) : [],
+				)
 			);
 		});
 	if (rows.length === 0) {
 		return null;
 	}
-
-	const width = Math.max(
-		typeof payload.table_width === 'number' ? payload.table_width : 0,
-		...rows.map((row) => row.length),
-		1,
-	);
-	const pad = (row: string[]): string[] =>
-		Array.from({ length: width }, (_, index) => row[index] ?? '');
-
-	const hasHeader = payload.has_column_header === true;
-	const header = hasHeader ? pad(rows[0]) : Array(width).fill('');
-	const body = hasHeader ? rows.slice(1) : rows;
-	const lines = [
-		`| ${header.join(' | ')} |`,
-		`| ${Array(width).fill('---').join(' | ')} |`,
-		...body.map((row) => `| ${pad(row).join(' | ')} |`),
-	];
-	return { text: prefixLines(lines.join('\n'), indent), listItem: false };
-}
-
-function tableCellText(cell: NotionRichTextItem[]): string {
-	return richTextToMarkdown(cell)
-		.replaceAll('\n', ' ')
-		.replaceAll('|', '\\|')
-		.trim();
+	const table = pipeTable(rows, {
+		header: payload.has_column_header === true,
+		width: typeof payload.table_width === 'number' ? payload.table_width : 0,
+	});
+	return { text: prefixLines(table, indent), listItem: false };
 }
 
 function calloutIcon(payload: Record<string, unknown>): string {
@@ -408,7 +395,7 @@ function calloutIcon(payload: Record<string, unknown>): string {
 	return '💡';
 }
 
-function fileUrl(payload: Record<string, unknown>): string | null {
+function fileUrl(payload: Record<string, unknown>): string | undefined {
 	const external = payload.external;
 	if (isRecord(external) && typeof external.url === 'string') {
 		return external.url;
@@ -417,16 +404,7 @@ function fileUrl(payload: Record<string, unknown>): string | null {
 	if (isRecord(file) && typeof file.url === 'string') {
 		return file.url;
 	}
-	return null;
-}
-
-function escapeBrackets(text: string): string {
-	return text.replaceAll('[', '\\[').replaceAll(']', '\\]');
-}
-
-/** Parentheses in a link target would end the Markdown link early. */
-function mdUrl(url: string): string {
-	return url.replaceAll('(', '%28').replaceAll(')', '%29');
+	return undefined;
 }
 
 function prefixLines(text: string, prefix: string): string {

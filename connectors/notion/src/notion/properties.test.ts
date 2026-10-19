@@ -73,7 +73,7 @@ Deno.test('propertiesToMarkdown renders formulas, rollups and relations', () => 
 			'- **Total:** 7',
 			'- **Window:** 2026-01-01',
 			'- **Names:** x',
-			'- **Parent:** [Related page](https://www.notion.so/abc123)',
+			'- **Parent:** [Related page](<https://www.notion.so/abc123>)',
 		].join('\n'),
 	);
 });

@@ -1,5 +1,7 @@
-import { isRecord, notionObjectUrl, type NotionRichTextItem } from './types.ts';
+import { isRecord } from '@gety-connectors/utils/json';
+import { markdownLink } from '@gety-connectors/utils/text';
 import { richTextToMarkdown } from './markdown.ts';
+import { notionObjectUrl, type NotionRichTextItem } from './types.ts';
 
 /**
  * Renders a page's non-title properties as a Markdown bullet list.
@@ -70,7 +72,7 @@ function propertyValue(type: string, value: unknown): string | null {
 				value,
 				(item) =>
 					typeof item.id === 'string'
-						? `[Related page](${notionObjectUrl(item.id)})`
+						? markdownLink('Related page', notionObjectUrl(item.id))
 						: null,
 			);
 		case 'formula':

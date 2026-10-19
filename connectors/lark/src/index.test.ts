@@ -4,7 +4,6 @@ import {
 	buildChatPeriodDoc,
 	buildCloudDoc,
 	chatTitle,
-	clampContent,
 	dayStartISO,
 	groupDaysByPeriod,
 	groupMessagesByDay,
@@ -35,21 +34,6 @@ Deno.test('week periods key on Monday and label as a date range', () => {
 		'2026-07-06 ~ 2026-07-12',
 	);
 	assert.equal(periodLabel('2026-07-10', 'day'), '2026-07-10');
-});
-
-Deno.test('clampContent keeps small content and truncates huge content', () => {
-	const small = clampContent('# hello');
-	assert.equal(small.content, '# hello');
-	assert.equal(small.bytes, 7);
-
-	const huge = clampContent('宇'.repeat(4_000_000));
-	assert.ok(huge.bytes <= 8_000_000);
-	assert.ok(huge.content.endsWith('…(内容超长,已被连接器截断)'));
-	// The cut must not split a UTF-16 surrogate pair or a multibyte rune.
-	assert.equal(
-		new TextEncoder().encode(huge.content).length,
-		huge.bytes,
-	);
 });
 
 Deno.test('isUnchangedDoc gates refetch on index membership and signature', () => {

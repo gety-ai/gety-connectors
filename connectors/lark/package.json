@@ -27,7 +27,7 @@
 		"id": "lark",
 		"name": "Feishu",
 		"version": "0.1.0",
-		"min_gety_app_version": "0.5.1",
+		"min_gety_app_version": "0.7.0",
 		"capabilities": [
 			"data-source"
 		],
@@ -44,6 +44,11 @@
 		"doc_link": {
 			"kind": "url",
 			"field": "url"
+		},
+		"permissions": {
+			"run": [
+				"lark-cli"
+			]
 		},
 		"config": {
 			"fields": [
@@ -72,10 +77,10 @@
 						},
 						{
 							"value": "chat",
-							"label": "不分组(每个会话一篇)"
+							"label": "不分组(回溯窗口内每个会话一篇)"
 						}
 					],
-					"description": "每个会话按周、按天,或不分组(整个会话一篇)聚合为可搜索文档。修改此项后会删除并重新索引全部聊天记录。"
+					"description": "每个会话按周、按天,或不分组(回溯窗口内的整段会话一篇)聚合为可搜索文档。修改此项后会删除并重新索引全部聊天记录。"
 				},
 				{
 					"id": "chat_history_days",
@@ -84,14 +89,6 @@
 					"required": false,
 					"default_value": 30,
 					"description": "首次同步回填多少天的聊天记录,之后为增量同步。"
-				},
-				{
-					"id": "lark_cli_path",
-					"title": "lark-cli 路径",
-					"type": "text",
-					"required": false,
-					"default_value": "lark-cli",
-					"description": "lark-cli 可执行文件的路径。已在 PATH 中则保持默认。"
 				}
 			]
 		}

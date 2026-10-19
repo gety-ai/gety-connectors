@@ -1,4 +1,7 @@
+import { createLogger, type Logger } from '@gety-connectors/utils/log';
 import {
+	errorMessage,
+	isFatalError,
 	LarkCliClient,
 	LarkCliError,
 	type SearchEntity,
@@ -47,7 +50,6 @@ export class DocLocationResolver {
 	private spaces = new Map<string, Promise<string | undefined>>();
 	private drive?: Promise<Map<string, CloudPosition>>;
 	private wikiUnavailable = false;
-	private warnings = new Set<string>();
 	private client: LarkCliClient;
 	private budget = new AbortController();
 	private deadline: number;
@@ -56,6 +58,7 @@ export class DocLocationResolver {
 		client: LarkCliClient,
 		private signal: AbortSignal,
 		private budgetMs = LOCATION_BUDGET_MS,
+		private logger: Logger = createLogger('lark'),
 	) {
 		this.deadline = Date.now() + budgetMs;
 		// Exhausting the budget kills in-flight lookup subprocesses.
@@ -281,10 +284,9 @@ export class DocLocationResolver {
 	private exhaust(): void {
 		if (this.budget.signal.aborted) return;
 		this.budget.abort(new LocationBudgetExhausted());
-		console.error(
-			`[feishu] source location lookups exceeded ${
-				Math.round(this.budgetMs / 1000)
-			}s this poll; keeping last known locations for the remaining documents`,
+		this.logger.warn(
+			'source location lookups ran out of time this poll; keeping last known locations for the remaining documents',
+			{ budget_s: Math.round(this.budgetMs / 1000) },
 		);
 	}
 
@@ -302,13 +304,16 @@ export class DocLocationResolver {
 		return Promise.race([request(), expiry]).finally(() => clearTimeout(timer));
 	}
 
+	/**
+	 * Location metadata is optional, so a failed lookup is logged once per
+	 * source and skipped — unless the failure would hit every call (sandbox
+	 * denial, lark-cli missing), which must fail the poll.
+	 */
 	private warn(source: string, error: unknown): void {
-		if (this.warnings.has(source)) return;
-		this.warnings.add(source);
-		console.error(
-			`[feishu] optional ${source} metadata unavailable: ${
-				error instanceof Error ? error.message : String(error)
-			}`,
+		if (isFatalError(error, this.signal)) throw error;
+		this.logger.warnOnce(
+			source,
+			`optional ${source} metadata unavailable: ${errorMessage(error)}`,
 		);
 	}
 }

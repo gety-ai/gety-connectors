@@ -170,6 +170,21 @@ Deno.test('retries network errors and gives up with a TransportError', async () 
 	assert.equal(down.calls.length, 3);
 });
 
+Deno.test('sandbox denials are rethrown unchanged without a retry', async () => {
+	for (
+		const denial of [
+			new Deno.errors.NotCapable(
+				'Requires net access to "api.example.test:443"',
+			),
+			new TypeError('Requires net access to "api.example.test:443"'),
+		]
+	) {
+		const { fetch, calls } = scripted([denial, json({ ok: 1 })]);
+		await assert.rejects(request(fetch), (error) => error === denial);
+		assert.equal(calls.length, 1);
+	}
+});
+
 Deno.test('a stalled attempt times out and is retried', async () => {
 	const { fetch, calls } = scripted([hang, json({ ok: 1 })]);
 	assert.deepEqual(await request(fetch, { timeoutMs: 10 }), { ok: 1 });

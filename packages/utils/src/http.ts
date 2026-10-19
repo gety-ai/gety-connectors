@@ -126,6 +126,8 @@ export interface JsonRequestInit {
  * Sends a request and returns the 2xx response body as a JSON object.
  *
  * - Caller cancellation: `signal.reason` is thrown, never retried or wrapped.
+ * - A sandbox denial (the manifest grants no net access to the host) is
+ *   thrown unchanged, never retried: it cannot succeed on a later attempt.
  * - `TransportError` (network error, timeout) and `HttpError` with a status
  *   in `retry.statuses` are retried, honoring Retry-After within the cap.
  * - Other non-2xx: `HttpError`. 2xx without a JSON object body:
@@ -165,6 +167,9 @@ export async function requestJson<T = Record<string, unknown>>(
 			text = await response.text();
 		} catch (error) {
 			signal.throwIfAborted();
+			if (isSandboxDenial(error)) {
+				throw error;
+			}
 			throw new TransportError(request, error, timeoutMs);
 		}
 		if (!response.ok) {
@@ -202,6 +207,16 @@ export async function requestJson<T = Record<string, unknown>>(
 			};
 		},
 	});
+}
+
+/**
+ * Deno's denial of an ungranted host: `NotCapable`, or the `TypeError` fetch
+ * throws when DNS resolution is denied.
+ */
+function isSandboxDenial(error: unknown): boolean {
+	return error instanceof Deno.errors.NotCapable ||
+		(error instanceof TypeError &&
+			error.message.includes('Requires net access'));
 }
 
 function urlPath(url: string): string {

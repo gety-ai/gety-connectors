@@ -42,13 +42,10 @@ The connector never stores Lark credentials itself. All API calls go through
 
 ## Install in Gety
 
-1. Build the connector (requires [Deno](https://deno.com/)):
-
-   ```bash
-   deno task verify
-   ```
-
-2. In Gety, open **Custom Connectors** and install this folder.
+1. In Gety, open **Custom Connectors**.
+2. Install from npm (`@gety-connectors/lark`), or run `deno task build`
+   (requires [Deno](https://deno.com/)) and install from this local folder
+   (build output is not committed).
 3. Fill in the settings (labels are in Chinese):
 
    | Setting (中文)   | Default     | Meaning                                                                                                             |

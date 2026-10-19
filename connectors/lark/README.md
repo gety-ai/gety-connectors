@@ -36,13 +36,9 @@
 
 ## 安装到 Gety
 
-1. 构建连接器(需要 [Deno](https://deno.com/)):
-
-   ```bash
-   deno task verify
-   ```
-
-2. 在 Gety 中打开 **Custom Connectors**,安装本文件夹。
+1. 在 Gety 中打开 **Custom Connectors**。
+2. 从 npm 安装(`@gety-connectors/lark`);或者先运行 `deno task build`(需要
+   [Deno](https://deno.com/)),再从本地安装本文件夹(构建产物不入库)。
 3. 填写设置:
 
    | 设置项           | 默认值     | 含义                                                                              |

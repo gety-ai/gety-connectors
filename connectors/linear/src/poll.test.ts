@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { DocUpdate } from '@gety-ai/connector-sdk';
 import { jsonResponse, runPoll } from '@gety-connectors/testing';
 import { type FakeIssue, FakeLinear, withFakeLinear } from './fake_linear.ts';
 import LinearConnector from './index.ts';
@@ -372,4 +373,117 @@ Deno.test('poll replays the same state to the same updates', async () => {
 	assert.equal(first.outcome, 'done', String(first.error));
 	assert.deepEqual(replay.updates, first.updates);
 	assert.deepEqual(replay.committedState, first.committedState);
+});
+
+const SKEW_MS = 10 * 60_000;
+
+function commentDeltaBoundaries(fake: FakeLinear): number[] {
+	return fake.requests
+		.filter((request) => request.operation === 'GetyLinearCommentDelta')
+		.map((request) => Date.parse(String(request.variables.boundary)));
+}
+
+Deno.test('a full rebuild starts the comment cursor at the rebuild', async () => {
+	const fake = new FakeLinear();
+	fake.issues = [issue(1)];
+	fake.comments = [changedComment('c1', 'issue-1', 2)];
+	const pollStarted = Date.now();
+
+	const run = await poll(fake);
+
+	assert.equal(run.outcome, 'done', String(run.error));
+	// The rebuild already rendered c1; scanning comments from the epoch would
+	// rebuild issue-1 a second time.
+	assert.equal(run.updates.length, 1);
+	const [boundary] = commentDeltaBoundaries(fake);
+	assert.ok(
+		boundary >= pollStarted - SKEW_MS - 60_000,
+		`comment delta started at ${new Date(boundary).toISOString()}`,
+	);
+});
+
+Deno.test('a rebuild spanning polls keeps its start time for comments', async () => {
+	const fake = new FakeLinear();
+	fake.issues = Array.from({ length: 501 }, (_, i) => issue(i));
+	const pollStarted = Date.now();
+
+	const first = await poll(fake);
+	const capped = first.committedState as Record<string, unknown>;
+	const second = await poll(fake, { lastState: first.committedState });
+
+	assert.equal(second.outcome, 'done', String(second.error));
+	const rebuildStartedAt = Date.parse(String(capped.rebuild_started_at));
+	assert.ok(rebuildStartedAt >= pollStarted - SKEW_MS - 60_000);
+	const done = second.committedState as Record<string, unknown>;
+	assert.equal(done.last_comment_updated_at, capped.rebuild_started_at);
+	assert.equal(done.rebuild_started_at, undefined);
+});
+
+Deno.test('enabling comments mid issue pass rebuilds from the first page', async () => {
+	// An incremental pass without comments stopped at the cap, leaving a cursor
+	// into the list filtered by updatedAt.
+	const fake = new FakeLinear();
+	fake.issues = Array.from({ length: 13 }, (_, i) => issue(i + 1));
+	const lastState = {
+		schema_version: 2,
+		index_comments: false,
+		last_issue_updated_at: '2026-06-03T00:10:00.000Z',
+		issue_delta_after: 'cursor:issue-12',
+		issue_delta_boundary: '2026-06-03T00:09:59.000Z',
+	};
+
+	const run = await poll(fake, { lastState, indexComments: true });
+
+	assert.equal(run.outcome, 'done', String(run.error));
+	assert.equal(run.updates.length, 13);
+	assert.equal(fake.requests[0].variables.after, undefined);
+});
+
+function docContent(updates: DocUpdate[], id: string): string {
+	const update = updates.find((u) => u.kind === 'upsert' && u.doc.id === id);
+	assert.ok(update?.kind === 'upsert', `no upsert for ${id}`);
+	return String(update.doc.content);
+}
+
+Deno.test('enabling comments during a capped rebuild restarts it', async () => {
+	const fake = new FakeLinear();
+	fake.issues = Array.from({ length: 501 }, (_, i) => issue(i));
+	fake.comments = [changedComment('c-old', 'issue-0', 2)];
+
+	const first = await poll(fake, { indexComments: false });
+	const second = await poll(fake, {
+		lastState: first.committedState,
+		indexComments: true,
+	});
+	const third = await poll(fake, {
+		lastState: second.committedState,
+		indexComments: true,
+	});
+
+	assert.equal(third.outcome, 'done', String(third.error));
+	// The pages of the first poll were rendered without comments; the rebuild
+	// must render them again instead of resuming at issue 500.
+	assert.match(docContent(second.updates, 'linear:issue:issue-0'), /c-old/);
+	const restarted = second.committedState as Record<string, unknown>;
+	const done = third.committedState as Record<string, unknown>;
+	assert.equal(done.last_comment_updated_at, restarted.rebuild_started_at);
+});
+
+Deno.test('disabling comments during a capped rebuild restarts it', async () => {
+	const fake = new FakeLinear();
+	fake.issues = Array.from({ length: 501 }, (_, i) => issue(i));
+	fake.comments = [changedComment('c-old', 'issue-0', 2)];
+
+	const first = await poll(fake, { indexComments: true });
+	assert.match(docContent(first.updates, 'linear:issue:issue-0'), /c-old/);
+	const second = await poll(fake, {
+		lastState: first.committedState,
+		indexComments: false,
+	});
+
+	assert.equal(second.outcome, 'done', String(second.error));
+	assert.doesNotMatch(
+		docContent(second.updates, 'linear:issue:issue-0'),
+		/c-old/,
+	);
 });

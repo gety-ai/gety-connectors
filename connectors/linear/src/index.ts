@@ -30,6 +30,10 @@ export interface LinearState {
 	issue_delta_boundary?: string;
 	issue_delta_max_updated_at?: string;
 	rebuild_issue_sync?: boolean;
+	// When the in-progress full rebuild fetched its first page, minus the clock
+	// skew allowance. The rebuild saw every comment older than this, so the
+	// comment cursor starts here once it completes.
+	rebuild_started_at?: string;
 	last_comment_updated_at?: string;
 	comment_delta_after?: string;
 	comment_delta_boundary?: string;
@@ -55,6 +59,10 @@ interface SyncOptions {
 
 	// Timestamp overlap used by incremental polling to avoid boundary misses.
 	incrementalOverlapMs: number;
+
+	// Allowance for this machine's clock running ahead of Linear's, subtracted
+	// from the local time a full rebuild starts at.
+	rebuildClockSkewMs: number;
 }
 
 const DEFAULT_SYNC_OPTIONS: SyncOptions = {
@@ -64,6 +72,7 @@ const DEFAULT_SYNC_OPTIONS: SyncOptions = {
 	maxCommentDeltasPerPoll: 50,
 	issueCommentPageSize: 50,
 	incrementalOverlapMs: 1000,
+	rebuildClockSkewMs: 10 * 60_000,
 };
 
 export const STATE_SCHEMA_VERSION = 2;
@@ -200,14 +209,29 @@ export default class LinearConnector
 			rebuildAllIssues,
 			this.syncOptions,
 		);
-		const after = previousState.issue_delta_after;
+		// A rebuild starts at the first page, with a fresh start time, unless it
+		// is already in progress under the current schema and comment setting.
+		// This ignores a cursor left by an incremental pass, and restarts a
+		// rebuild whose earlier pages were rendered under another setting.
+		const startingRebuild = rebuildAllIssues &&
+			(previousState.rebuild_issue_sync !== true ||
+				shouldRebuildAllIssuesForState(previousState, this.indexComments));
+		const after = startingRebuild ? undefined : previousState.issue_delta_after;
+		const rebuildStartedAt = !rebuildAllIssues
+			? undefined
+			: startingRebuild
+			? new Date(Date.now() - this.syncOptions.rebuildClockSkewMs)
+				.toISOString()
+			: previousState.rebuild_started_at;
 		const boundary = buildIssueBoundary(
 			previousState,
 			rebuildAllIssues,
 			this.syncOptions,
 		);
 		const updates: DocUpdate[] = [];
-		let maxUpdatedAt = previousState.issue_delta_max_updated_at;
+		let maxUpdatedAt = startingRebuild
+			? undefined
+			: previousState.issue_delta_max_updated_at;
 
 		log.progress('issue sync started', {
 			mode: rebuildAllIssues ? 'rebuild' : 'incremental',
@@ -267,6 +291,7 @@ export default class LinearConnector
 			nextAfter,
 			hitLimit,
 			rebuildAllIssues,
+			rebuildStartedAt,
 		};
 	}
 
@@ -331,6 +356,7 @@ export interface IssueStateResult {
 	nextAfter?: string;
 	hitLimit: boolean;
 	rebuildAllIssues: boolean;
+	rebuildStartedAt?: string;
 }
 
 interface CommentIssueRebuildResult {
@@ -385,6 +411,15 @@ export function nextStateAfterIssuePage(
 	result: IssueStateResult,
 	indexComments: boolean,
 ): LinearState {
+	const rebuildInProgress = result.nextAfter != null && result.rebuildAllIssues;
+	// A finished rebuild fetched every issue with all its comments, so the
+	// comment delta only has to cover what changed after the rebuild started;
+	// without this it would rescan every comment from the epoch.
+	const commentsCaughtUpAt = result.rebuildAllIssues && !rebuildInProgress &&
+			indexComments
+		? result.rebuildStartedAt
+		: undefined;
+	const keepCommentDelta = indexComments && commentsCaughtUpAt == null;
 	return {
 		schema_version: STATE_SCHEMA_VERSION,
 		last_issue_updated_at: nextIssueUpdatedAt(state, result),
@@ -393,17 +428,18 @@ export function nextStateAfterIssuePage(
 		issue_delta_max_updated_at: result.nextAfter
 			? result.maxUpdatedAt
 			: undefined,
-		rebuild_issue_sync: result.nextAfter && result.rebuildAllIssues
-			? true
-			: undefined,
+		rebuild_issue_sync: rebuildInProgress ? true : undefined,
+		rebuild_started_at: rebuildInProgress ? result.rebuildStartedAt : undefined,
 		last_comment_updated_at: indexComments
-			? state.last_comment_updated_at
+			? maxIsoDate(state.last_comment_updated_at, commentsCaughtUpAt)
 			: undefined,
-		comment_delta_after: indexComments ? state.comment_delta_after : undefined,
-		comment_delta_boundary: indexComments
+		comment_delta_after: keepCommentDelta
+			? state.comment_delta_after
+			: undefined,
+		comment_delta_boundary: keepCommentDelta
 			? state.comment_delta_boundary
 			: undefined,
-		comment_delta_max_updated_at: indexComments
+		comment_delta_max_updated_at: keepCommentDelta
 			? state.comment_delta_max_updated_at
 			: undefined,
 		index_comments: indexComments,
@@ -435,6 +471,7 @@ export function nextStateAfterCommentSync(
 		issue_delta_boundary: state.issue_delta_boundary,
 		issue_delta_max_updated_at: state.issue_delta_max_updated_at,
 		rebuild_issue_sync: state.rebuild_issue_sync,
+		rebuild_started_at: state.rebuild_started_at,
 		last_comment_updated_at: indexComments
 			? nextCommentUpdatedAt(state, delta)
 			: undefined,

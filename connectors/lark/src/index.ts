@@ -6,6 +6,16 @@ import {
 	upsert,
 	type WireDoc,
 } from '@gety-ai/connector-sdk';
+import { sha256Hex } from '@gety-connectors/utils/hash';
+import { createLogger } from '@gety-connectors/utils/log';
+import { paginate } from '@gety-connectors/utils/paginate';
+import { type Enumeration, staleIds } from '@gety-connectors/utils/reconcile';
+import {
+	clampUtf8,
+	httpUrl,
+	markdownLink,
+	MAX_CONTENT_BYTES,
+} from '@gety-connectors/utils/text';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { cleanupDocMarkdown } from './doc_markdown.ts';
 import {
@@ -14,31 +24,51 @@ import {
 	LOCATION_BUDGET_MS,
 } from './doc_location.ts';
 import {
-	buildDocUrl,
 	type ChatMessage,
 	type ChatSummary,
+	errorMessage,
+	isConfirmedGone,
+	isFatalError,
 	isoFromLarkTime,
+	LARK_CLI,
 	LarkCliClient,
 	LarkCliError,
 	type SearchEntity,
 } from './lark_cli.ts';
+import { readPositionCache, writePositionCache } from './position_cache.ts';
 
 export type ChatGrouping = 'day' | 'week' | 'chat';
 
-export type FeishuState = {
-	/** RFC 3339 edit time of the newest cloud document indexed so far. */
-	docs_high_water?: string;
-	/** token -> fetch URL of the cloud documents currently in the index. */
+export type LarkState = {
+	/** token -> fetch ref (source URL, or document token) of indexed cloud docs. */
 	docs?: Record<string, string>;
-	/** Metadata signatures and last known positions; committed after a successful upsert. */
+	/** token -> signature of the indexed version (metadata and source position). */
 	doc_signatures?: Record<string, string>;
-	doc_positions?: Record<string, CloudPosition>;
-	/** chat_id -> local date (YYYY-MM-DD) from which the chat is refetched. */
-	chat_cursors?: Record<string, string>;
-	/** ids of the chat transcript docs currently in the index. */
-	chat_doc_ids?: string[];
-	/** grouping the indexed chat docs were built with. */
+	/** Binds the position cache in the data directory to this state. */
+	positions_epoch?: string;
+	/** chat_id -> what is indexed of that chat. */
+	chats?: Record<string, ChatRecord>;
+	/** Grouping the chat records were built with. */
 	chat_grouping?: ChatGrouping;
+	/**
+	 * Chat doc ids of an earlier grouping, deleted once a chat sync under the
+	 * current grouping completes (until then they stay searchable).
+	 */
+	retired_chat_docs?: string[];
+};
+
+export type ChatRecord = {
+	/**
+	 * Newest indexed message: its local day (YYYY-MM-DD) for day and week
+	 * docs, its "YYYY-MM-DD HH:mm" time for whole-chat docs.
+	 */
+	cursor: string;
+	/** Whole-chat docs: message_id of the newest indexed message. */
+	last_message_id?: string;
+	/** Period keys of the chat's indexed docs ("all" for a whole-chat doc). */
+	periods: string[];
+	/** Signature of the newest period's doc as last upserted. */
+	signature?: string;
 };
 
 const DEFAULT_CHAT_LOOKBACK_DAYS = 30;
@@ -47,11 +77,8 @@ const DEFAULT_CHAT_LOOKBACK_DAYS = 30;
  * bitables, slides, shortcuts, and legacy "doc" documents (rejected by the
  * v2 fetch API) are enumerated by search but not indexed.
  */
-const INDEXABLE_DOC_TYPES = new Set(['docx']);
-/** Stays below Gety's ~10 MB per-document limit with headroom for metadata. */
-const MAX_CONTENT_BYTES = 8_000_000;
+const INDEXABLE_DOC_TYPES: Record<string, true> = { docx: true };
 const TRUNCATION_NOTICE = '\n\n…(内容超长,已被连接器截断)';
-const DELETE_BATCH_SIZE = 200;
 
 export function localDateString(date: Date): string {
 	const year = date.getFullYear();
@@ -94,33 +121,16 @@ export function periodLabel(key: string, grouping: ChatGrouping): string {
 	return grouping === 'week' ? `${key} ~ ${addDays(key, 6)}` : key;
 }
 
-export function clampContent(
-	text: string,
-): { content: string; bytes: number } {
-	const encoder = new TextEncoder();
-	const originalBytes = encoder.encode(text).length;
-	if (originalBytes <= MAX_CONTENT_BYTES) {
-		return { content: text, bytes: originalBytes };
-	}
+/** Document id of a cloud document; never changes once published. */
+export function cloudDocId(token: string): string {
+	return `feishu:doc:${token}`;
+}
 
-	const noticeBytes = encoder.encode(TRUNCATION_NOTICE).length;
-	const budget = MAX_CONTENT_BYTES - noticeBytes;
-	let low = 0;
-	let high = text.length;
-	while (low < high) {
-		const middle = Math.ceil((low + high) / 2);
-		if (encoder.encode(text.slice(0, middle)).length <= budget) {
-			low = middle;
-		} else {
-			high = middle - 1;
-		}
-	}
-	let prefix = text.slice(0, low);
-	if (/[\uD800-\uDBFF]$/.test(prefix)) {
-		prefix = prefix.slice(0, -1);
-	}
-	const content = prefix + TRUNCATION_NOTICE;
-	return { content, bytes: encoder.encode(content).length };
+/** Document id of a chat period doc; never changes once published. */
+export function chatDocId(chatId: string, key: string): string {
+	return key === 'all'
+		? `feishu:chat:${chatId}`
+		: `feishu:chat:${chatId}:${key}`;
 }
 
 export function buildCloudDoc(
@@ -130,42 +140,24 @@ export function buildCloudDoc(
 ): WireDoc {
 	const url = entity.url ?? position.url;
 	const lines: string[] = [];
-	const display = (value: string | undefined): string =>
-		(value ?? '').replace(/\s+/g, ' ').trim().replace(
-			/[\\`*_{}\[\]()<>#!|]/g,
-			'\\$&',
-		);
-	const destination = (value: string | undefined): string | undefined => {
-		if (!value?.trim()) return undefined;
-		try {
-			const link = new URL(value);
-			if (
-				(link.protocol === 'https:' || link.protocol === 'http:') &&
-				!link.username && !link.password
-			) {
-				return link.href.replace(/</g, '%3C').replace(/>/g, '%3E');
-			}
-		} catch { /* Unusable links remain plain text. */ }
-		return undefined;
-	};
-	const labelLink = (
-		name: string | undefined,
-		url: string | undefined,
-	): string => {
-		const text = display(name);
-		const link = destination(url);
-		return text && link ? `[${text}](<${link}>)` : text;
-	};
 	const location = position.location;
 	const pathAncestors = location?.ancestors;
 	const path = pathAncestors?.length &&
 			pathAncestors.map((item) => item.title).join(' / ') === location?.path
-		? pathAncestors.map((item) => labelLink(item.title, item.url)).join(' / ')
-		: display(location?.path);
+		? pathAncestors.map((item) => markdownLink(item.title, item.url)).join(
+			' / ',
+		)
+		: markdownLink(location?.path ?? '', undefined);
 	for (
 		const [label, text] of [
-			['知识库', labelLink(location?.space_name, location?.space_url)],
-			['父节点', labelLink(location?.parent_name, location?.parent_url)],
+			[
+				'知识库',
+				markdownLink(location?.space_name ?? '', location?.space_url),
+			],
+			[
+				'父节点',
+				markdownLink(location?.parent_name ?? '', location?.parent_url),
+			],
 			['目录路径', path],
 		]
 	) {
@@ -176,14 +168,19 @@ export function buildCloudDoc(
 			lines.push(`> **${label}：** ${prefix}${text}`);
 		}
 	}
-	const sourceLink = destination(url);
-	if (sourceLink) lines.push(`> **原链接：** [打开原文](<${sourceLink}>)`);
+	if (httpUrl(url) != null) {
+		lines.push(`> **原链接：** ${markdownLink('打开原文', url)}`);
+	}
 	const markdown = lines.length > 0
 		? `${lines.join('\n>\n')}\n\n---\n\n${raw}`
 		: raw;
-	const { content, bytes } = clampContent(markdown);
+	const { content, bytes } = clampUtf8(
+		markdown,
+		MAX_CONTENT_BYTES,
+		TRUNCATION_NOTICE,
+	);
 	return {
-		id: `feishu:doc:${entity.token}`,
+		id: cloudDocId(entity.token),
 		title: entity.title,
 		content,
 		content_format: 'markdown',
@@ -236,7 +233,7 @@ export function groupMessagesByDay(
 	return byDay;
 }
 
-/** Groups per-day buckets into period buckets ("2026-07-10" or "2026-W28"). */
+/** Groups per-day buckets into period buckets keyed by `periodKey`. */
 export function groupDaysByPeriod(
 	byDay: Map<string, ChatMessage[]>,
 	grouping: ChatGrouping,
@@ -333,11 +330,13 @@ export function buildChatPeriodDoc(
 			}\n\n…(更早的消息因长度限制被省略)`;
 		}
 	}
-	const { content, bytes } = clampContent(rendered);
+	const { content, bytes } = clampUtf8(
+		rendered,
+		MAX_CONTENT_BYTES,
+		TRUNCATION_NOTICE,
+	);
 	return {
-		id: grouping === 'chat'
-			? `feishu:chat:${chat.chat_id}`
-			: `feishu:chat:${chat.chat_id}:${key}`,
+		id: chatDocId(chat.chat_id, key),
 		title: grouping === 'chat' ? title : `${title} · ${label}`,
 		content,
 		content_format: 'markdown',
@@ -345,7 +344,9 @@ export function buildChatPeriodDoc(
 		doc_updated_at: isoFromLarkTime(lastMessage?.create_time),
 		original_file_size: bytes,
 		metadata: {
-			url:
+			// lark-cli builds the AppLink for the user's tenant (Feishu or
+			// Lark); older versions omit it, and Feishu's is the fallback.
+			url: httpUrl(chat.app_link) ??
 				`https://applink.feishu.cn/client/chat/open?openChatId=${chat.chat_id}`,
 			chat_id: chat.chat_id,
 			chat_name: title,
@@ -359,10 +360,10 @@ export function buildChatPeriodDoc(
 /**
  * A document is skipped only when it is already indexed AND its signature
  * matches the one committed with its last successful upsert. The signature
- * covers the edit time, so a match means this exact version is indexed —
- * also when an interrupted poll committed it without advancing the mark. A
- * doc missing from the index (never fetched, fetch failed last poll, or
- * deleted-then-restored) or without an edit time is always refetched.
+ * covers the edit time and the source position, so a match means this exact
+ * version is indexed. A doc missing from the index (never fetched, fetch
+ * failed last poll, or deleted-then-restored) or without an edit time is
+ * always refetched.
  */
 export function isUnchangedDoc(
 	entity: Pick<SearchEntity, 'token' | 'editedAt'>,
@@ -374,63 +375,24 @@ export function isUnchangedDoc(
 		previousSignature === signature;
 }
 
-async function cloudDocSignature(
-	entity: SearchEntity,
-	position: CloudPosition,
-): Promise<string> {
-	const data = JSON.stringify([
-		'markdown-source-v2',
-		entity.token,
-		entity.type,
-		entity.title,
-		entity.editedAt,
-		entity.createdAt,
-		entity.url,
-		entity.owner,
-		position,
-	]);
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(data),
-	);
-	return Array.from(
-		new Uint8Array(digest),
-		(value) => value.toString(16).padStart(2, '0'),
-	).join('');
-}
-
-function pickKeys<T>(
-	values: Record<string, T>,
-	keys: Record<string, unknown>,
-): Record<string, T> {
-	return Object.fromEntries(
-		Object.entries(values).filter(([key]) => keys[key] != null),
-	);
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function chunks<T>(values: T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < values.length; index += size) {
-		result.push(values.slice(index, index + size));
-	}
-	return result;
-}
-
-export default class FeishuConnector extends Connector<
+export default class LarkConnector extends Connector<
 	ManifestConfig,
-	FeishuState
+	LarkState
 > {
 	protected locationBudgetMs = LOCATION_BUDGET_MS;
+	protected logger = createLogger('lark');
 
 	protected createClient(): LarkCliClient {
-		const bin = this.config.lark_cli_path?.trim() || 'lark-cli';
-		return new LarkCliClient(bin, this.signal);
+		return new LarkCliClient(LARK_CLI, this.signal, { logger: this.logger });
 	}
 
+	/**
+	 * Intermediate batches carry upserts only. Deletes go in the last batch
+	 * with the state, once every phase succeeded: a poll that fails midway
+	 * then applies no delete its uncommitted state would not know about.
+	 * (The host still applies that last batch before it commits the state;
+	 * closing that gap is the host's job.)
+	 */
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
 		const client = this.createClient();
 		const grouping: ChatGrouping = this.config.chat_grouping === 'day'
@@ -438,59 +400,50 @@ export default class FeishuConnector extends Connector<
 			: this.config.chat_grouping === 'chat'
 			? 'chat'
 			: 'week';
-		const state: FeishuState = {
-			docs_high_water: this.lastState?.docs_high_water,
+		const state: LarkState = {
 			docs: { ...(this.lastState?.docs ?? {}) },
 			doc_signatures: { ...(this.lastState?.doc_signatures ?? {}) },
-			doc_positions: { ...(this.lastState?.doc_positions ?? {}) },
-			chat_cursors: { ...(this.lastState?.chat_cursors ?? {}) },
-			chat_doc_ids: [...(this.lastState?.chat_doc_ids ?? [])],
+			positions_epoch: this.lastState?.positions_epoch ??
+				crypto.randomUUID(),
+			chats: { ...(this.lastState?.chats ?? {}) },
 			chat_grouping: this.lastState?.chat_grouping,
+			retired_chat_docs: [...(this.lastState?.retired_chat_docs ?? [])],
 		};
 
+		const deletes = yield* this.pollDocs(client, state);
+
+		const recordedChatIds = Object.entries(state.chats ?? {}).flatMap((
+			[chatId, record],
+		) => record.periods.map((key) => chatDocId(chatId, key)));
 		if (!this.config.index_chat_history) {
-			// Chat indexing was turned off: remove previously indexed chats.
-			yield* this.purgeChatIndex(state);
-		} else if (
-			state.chat_grouping != null && state.chat_grouping !== grouping
-		) {
-			// Grouping changed: doc ids are keyed differently, so drop and
-			// rebuild the whole chat index from the lookback window.
-			yield* this.purgeChatIndex(state);
-		} else if (
-			(state.chat_doc_ids ?? []).some((id) => /:\d{4}-W\d{2}$/.test(id))
-		) {
-			// One-time migration off the retired "2026-W28" week-key format.
-			yield* this.purgeChatIndex(state);
-		}
-
-		yield* this.pollDocs(client, state);
-
-		if (this.config.index_chat_history) {
-			state.chat_grouping = grouping;
-			yield* this.pollChats(client, state, grouping);
-		}
-	}
-
-	private *purgeChatIndex(state: FeishuState): Generator<PollResult> {
-		const ids = state.chat_doc_ids ?? [];
-		state.chat_cursors = {};
-		state.chat_grouping = undefined;
-		if (ids.length === 0) {
-			state.chat_doc_ids = [];
-			return;
-		}
-		const remaining = new Set(ids);
-		for (const batch of chunks(ids, DELETE_BATCH_SIZE)) {
-			for (const id of batch) {
-				remaining.delete(id);
+			// Turned off in the settings: remove the chat index now.
+			deletes.push(...recordedChatIds, ...state.retired_chat_docs!);
+			state.chats = {};
+			state.chat_grouping = undefined;
+			state.retired_chat_docs = [];
+		} else {
+			if (state.chat_grouping != null && state.chat_grouping !== grouping) {
+				// The doc ids are keyed by grouping: rebuild under the new one,
+				// and retire the old docs once that rebuild is complete.
+				state.retired_chat_docs!.push(...recordedChatIds);
+				state.chats = {};
 			}
-			state.chat_doc_ids = [...remaining];
-			yield {
-				updates: batch.map((id) => del(id)),
-				state: structuredClone(state),
-			};
+			state.chat_grouping = grouping;
+			const complete = yield* this.pollChats(client, state, grouping);
+			if (complete && state.retired_chat_docs!.length > 0) {
+				const current = new Set(
+					Object.entries(state.chats ?? {}).flatMap(([chatId, record]) =>
+						record.periods.map((key) => chatDocId(chatId, key))
+					),
+				);
+				deletes.push(
+					...state.retired_chat_docs!.filter((id) => !current.has(id)),
+				);
+				state.retired_chat_docs = [];
+			}
 		}
+
+		yield { updates: [...new Set(deletes)].map((id) => del(id)), state };
 	}
 
 	/**
@@ -498,66 +451,72 @@ export default class FeishuConnector extends Connector<
 	 * complementary Search v2 passes (see LarkCliClient.searchDocs). A
 	 * document is refetched when content or source metadata changes, or
 	 * when it is not in the index yet — so a failed fetch is retried on the
-	 * next poll instead of being lost behind the advancing mark.
-	 *
-	 * Enumeration recall is unstable between polls (indexed docs routinely
-	 * drop out of one enumeration and reappear in the next), so a document
-	 * missing from a completed enumeration is deleted only after a direct
-	 * fetch of its stored URL confirms it is no longer accessible. Each batch
-	 * commits the documents it indexed; the mark and deletions are committed
-	 * only in the final state, after the enumeration completes.
+	 * next poll. Returns the doc ids to delete, decided in
+	 * `reconcileDocDeletions`.
 	 */
 	private async *pollDocs(
 		client: LarkCliClient,
-		state: FeishuState,
-	): AsyncGenerator<PollResult> {
-		const previousMark = state.docs_high_water;
-		let newMark = previousMark;
-		const known = { ...(state.docs ?? {}) };
+		state: LarkState,
+	): AsyncGenerator<PollResult, string[]> {
+		const known = state.docs ?? {};
 		const knownTokens = new Set(Object.keys(known));
+		const epoch = state.positions_epoch!;
 		const enumerated = new Set<string>();
-		const succeededUrls = new Map<string, string>();
+		const fetchedRefs = new Map<string, string>();
 		const processed = new Set<string>();
 		const locations = new DocLocationResolver(
 			client,
 			this.signal,
 			this.locationBudgetMs,
+			this.logger,
 		);
 		const signatures = { ...(state.doc_signatures ?? {}) };
-		const positions = { ...(state.doc_positions ?? {}) };
+		const cache = await readPositionCache(this.dataDir, epoch, this.logger);
+		const positions = cache.positions;
+		let positionsChanged = !cache.matched;
+		let complete = true;
 
-		for (const sortByEditTime of [false, true]) {
-			let pageToken: string | undefined;
-
-			while (!this.signal.aborted) {
-				let page;
+		passes: for (const sortByEditTime of [false, true]) {
+			const pages = paginate(
+				async (pageToken) => {
+					const page = await client.searchDocs({ sortByEditTime, pageToken });
+					return {
+						items: page.entities,
+						hasMore: page.hasMore,
+						nextCursor: page.pageToken,
+					};
+				},
+				{ signal: this.signal, context: 'lark-cli drive +search' },
+			);
+			while (true) {
+				let entities: SearchEntity[];
 				try {
-					page = await client.searchDocs({ sortByEditTime, pageToken });
+					const next = await pages.next();
+					if (next.done) break;
+					entities = next.value.items;
 				} catch (error) {
 					if (
 						error instanceof LarkCliError && error.missingScopes.length > 0
 					) {
-						console.error(
-							`[feishu] skipping cloud documents (${error.message}). ` +
-								`Grant access with: lark-cli auth login --scope "${
-									error.missingScopes.join(' ')
-								}"`,
+						this.logger.warn(
+							`skipping cloud documents (${error.message}). Grant access with: lark-cli auth login --scope "${
+								error.missingScopes.join(' ')
+							}"`,
 						);
-						return;
+						complete = false;
+						break passes;
 					}
 					throw error;
 				}
 
 				const updates: DocUpdate[] = [];
-				for (const entity of page.entities) {
-					if (this.signal.aborted) {
-						return;
-					}
+				for (const entity of entities) {
+					this.signal.throwIfAborted();
 					if (processed.has(entity.token)) {
 						continue;
 					}
 					processed.add(entity.token);
-					if (!INDEXABLE_DOC_TYPES.has(entity.type)) {
+					if (!Object.hasOwn(INDEXABLE_DOC_TYPES, entity.type)) {
 						continue;
 					}
 					enumerated.add(entity.token);
@@ -565,7 +524,17 @@ export default class FeishuConnector extends Connector<
 						entity,
 						positions[entity.token],
 					);
-					const signature = await cloudDocSignature(entity, position);
+					const signature = await sha256Hex(JSON.stringify([
+						'markdown-source-v2',
+						entity.token,
+						entity.type,
+						entity.title,
+						entity.editedAt,
+						entity.createdAt,
+						entity.url,
+						entity.owner,
+						position,
+					]));
 					if (
 						isUnchangedDoc(
 							entity,
@@ -576,164 +545,153 @@ export default class FeishuConnector extends Connector<
 					) {
 						continue;
 					}
-					const doc = await this.fetchCloudDoc(client, entity, position);
+					// lark-cli fetches by source URL (it unwraps wiki URLs), else by
+					// the underlying docx token. No URL is guessed, so the tenant
+					// domain never has to be.
+					const ref = entity.url ?? position.url ??
+						position.feishu?.obj_token ?? entity.token;
+					const doc = await this.fetchCloudDoc(client, entity, ref, position);
 					if (doc == null) {
 						continue;
 					}
 					updates.push(upsert(doc));
 					signatures[entity.token] = signature;
 					positions[entity.token] = position;
-					succeededUrls.set(
-						entity.token,
-						entity.url ?? position.url ??
-							buildDocUrl(
-								entity.type,
-								position.feishu?.obj_token ?? entity.token,
-							),
-					);
-					if (
-						entity.editedAt != null &&
-						(newMark == null || entity.editedAt > newMark)
-					) {
-						newMark = entity.editedAt;
-					}
+					positionsChanged = true;
+					fetchedRefs.set(entity.token, ref);
 				}
-
-				if (updates.length > 0) {
-					// Commit progress with each batch so a poll the host cancels
-					// (e.g. on its idle timeout) resumes instead of starting over.
-					// Nothing is dropped and the mark stays put until the
-					// enumeration completes.
-					const docs = { ...known };
-					for (const [token, url] of succeededUrls) docs[token] = url;
-					yield {
-						updates,
-						state: structuredClone({
-							...state,
-							docs,
-							doc_signatures: pickKeys(signatures, docs),
-							doc_positions: pickKeys(positions, docs),
-						}),
-					};
-				}
-
-				if (
-					!page.hasMore || page.pageToken == null ||
-					page.pageToken === pageToken
-				) {
-					break;
-				}
-				pageToken = page.pageToken;
+				// One batch per page, also when empty: it is the heartbeat that
+				// keeps the host from treating a long unchanged pass as hung.
+				yield { updates };
 			}
 		}
 
-		if (this.signal.aborted) {
-			return;
-		}
-
+		const deleted = new Set(
+			await this.reconcileDocDeletions(client, known, {
+				seen: enumerated,
+				complete,
+			}),
+		);
 		const next: Record<string, string> = {};
 		for (const token of enumerated) {
-			const url = succeededUrls.get(token) ?? known[token];
-			if (url != null) {
-				next[token] = url;
+			const ref = fetchedRefs.get(token) ?? known[token];
+			if (ref != null) {
+				next[token] = ref;
+			}
+		}
+		for (const [token, ref] of Object.entries(known)) {
+			if (!enumerated.has(token) && !deleted.has(token)) {
+				next[token] = ref;
 			}
 		}
 
-		const deletes: DocUpdate[] = [];
-		if (enumerated.size > 0) {
-			for (const token of knownTokens) {
-				if (enumerated.has(token)) {
-					continue;
-				}
-				if (this.signal.aborted) {
-					return;
-				}
-				if (await this.isStillFetchable(client, known[token])) {
-					next[token] = known[token];
-				} else {
-					deletes.push(del(`feishu:doc:${token}`));
-				}
-			}
-		} else if (knownTokens.size > 0) {
-			// An empty enumeration is a source-side recall glitch, not mass
-			// deletion: keep the index untouched.
-			console.error(
-				'[feishu] document enumeration returned nothing; skipping deletion pass',
-			);
-			Object.assign(next, known);
-		}
-
-		state.docs_high_water = newMark;
 		state.docs = next;
-		state.doc_signatures = pickKeys(signatures, next);
-		state.doc_positions = pickKeys(positions, next);
-		yield { updates: deletes, state: structuredClone(state) };
+		state.doc_signatures = Object.fromEntries(
+			Object.entries(signatures).filter(([token]) => token in next),
+		);
+		const keptPositions = Object.fromEntries(
+			Object.entries(positions).filter(([token]) => token in next),
+		);
+		if (
+			positionsChanged ||
+			Object.keys(keptPositions).length !== Object.keys(positions).length
+		) {
+			await writePositionCache(
+				this.dataDir,
+				epoch,
+				keptPositions,
+				this.logger,
+			);
+		}
+		return [...deleted].map((token) => cloudDocId(token));
 	}
 
 	/**
-	 * True when a document missing from the enumeration can still be fetched
-	 * directly — a search recall gap rather than a deletion or lost access.
+	 * The one place indexed cloud documents are deleted; returns the tokens
+	 * to delete. Search recall is unstable between polls (indexed docs
+	 * routinely drop out of one enumeration and reappear in the next), so a
+	 * document a complete enumeration missed is deleted only when a direct
+	 * fetch confirms it is gone or no longer accessible (`isConfirmedGone`).
+	 * An incomplete or empty enumeration deletes nothing.
 	 */
-	private async isStillFetchable(
+	private async reconcileDocDeletions(
 		client: LarkCliClient,
-		url: string,
-	): Promise<boolean> {
-		try {
-			await client.fetchDocMarkdown(url);
-			return true;
-		} catch (error) {
-			this.signal.throwIfAborted();
-			console.error(
-				`[feishu] ${url} disappeared from enumeration and cannot be fetched ` +
-					`(${errorMessage(error)}); deleting from index`,
+		known: Record<string, string>,
+		enumeration: Enumeration,
+	): Promise<string[]> {
+		const stale = staleIds(Object.keys(known), enumeration);
+		if (stale.length > 0 && enumeration.seen.size === 0) {
+			// An empty enumeration is a source-side recall glitch, not mass
+			// deletion: keep the index untouched.
+			this.logger.warn(
+				'document enumeration returned nothing; skipping deletion pass',
 			);
-			return false;
+			return [];
 		}
+		const deleted: string[] = [];
+		for (const token of stale) {
+			this.signal.throwIfAborted();
+			try {
+				await client.fetchDocMarkdown(known[token]);
+			} catch (error) {
+				if (isFatalError(error, this.signal)) throw error;
+				if (isConfirmedGone(error)) {
+					this.logger.info('deleting a document that is gone at the source', {
+						token,
+						reason: errorMessage(error),
+					});
+					deleted.push(token);
+				} else {
+					this.logger.warn(
+						'keeping a document missing from enumeration: cannot confirm it is gone',
+						{ token, reason: errorMessage(error) },
+					);
+				}
+			}
+		}
+		return deleted;
 	}
 
 	private async fetchCloudDoc(
 		client: LarkCliClient,
 		entity: SearchEntity,
+		ref: string,
 		position: CloudPosition,
 	): Promise<WireDoc | null> {
 		try {
-			const content = await client.fetchDocMarkdown(
-				entity.url ?? position.url ?? position.feishu?.obj_token ??
-					entity.token,
-			);
+			const content = await client.fetchDocMarkdown(ref);
 			if (content == null) {
-				console.error(
-					`[feishu] no content in ${entity.type} ${entity.token}; skipped`,
-				);
+				this.logger.warn('document has no content; skipped', {
+					type: entity.type,
+					token: entity.token,
+				});
 				return null;
 			}
 			return buildCloudDoc(entity, cleanupDocMarkdown(content), position);
 		} catch (error) {
-			this.signal.throwIfAborted();
-			console.error(
-				`[feishu] failed to fetch ${entity.type} ${entity.token}: ${
-					errorMessage(error)
-				}`,
-			);
+			if (isFatalError(error, this.signal)) throw error;
+			this.logger.warn('failed to fetch a document; retrying next poll', {
+				type: entity.type,
+				token: entity.token,
+				reason: errorMessage(error),
+			});
 			return null;
 		}
 	}
 
 	/**
 	 * Chat history is indexed as one document per chat per period (day, ISO
-	 * week, or the whole chat). For day/week, each chat's cursor is the day
-	 * of its newest indexed message and the poll refetches from the start of
-	 * the period containing that day, so the still-open period is re-upserted
-	 * complete. For whole-chat docs the cursor is the newest message's
-	 * "YYYY-MM-DD HH:mm" timestamp: a cheap probe from that day decides
-	 * whether anything is new before the full window is refetched to rebuild
-	 * the single document.
+	 * week, or the whole chat within the lookback window). Chats are listed
+	 * most recently active first; a failure to list them skips the rest of
+	 * the chats for this poll instead of failing it (documents and the chats
+	 * already synced still commit). Returns whether every chat was listed
+	 * and synced.
 	 */
 	private async *pollChats(
 		client: LarkCliClient,
-		state: FeishuState,
+		state: LarkState,
 		grouping: ChatGrouping,
-	): AsyncGenerator<PollResult> {
+	): AsyncGenerator<PollResult, boolean> {
 		// `chat_history_days` is optional (`required: false`). `undefined > 0` is
 		// false, so the assertions only hold where the value is a positive number.
 		const lookbackDays = this.config.chat_history_days! > 0
@@ -742,109 +700,184 @@ export default class FeishuConnector extends Connector<
 		const defaultStartDay = localDateString(
 			new Date(Date.now() - lookbackDays * 86_400_000),
 		);
-		const chatDocIds = new Set(state.chat_doc_ids ?? []);
+		const records = state.chats ?? {};
+		state.chats = records;
 
-		for await (const chat of this.listChats(client)) {
-			if (this.signal.aborted) {
-				return;
-			}
-			const cursor = state.chat_cursors?.[chat.chat_id];
-			const fetchFromDay = grouping === 'chat'
-				? defaultStartDay
-				: grouping === 'week'
-				? weekStartDay(cursor ?? defaultStartDay)
-				: cursor ?? defaultStartDay;
-
-			let messages: ChatMessage[];
+		const pages = paginate(
+			async (pageToken) => {
+				const page = await client.listChats(pageToken);
+				return {
+					items: page.chats,
+					hasMore: page.hasMore,
+					nextCursor: page.pageToken,
+				};
+			},
+			{ signal: this.signal, context: 'lark-cli im +chat-list' },
+		);
+		let complete = true;
+		while (true) {
+			let chats: ChatSummary[];
 			try {
-				if (
-					grouping === 'chat' && cursor != null &&
-					!(await this.hasNewMessages(client, chat.chat_id, cursor))
-				) {
-					continue;
-				}
-				messages = await this.listMessages(client, chat.chat_id, fetchFromDay);
+				const next = await pages.next();
+				if (next.done) return complete;
+				chats = next.value.items;
 			} catch (error) {
-				this.signal.throwIfAborted();
-				console.error(
-					`[feishu] failed to list messages of chat ${chat.chat_id}: ${
-						errorMessage(error)
-					}`,
+				if (isFatalError(error, this.signal)) throw error;
+				const scopes = error instanceof LarkCliError &&
+						error.missingScopes.length > 0
+					? ` Grant access with: lark-cli auth login --scope "${
+						error.missingScopes.join(' ')
+					}"`
+					: '';
+				this.logger.warn(
+					`skipping chats this poll: ${errorMessage(error)}.${scopes}`,
 				);
-				continue;
+				return false;
 			}
-
-			const periods = groupDaysByPeriod(groupMessagesByDay(messages), grouping);
-			if (periods.size === 0) {
-				continue;
-			}
-
-			const updates: DocUpdate[] = [];
-			let nextCursor = cursor ?? '';
-			for (const [key, days] of periods) {
-				const doc = buildChatPeriodDoc(chat, grouping, key, days);
-				updates.push(upsert(doc));
-				chatDocIds.add(doc.id);
-				for (const [day, dayMessages] of days) {
-					if (grouping === 'chat') {
-						const lastTime = dayMessages[dayMessages.length - 1]?.create_time;
-						if (lastTime != null && lastTime > nextCursor) {
-							nextCursor = lastTime;
-						}
-					} else if (day > nextCursor) {
-						nextCursor = day;
-					}
+			for (const chat of chats) {
+				this.signal.throwIfAborted();
+				const updates = await this.syncChat(
+					client,
+					chat,
+					records,
+					grouping,
+					defaultStartDay,
+				);
+				if (updates == null) {
+					complete = false;
+				} else if (updates.length > 0) {
+					yield { updates };
 				}
 			}
-
-			state.chat_cursors = {
-				...(state.chat_cursors ?? {}),
-				[chat.chat_id]: nextCursor,
-			};
-			state.chat_doc_ids = [...chatDocIds].sort();
-			yield { updates, state: structuredClone(state) };
+			yield { updates: [] };
 		}
 	}
 
 	/**
-	 * Cheap probe for whole-chat docs: fetch from the cursor's day and check
-	 * for any message strictly newer than the cursor ("YYYY-MM-DD HH:mm"
-	 * strings compare chronologically). Quiet chats cost one small page
-	 * instead of a full-window refetch.
+	 * Refetches one chat from the start of the period holding its newest
+	 * indexed message, so the still-open period is rebuilt complete, and
+	 * returns upserts for the docs whose content changed, or null when the
+	 * chat's messages could not be listed. The reopened period's doc is
+	 * skipped when its signature matches the last upsert. Whole-chat docs
+	 * first probe for a new message (`hasNewMessages`) before refetching the
+	 * lookback window.
+	 */
+	private async syncChat(
+		client: LarkCliClient,
+		chat: ChatSummary,
+		records: Record<string, ChatRecord>,
+		grouping: ChatGrouping,
+		defaultStartDay: string,
+	): Promise<DocUpdate[] | null> {
+		const record = records[chat.chat_id];
+		let messages: ChatMessage[];
+		try {
+			if (
+				grouping === 'chat' && record != null &&
+				!(await this.hasNewMessages(client, chat.chat_id, record))
+			) {
+				return [];
+			}
+			const fromDay = grouping === 'chat'
+				? defaultStartDay
+				: grouping === 'week'
+				? weekStartDay(record?.cursor ?? defaultStartDay)
+				: record?.cursor ?? defaultStartDay;
+			messages = await this.listMessages(client, chat.chat_id, fromDay);
+		} catch (error) {
+			if (isFatalError(error, this.signal)) throw error;
+			this.logger.warn('failed to list the messages of a chat', {
+				chat_id: chat.chat_id,
+				reason: errorMessage(error),
+			});
+			return null;
+		}
+
+		const periods = [
+			...groupDaysByPeriod(groupMessagesByDay(messages), grouping),
+		].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+		if (periods.length === 0) {
+			return [];
+		}
+
+		const reopenedKey = record == null
+			? undefined
+			: periodKey(record.cursor.slice(0, 10), grouping);
+		const keys = new Set(record?.periods ?? []);
+		const updates: DocUpdate[] = [];
+		let cursor = record?.cursor ?? '';
+		let lastMessageId = record?.last_message_id;
+		let signature: string | undefined;
+		for (const [key, days] of periods) {
+			const doc = buildChatPeriodDoc(chat, grouping, key, days);
+			signature = await sha256Hex(
+				JSON.stringify([
+					doc.title,
+					doc.content,
+					doc.doc_updated_at,
+					doc.metadata,
+				]),
+			);
+			if (key !== reopenedKey || signature !== record?.signature) {
+				updates.push(upsert(doc));
+			}
+			keys.add(key);
+			for (const [day, dayMessages] of days) {
+				if (grouping !== 'chat') {
+					if (day > cursor) cursor = day;
+					continue;
+				}
+				const last = dayMessages[dayMessages.length - 1];
+				if (last?.create_time != null && last.create_time >= cursor) {
+					cursor = last.create_time;
+					lastMessageId = last.message_id;
+				}
+			}
+		}
+		records[chat.chat_id] = {
+			cursor,
+			...(lastMessageId == null ? {} : { last_message_id: lastMessageId }),
+			periods: [...keys].sort(),
+			signature,
+		};
+		return updates;
+	}
+
+	/**
+	 * Cheap probe for whole-chat docs: pages forward from the day of the
+	 * newest indexed message and stops at the first newer one. A message is
+	 * newer when the ascending listing has it after `last_message_id`, or —
+	 * when that message is no longer listed (recalled) — when its minute is
+	 * later than the cursor. Quiet chats usually cost one page.
 	 */
 	private async hasNewMessages(
 		client: LarkCliClient,
 		chatId: string,
-		cursor: string,
+		record: ChatRecord,
 	): Promise<boolean> {
-		const probe = await this.listMessages(
-			client,
-			chatId,
-			cursor.slice(0, 10),
-		);
-		return probe.some((message) =>
-			message.deleted !== true && message.create_time != null &&
-			message.create_time > cursor
-		);
-	}
-
-	private async *listChats(
-		client: LarkCliClient,
-	): AsyncGenerator<ChatSummary> {
-		let pageToken: string | undefined;
-
-		while (!this.signal.aborted) {
-			const page = await client.listChats(pageToken);
-			yield* page.chats;
-
-			if (
-				!page.hasMore || page.pageToken == null ||
-				page.pageToken === pageToken
-			) {
-				return;
+		const startISO = dayStartISO(record.cursor.slice(0, 10));
+		let passedLast = false;
+		for await (const page of this.messagePages(client, chatId, startISO)) {
+			for (const message of page.items) {
+				if (
+					record.last_message_id != null &&
+					message.message_id === record.last_message_id
+				) {
+					passedLast = true;
+					continue;
+				}
+				if (message.deleted === true) {
+					continue;
+				}
+				if (
+					passedLast ||
+					(message.create_time != null && message.create_time > record.cursor)
+				) {
+					return true;
+				}
 			}
-			pageToken = page.pageToken;
 		}
+		return false;
 	}
 
 	private async listMessages(
@@ -853,22 +886,30 @@ export default class FeishuConnector extends Connector<
 		sinceDay: string,
 	): Promise<ChatMessage[]> {
 		const messages: ChatMessage[] = [];
-		const startISO = dayStartISO(sinceDay);
-		let pageToken: string | undefined;
-
-		while (!this.signal.aborted) {
-			const page = await client.listMessages(chatId, startISO, pageToken);
-			messages.push(...page.messages);
-
-			if (
-				!page.hasMore || page.pageToken == null ||
-				page.pageToken === pageToken
-			) {
-				break;
-			}
-			pageToken = page.pageToken;
+		for await (
+			const page of this.messagePages(client, chatId, dayStartISO(sinceDay))
+		) {
+			messages.push(...page.items);
 		}
-
 		return messages;
+	}
+
+	/** A chat's messages from `startISO` on, oldest first, page by page. */
+	private messagePages(
+		client: LarkCliClient,
+		chatId: string,
+		startISO: string,
+	) {
+		return paginate(
+			async (pageToken) => {
+				const page = await client.listMessages(chatId, startISO, pageToken);
+				return {
+					items: page.messages,
+					hasMore: page.hasMore,
+					nextCursor: page.pageToken,
+				};
+			},
+			{ signal: this.signal, context: 'lark-cli im +chat-messages-list' },
+		);
 	}
 }

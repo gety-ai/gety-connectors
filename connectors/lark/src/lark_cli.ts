@@ -4,9 +4,25 @@
  * lark-cli prints success envelopes ({ ok: true, data }) to stdout and error
  * envelopes ({ ok: false, error }) to stderr; both streams are parsed. All
  * Lark credentials live in lark-cli itself — this module never sees them.
+ *
+ * The program is always started by name: Gety's sandbox grants `run` by
+ * program name and resolves it on `PATH`.
  */
 
-type JsonRecord = Record<string, unknown>;
+import { isTimeoutError, withTimeout } from '@gety-connectors/utils/abort';
+import {
+	isRecord,
+	nonEmptyString,
+	parseJsonObject,
+} from '@gety-connectors/utils/json';
+import type { Logger } from '@gety-connectors/utils/log';
+import {
+	IncompleteEnumerationError,
+	requireArray,
+} from '@gety-connectors/utils/paginate';
+import { retry } from '@gety-connectors/utils/retry';
+
+export const LARK_CLI = 'lark-cli';
 
 export type WikiNode = {
 	node_token: string;
@@ -52,6 +68,8 @@ export type ChatSummary = {
 	chat_id: string;
 	name?: string;
 	chat_mode?: string;
+	/** Tenant-aware AppLink lark-cli builds for the chat (1.0.9x and later). */
+	app_link?: string;
 };
 
 export type ChatPage = {
@@ -79,21 +97,96 @@ export type MessagePage = {
 	pageToken?: string;
 };
 
+/**
+ * A failed lark-cli call. `type` and `subtype` are lark-cli's wire-stable
+ * error taxonomy (errs/ERROR_CONTRACT.md in the lark-cli repository); `code`
+ * is the upstream numeric code when known.
+ */
 export class LarkCliError extends Error {
 	readonly missingScopes: string[];
 	readonly code?: string;
+	readonly type?: string;
+	readonly subtype?: string;
 
-	constructor(message: string, missingScopes: string[] = [], code?: unknown) {
+	constructor(
+		message: string,
+		details: {
+			missingScopes?: string[];
+			code?: unknown;
+			type?: string;
+			subtype?: string;
+		} = {},
+	) {
 		super(message);
 		this.name = 'LarkCliError';
-		this.missingScopes = missingScopes;
-		this.code = code == null ? undefined : String(code);
+		this.missingScopes = details.missingScopes ?? [];
+		this.code = details.code == null ? undefined : String(details.code);
+		this.type = details.type;
+		this.subtype = details.subtype;
 	}
+}
+
+/** One lark-cli call ran out of its time budget and was killed. */
+export class LarkCliTimeoutError extends LarkCliError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'LarkCliTimeoutError';
+	}
+}
+
+/**
+ * lark-cli could not be started at all. Every call would fail the same way,
+ * so callers must not treat it as a per-item failure.
+ */
+export class LarkCliUnavailableError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = 'LarkCliUnavailableError';
+	}
+}
+
+/**
+ * True for errors that end the poll wherever they occur: cancellation, a
+ * sandbox denial, or a lark-cli that cannot be started. Per-item error
+ * handlers rethrow these instead of skipping the item, so a missing grant
+ * fails the sync instead of looking like an empty source.
+ */
+export function isFatalError(error: unknown, signal: AbortSignal): boolean {
+	return signal.aborted || error instanceof LarkCliUnavailableError ||
+		error instanceof Deno.errors.NotCapable;
+}
+
+/**
+ * True only when lark-cli confirms that the resource is gone or that the
+ * user lost access to it. Any other failure — network, rate limit, timeout,
+ * a missing scope, an unclassified upstream code, or an older lark-cli
+ * without the error taxonomy — leaves the answer unknown.
+ */
+export function isConfirmedGone(error: unknown): boolean {
+	return error instanceof LarkCliError &&
+		((error.type === 'api' && error.subtype === 'not_found') ||
+			(error.type === 'authorization' &&
+				error.subtype === 'permission_denied'));
+}
+
+export function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 const DOCS_PAGE_SIZE = '20';
 const CHATS_PAGE_SIZE = '100';
 const MESSAGES_PAGE_SIZE = '50';
+
+/**
+ * Per-call budget. A call blocked on a keychain prompt or a stalled
+ * connection would otherwise hold the poll until the host's 10-minute idle
+ * limit kills it.
+ */
+export const CALL_TIMEOUT_MS = 5 * 60_000;
+/** Attempts per call, including the first; retries only transient failures. */
+const MAX_ATTEMPTS = 4;
+/** A timed-out call is retried once: a second hang is not transient. */
+const MAX_TIMEOUT_RETRIES = 1;
 
 type CliEnvelope = {
 	ok?: boolean;
@@ -104,19 +197,35 @@ type CliEnvelope = {
 		code?: unknown;
 		message?: string;
 		missing_scopes?: unknown;
+		retryable?: unknown;
+		retry_after_seconds?: unknown;
 	};
+};
+
+/** A failed call whose envelope allows a retry, with the requested delay. */
+class RetryableCliError extends LarkCliError {
+	constructor(message: string, readonly retryAfterMs: number | undefined) {
+		super(message);
+	}
+}
+
+export type LarkCliOptions = {
+	logger?: Logger;
+	timeoutMs?: number;
+	/** Backoff base for retries; tests shorten it. */
+	retryBaseDelayMs?: number;
 };
 
 export class LarkCliClient {
 	constructor(
 		private readonly bin: string,
 		private readonly signal: AbortSignal,
-		private readonly retryDelaysMs: readonly number[] = [1_000, 2_500, 5_000],
+		private readonly options: LarkCliOptions = {},
 	) {}
 
 	/** Same CLI, cancelled by `signal` instead (kills in-flight subprocesses). */
 	withSignal(signal: AbortSignal): LarkCliClient {
-		return new LarkCliClient(this.bin, signal, this.retryDelaysMs);
+		return new LarkCliClient(this.bin, signal, this.options);
 	}
 
 	/**
@@ -174,17 +283,18 @@ export class LarkCliClient {
 			...(objType == null ? {} : { obj_type: objType }),
 		});
 		const node = isRecord(data) && isRecord(data.node) ? data.node : null;
-		if (node == null || asString(node.node_token) == null) {
+		const nodeToken = nonEmptyString(node?.node_token);
+		if (node == null || nodeToken == null) {
 			throw new LarkCliError('Wiki response contains no node');
 		}
 		return {
-			node_token: asString(node.node_token)!,
-			obj_token: asString(node.obj_token),
-			space_id: asString(node.space_id),
-			parent_node_token: asString(node.parent_node_token),
-			title: asString(node.title),
-			origin_node_token: asString(node.origin_node_token),
-			origin_space_id: asString(node.origin_space_id),
+			node_token: nodeToken,
+			obj_token: nonEmptyString(node.obj_token),
+			space_id: nonEmptyString(node.space_id),
+			parent_node_token: nonEmptyString(node.parent_node_token),
+			title: nonEmptyString(node.title),
+			origin_node_token: nonEmptyString(node.origin_node_token),
+			origin_space_id: nonEmptyString(node.origin_space_id),
 		};
 	}
 
@@ -193,7 +303,7 @@ export class LarkCliClient {
 			`/open-apis/wiki/v2/spaces/${encodeURIComponent(spaceId)}`,
 		);
 		return isRecord(data) && isRecord(data.space)
-			? asString(data.space.name)
+			? nonEmptyString(data.space.name)
 			: undefined;
 	}
 
@@ -212,21 +322,21 @@ export class LarkCliClient {
 		const files: DriveFile[] = [];
 		for (const item of data.files) {
 			if (!isRecord(item)) continue;
-			const token = asString(item.token);
-			const type = asString(item.type);
+			const token = nonEmptyString(item.token);
+			const type = nonEmptyString(item.type);
 			if (token == null || type == null) continue;
 			files.push({
 				token,
 				type,
-				name: asString(item.name),
-				parent_token: asString(item.parent_token),
-				url: asString(item.url),
+				name: nonEmptyString(item.name),
+				parent_token: nonEmptyString(item.parent_token),
+				url: nonEmptyString(item.url),
 			});
 		}
 		return {
 			files,
 			hasMore: data.has_more === true,
-			pageToken: asString(data.next_page_token),
+			pageToken: nonEmptyString(data.next_page_token),
 		};
 	}
 
@@ -249,9 +359,8 @@ export class LarkCliClient {
 		if (isRecord(result) && typeof result.code === 'number') {
 			if (result.code !== 0) {
 				throw new LarkCliError(
-					asString(result.msg) ?? `OpenAPI error ${result.code}`,
-					[],
-					result.code,
+					nonEmptyString(result.msg) ?? `OpenAPI error ${result.code}`,
+					{ code: result.code },
 				);
 			}
 			return result.data;
@@ -259,6 +368,7 @@ export class LarkCliClient {
 		return result;
 	}
 
+	/** Group and p2p chats, most recently active first. */
 	async listChats(pageToken?: string): Promise<ChatPage> {
 		const data = await this.run([
 			'im',
@@ -273,29 +383,26 @@ export class LarkCliClient {
 			CHATS_PAGE_SIZE,
 			...(pageToken == null ? [] : ['--page-token', pageToken]),
 		]);
-		if (!isRecord(data)) {
-			return { chats: [], hasMore: false };
-		}
+		const context = 'lark-cli im +chat-list';
+		const page = listPage(data, 'chats', context);
 		const chats: ChatSummary[] = [];
-		for (const raw of Array.isArray(data.chats) ? data.chats : []) {
-			if (!isRecord(raw)) {
-				continue;
-			}
-			const chatId = asString(raw.chat_id);
-			if (chatId == null) {
-				continue;
+		for (const raw of page.items) {
+			// A chat row without an id cannot be synced; skipping it would let
+			// the sync count as complete and retire that chat's old docs.
+			const chatId = isRecord(raw) ? nonEmptyString(raw.chat_id) : undefined;
+			if (!isRecord(raw) || chatId == null) {
+				throw new IncompleteEnumerationError(
+					`${context}: unexpected chat row without chat_id`,
+				);
 			}
 			chats.push({
 				chat_id: chatId,
-				name: asString(raw.name),
-				chat_mode: asString(raw.chat_mode),
+				name: nonEmptyString(raw.name),
+				chat_mode: nonEmptyString(raw.chat_mode),
+				app_link: nonEmptyString(raw.chat_app_link),
 			});
 		}
-		return {
-			chats,
-			hasMore: data.has_more === true,
-			pageToken: asString(data.page_token),
-		};
+		return { chats, hasMore: page.hasMore, pageToken: page.pageToken };
 	}
 
 	async listMessages(
@@ -319,77 +426,165 @@ export class LarkCliClient {
 			MESSAGES_PAGE_SIZE,
 			...(pageToken == null ? [] : ['--page-token', pageToken]),
 		]);
-		if (!isRecord(data)) {
-			return { messages: [], hasMore: false };
-		}
+		const context = 'lark-cli im +chat-messages-list';
+		const page = listPage(data, 'messages', context);
 		const messages: ChatMessage[] = [];
-		for (const raw of Array.isArray(data.messages) ? data.messages : []) {
-			if (isRecord(raw)) {
-				messages.push(raw as ChatMessage);
+		for (const raw of page.items) {
+			const message = parseMessage(raw);
+			if (message == null) {
+				throw new IncompleteEnumerationError(
+					`${context}: unexpected message row without message_id or create_time`,
+				);
 			}
+			messages.push(message);
 		}
-		return {
-			messages,
-			hasMore: data.has_more === true,
-			pageToken: asString(data.page_token),
-		};
+		return { messages, hasMore: page.hasMore, pageToken: page.pageToken };
 	}
 
+	/**
+	 * Runs one lark-cli command and returns the success envelope's `data`.
+	 * Each attempt has its own timeout; rate limits, envelopes marked
+	 * retryable and (once) timeouts are retried with backoff. Cancellation is
+	 * never retried and surfaces as the signal's reason. A retry is logged
+	 * both when its wait starts and when its attempt starts, so neither a
+	 * slow failed call plus the wait, nor the wait plus the next call, is
+	 * silent for longer than one call's timeout.
+	 */
 	protected async run(args: string[]): Promise<unknown> {
-		for (let attempt = 0;; attempt += 1) {
-			this.signal.throwIfAborted();
+		const command = args.slice(0, 2).join(' ');
+		let timeouts = 0;
+		let retrying = false;
+		const result = await retry(
+			(attempt, signal) => {
+				if (retrying) {
+					this.options.logger?.info('retrying lark-cli call now', {
+						command,
+						attempt,
+					});
+				}
+				return this.runOnce(args, command, signal);
+			},
+			{
+				signal: this.signal,
+				maxAttempts: MAX_ATTEMPTS,
+				baseDelayMs: this.options.retryBaseDelayMs ?? 1_000,
+				maxDelayMs: 30_000,
+				shouldRetry: (error) => {
+					if (error instanceof LarkCliTimeoutError) {
+						timeouts += 1;
+						return timeouts <= MAX_TIMEOUT_RETRIES;
+					}
+					if (error instanceof RetryableCliError) {
+						return { retryAfterMs: error.retryAfterMs };
+					}
+					return false;
+				},
+				onRetry: ({ delayMs, error }) => {
+					retrying = true;
+					this.options.logger?.info('lark-cli call failed; retrying', {
+						command,
+						delay_ms: delayMs,
+						reason: errorMessage(error),
+					});
+				},
+			},
+		);
+		this.options.logger?.progress('lark-cli call finished', { command });
+		return result;
+	}
 
-			const command = new Deno.Command(this.bin, {
+	private async runOnce(
+		args: string[],
+		command: string,
+		signal: AbortSignal,
+	): Promise<unknown> {
+		const timeoutMs = this.options.timeoutMs ?? CALL_TIMEOUT_MS;
+		const attemptSignal = withTimeout(signal, timeoutMs);
+		let output: Deno.CommandOutput;
+		try {
+			output = await new Deno.Command(this.bin, {
 				args,
 				stdin: 'null',
 				stdout: 'piped',
 				stderr: 'piped',
-				signal: this.signal,
-			});
-
-			let output: Deno.CommandOutput;
-			try {
-				output = await command.output();
-			} catch (error) {
-				this.signal.throwIfAborted();
-				throw new LarkCliError(
-					`failed to run "${this.bin}": ${errorMessage(error)}. ` +
-						'Install lark-cli and finish `lark-cli auth login` first, ' +
-						'or set the lark-cli path in the connector config.',
+				signal: attemptSignal,
+			}).output();
+		} catch (error) {
+			signal.throwIfAborted();
+			if (error instanceof Deno.errors.NotCapable) {
+				// The sandbox's own message names the missing `run` grant.
+				throw error;
+			}
+			if (error instanceof Deno.errors.NotFound) {
+				throw new LarkCliUnavailableError(
+					`"${this.bin}" was not found on the PATH Gety runs with. ` +
+						'Install lark-cli, finish `lark-cli auth login`, and make sure ' +
+						'the lark-cli executable is on PATH (see the connector README).',
+					{ cause: error },
 				);
 			}
-
-			const stdoutText = new TextDecoder().decode(output.stdout);
-			const stderrText = new TextDecoder().decode(output.stderr).trim();
-			const envelope = parseEnvelope(stdoutText) ?? parseEnvelope(stderrText);
-
-			if (envelope?.ok === true) {
-				return envelope.data ?? null;
-			}
-
-			const delay = this.retryDelaysMs[attempt];
-			if (delay != null && isRateLimitFailure(envelope)) {
-				await abortableDelay(delay, this.signal);
-				continue;
-			}
-
-			const detail = envelope?.error?.message ??
-				(stderrText || `exit code ${output.code}`);
-			throw new LarkCliError(
-				`lark-cli ${args.slice(0, 2).join(' ')} failed: ${detail}`,
-				missingScopes(envelope),
-				envelope?.error?.code,
+			throw new LarkCliUnavailableError(
+				`failed to start "${this.bin}": ${errorMessage(error)}`,
+				{ cause: error },
 			);
 		}
+		// A killed child resolves output() instead of rejecting it.
+		signal.throwIfAborted();
+		if (attemptSignal.aborted && isTimeoutError(attemptSignal.reason)) {
+			throw new LarkCliTimeoutError(
+				`lark-cli ${command} timed out after ${Math.round(timeoutMs / 1000)}s`,
+			);
+		}
+
+		const stdoutText = new TextDecoder().decode(output.stdout);
+		const stderrText = new TextDecoder().decode(output.stderr).trim();
+		const envelope = (parseJsonObject(stdoutText) ??
+			parseJsonObject(stderrText)) as CliEnvelope | undefined;
+
+		if (envelope?.ok === true) {
+			return envelope.data ?? null;
+		}
+
+		const error = envelope?.error;
+		const message = `lark-cli ${command} failed: ${
+			error?.message ?? (stderrText || `exit code ${output.code}`)
+		}`;
+		if (isRetryableFailure(envelope)) {
+			const seconds = error?.retry_after_seconds;
+			throw new RetryableCliError(
+				message,
+				typeof seconds === 'number' && Number.isFinite(seconds) &&
+					seconds >= 0
+					? seconds * 1000
+					: undefined,
+			);
+		}
+		throw new LarkCliError(message, {
+			missingScopes: Array.isArray(error?.missing_scopes)
+				? error.missing_scopes.filter((scope): scope is string =>
+					typeof scope === 'string'
+				)
+				: [],
+			code: error?.code,
+			type: nonEmptyString(error?.type),
+			subtype: nonEmptyString(error?.subtype),
+		});
 	}
 }
 
-export function isRateLimitFailure(
+/**
+ * Rate limits (by subtype, or by wording for lark-cli versions without the
+ * taxonomy) and envelopes lark-cli marks `retryable` are transient.
+ */
+export function isRetryableFailure(
 	envelope: CliEnvelope | null | undefined,
 ): boolean {
 	const error = envelope?.error;
 	if (error == null) {
 		return false;
+	}
+	if (error.retryable === true) {
+		return true;
 	}
 	const text = [error.type, error.subtype, error.code, error.message]
 		.map(String)
@@ -397,20 +592,65 @@ export function isRateLimitFailure(
 	return /rate.?limit|too many requests?|\b429\b/i.test(text);
 }
 
-function missingScopes(envelope: CliEnvelope | null | undefined): string[] {
-	const raw = envelope?.error?.missing_scopes;
-	return Array.isArray(raw)
-		? raw.filter((scope): scope is string => typeof scope === 'string')
-		: [];
+/**
+ * The item list and pagination of a list command's `data`. lark-cli is a Go
+ * program, so an empty list may arrive as `null`; anything else that is not
+ * an array means the output format changed, and a silently empty page would
+ * read as "everything was deleted".
+ */
+function listPage(
+	data: unknown,
+	key: string,
+	context: string,
+): { items: unknown[]; hasMore: boolean; pageToken?: string } {
+	if (!isRecord(data) || !Object.hasOwn(data, key)) {
+		throw new IncompleteEnumerationError(
+			`${context}: unexpected output without "${key}"`,
+		);
+	}
+	const raw = data[key];
+	return {
+		items: raw === null ? [] : requireArray(raw, context),
+		hasMore: data.has_more === true,
+		pageToken: nonEmptyString(data.page_token),
+	};
 }
 
-function parseEnvelope(text: string): CliEnvelope | null {
-	try {
-		const parsed = JSON.parse(text) as unknown;
-		return isRecord(parsed) ? (parsed as CliEnvelope) : null;
-	} catch {
-		return null;
+/** lark-cli's `create_time` form: local "YYYY-MM-DD HH:MM". */
+const MESSAGE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/;
+
+/**
+ * Reads one `im +chat-messages-list` row. A live message must carry the id
+ * and time the chat docs are keyed and ordered by; a deleted-message
+ * tombstone is kept whatever else it carries, since it is never indexed.
+ * Returns undefined for any other row so the caller can fail closed.
+ */
+function parseMessage(raw: unknown): ChatMessage | undefined {
+	if (!isRecord(raw)) {
+		return undefined;
 	}
+	const deleted = raw.deleted === true;
+	const messageId = nonEmptyString(raw.message_id);
+	const createTime = typeof raw.create_time === 'string' &&
+			MESSAGE_TIME.test(raw.create_time)
+		? raw.create_time
+		: undefined;
+	if (!deleted && (messageId == null || createTime == null)) {
+		return undefined;
+	}
+	const sender = isRecord(raw.sender) ? raw.sender : undefined;
+	return {
+		message_id: messageId,
+		msg_type: nonEmptyString(raw.msg_type),
+		content: typeof raw.content === 'string' ? raw.content : undefined,
+		create_time: createTime,
+		deleted,
+		sender: sender == null ? undefined : {
+			id: nonEmptyString(sender.id),
+			name: nonEmptyString(sender.name),
+			sender_type: nonEmptyString(sender.sender_type),
+		},
+	};
 }
 
 /**
@@ -419,25 +659,22 @@ function parseEnvelope(text: string): CliEnvelope | null {
  * `title_highlighted`. `doc_types` is UPPERCASE (e.g. "DOCX") on the wire.
  */
 export function extractSearchPage(data: unknown): SearchPage {
-	if (!isRecord(data)) {
-		return { entities: [], hasMore: false };
-	}
-
-	const results = Array.isArray(data.results) ? data.results : [];
+	const page = listPage(data, 'results', 'lark-cli drive +search');
 	const entities: SearchEntity[] = [];
-	for (const raw of results) {
+	for (const raw of page.items) {
 		if (!isRecord(raw)) {
 			continue;
 		}
 		const meta = isRecord(raw.result_meta) ? raw.result_meta : {};
-		const token = asString(meta.token);
+		const token = nonEmptyString(meta.token);
 		if (token == null) {
 			continue;
 		}
-		const type = (asString(meta.doc_types) ?? asString(raw.entity_type) ??
-			'doc').toLowerCase();
+		const type = (nonEmptyString(meta.doc_types) ??
+			nonEmptyString(raw.entity_type) ?? 'doc').toLowerCase();
 		const title = stripHighlightTags(
-			asString(raw.title_highlighted) ?? asString(raw.title) ?? '',
+			nonEmptyString(raw.title_highlighted) ?? nonEmptyString(raw.title) ??
+				'',
 		).trim();
 		entities.push({
 			token,
@@ -447,15 +684,15 @@ export function extractSearchPage(data: unknown): SearchPage {
 			createdAt: normalizeSourceTime(
 				meta.create_time ?? meta.create_time_iso,
 			),
-			url: asString(meta.url),
-			owner: asString(meta.owner_name),
+			url: nonEmptyString(meta.url),
+			owner: nonEmptyString(meta.owner_name),
 		});
 	}
 
 	return {
 		entities,
-		hasMore: data.has_more === true,
-		pageToken: asString(data.page_token),
+		hasMore: page.hasMore,
+		pageToken: page.pageToken,
 	};
 }
 
@@ -519,47 +756,4 @@ export function normalizeSourceTime(value: unknown): string | undefined {
 
 export function stripHighlightTags(value: string): string {
 	return value.replace(/<\/?[a-z][^>]*>/gi, '');
-}
-
-export function buildDocUrl(type: string, token: string): string {
-	const path = type === 'docx'
-		? 'docx'
-		: type === 'wiki'
-		? 'wiki'
-		: type === 'sheet'
-		? 'sheets'
-		: type === 'bitable'
-		? 'base'
-		: 'docs';
-	return `https://feishu.cn/${path}/${token}`;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function asString(value: unknown): string | undefined {
-	return typeof value === 'string' && value !== '' ? value : undefined;
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function abortableDelay(
-	milliseconds: number,
-	signal: AbortSignal,
-): Promise<void> {
-	signal.throwIfAborted();
-	return new Promise((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			signal.removeEventListener('abort', onAbort);
-			resolve();
-		}, milliseconds);
-		const onAbort = () => {
-			clearTimeout(timeout);
-			reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
-		};
-		signal.addEventListener('abort', onAbort, { once: true });
-	});
 }

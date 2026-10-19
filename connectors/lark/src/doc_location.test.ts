@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import FeishuConnector, { buildCloudDoc, type FeishuState } from './index.ts';
-import { DocLocationResolver } from './doc_location.ts';
+import { runPoll } from '@gety-connectors/testing';
+import LarkConnector, { buildCloudDoc, type LarkState } from './index.ts';
+import { type CloudPosition, DocLocationResolver } from './doc_location.ts';
 import {
 	type DrivePage,
 	LarkCliClient,
@@ -8,7 +9,6 @@ import {
 	type SearchEntity,
 	type WikiNode,
 } from './lark_cli.ts';
-import type { PollResult } from '@gety-ai/connector-sdk';
 
 class FakeClient extends LarkCliClient {
 	nodes = new Map<string, WikiNode>();
@@ -28,6 +28,9 @@ class FakeClient extends LarkCliClient {
 		url: 'https://team.feishu.cn/wiki/leaf',
 	};
 
+	/** Gety's per-connector data directory, where positions are cached. */
+	dataDir = Deno.makeTempDirSync({ prefix: 'lark-test-' });
+
 	constructor() {
 		super('unused', new AbortController().signal);
 	}
@@ -44,7 +47,7 @@ class FakeClient extends LarkCliClient {
 		}
 		const node = this.nodes.get(token);
 		return node == null
-			? Promise.reject(new LarkCliError('not mounted', [], '131014'))
+			? Promise.reject(new LarkCliError('not mounted', { code: '131014' }))
 			: Promise.resolve(node);
 	}
 
@@ -207,7 +210,9 @@ Deno.test('metadata failures preserve the last known position without blocking c
 
 Deno.test('missing Wiki scope still resolves Drive folders and avoids repeated failed scope queries', async () => {
 	const client = new FakeClient();
-	client.metadataError = new LarkCliError('missing scope', ['wiki:node:read']);
+	client.metadataError = new LarkCliError('missing scope', {
+		missingScopes: ['wiki:node:read'],
+	});
 	client.folders.set(':', {
 		files: [{ token: 'folder', type: 'folder', name: 'Plans' }],
 		hasMore: false,
@@ -227,21 +232,10 @@ Deno.test('missing Wiki scope still resolves Drive folders and avoids repeated f
 	assert.equal(client.driveCalls, 2);
 });
 
-class TestConnector extends FeishuConnector {
-	constructor(
-		private client: FakeClient,
-		state?: FeishuState,
-		budgetMs?: number,
-	) {
+class TestConnector extends LarkConnector {
+	constructor(private client: FakeClient, budgetMs?: number) {
 		super();
 		if (budgetMs != null) this.locationBudgetMs = budgetMs;
-		this.config = {
-			index_chat_history: false,
-			chat_grouping: 'week',
-			chat_history_days: 30,
-			lark_cli_path: 'unused',
-		};
-		this.lastState = state ?? null;
 	}
 
 	protected override createClient(): LarkCliClient {
@@ -249,30 +243,36 @@ class TestConnector extends FeishuConnector {
 	}
 }
 
+const CONFIG = {
+	index_chat_history: false,
+	chat_grouping: 'week',
+	chat_history_days: 30,
+} as const;
+
 async function poll(
 	client: FakeClient,
-	state?: FeishuState,
+	state?: LarkState,
 	budgetMs?: number,
 ) {
-	const results: PollResult[] = [];
-	for await (
-		const result of new TestConnector(client, state, budgetMs).poll()
-	) {
-		results.push(result);
-	}
+	const run = await runPoll(new TestConnector(client, budgetMs), {
+		config: CONFIG,
+		lastState: state ?? null,
+		dataDir: client.dataDir,
+	});
+	assert.equal(run.outcome, 'done', String(run.error));
+	const cache = JSON.parse(
+		await Deno.readTextFile(`${client.dataDir}/doc-positions.json`),
+	) as { positions: Record<string, CloudPosition> };
 	return {
-		updates: results.flatMap((result) => result.updates),
-		state: results.findLast((result) => result.state != null)!
-			.state as FeishuState,
+		updates: run.updates,
+		state: run.committedState as LarkState,
+		positions: cache.positions,
 	};
 }
 
 Deno.test('poll refreshes moved/renamed locations despite unchanged edit time and skips stable bodies', async () => {
 	const client = wikiClient();
-	const first = await poll(client, {
-		docs: { doc: client.entity.url! },
-		docs_high_water: client.entity.editedAt,
-	});
+	const first = await poll(client, { docs: { doc: client.entity.url! } });
 	assert.equal(first.updates.length, 1);
 	assert.equal(client.bodyCalls, 1);
 	const unchanged = await poll(client, first.state);
@@ -296,18 +296,15 @@ Deno.test('poll refreshes moved/renamed locations despite unchanged edit time an
 		);
 		assert.ok(update.doc.content?.endsWith('# Spec\n\nText'));
 	}
-	assert.equal(
-		renamed.state.doc_positions?.doc.location?.path,
-		'Gety / Platform',
-	);
+	assert.equal(renamed.positions.doc.location?.path, 'Gety / Platform');
 	client.nodes.get('leaf')!.parent_node_token = 'root';
 	const moved = await poll(client, renamed.state);
 	assert.equal(moved.updates.length, 1);
-	assert.equal(moved.state.doc_positions?.doc.location?.path, 'Gety');
+	assert.equal(moved.positions.doc.location?.path, 'Gety');
 	client.failMetadata = true;
 	const unavailable = await poll(client, moved.state);
 	assert.equal(unavailable.updates.length, 0);
-	assert.deepEqual(unavailable.state.doc_positions, moved.state.doc_positions);
+	assert.deepEqual(unavailable.positions, moved.positions);
 });
 
 Deno.test('failed metadata refresh body fetch is retried without advancing the metadata signature', async () => {
@@ -318,54 +315,59 @@ Deno.test('failed metadata refresh body fetch is retried without advancing the m
 	const failed = await poll(client, first.state);
 	assert.equal(failed.updates.length, 0);
 	assert.deepEqual(failed.state.doc_signatures, first.state.doc_signatures);
-	assert.deepEqual(failed.state.doc_positions, first.state.doc_positions);
+	assert.deepEqual(failed.positions, first.positions);
 	client.failBody = false;
 	const retried = await poll(client, failed.state);
 	assert.equal(retried.updates.length, 1);
-	assert.equal(
-		retried.state.doc_positions?.doc.location?.parent_name,
-		'Changed',
-	);
+	assert.equal(retried.positions.doc.location?.parent_name, 'Changed');
 });
 
-Deno.test('existing metadata-only signatures refresh Markdown once after upgrading', async () => {
+for (
+	const malformed of [
+		null,
+		'x',
+		{ location: { ancestors: 'oops', path: 'x' } },
+		{ location: { ancestors: [{ id: 1, title: 'API' }] } },
+		{ location: { path_complete: 'yes' } },
+		{ feishu: 'x' },
+	]
+) {
+	Deno.test(
+		`a malformed cached position (${
+			JSON.stringify(malformed)
+		}) is a cache miss, not a broken document`,
+		async () => {
+			const client = wikiClient();
+			const first = await poll(client);
+			const path = `${client.dataDir}/doc-positions.json`;
+			const file = JSON.parse(await Deno.readTextFile(path));
+			file.positions.doc = malformed;
+			await Deno.writeTextFile(path, JSON.stringify(file));
+			// With lookups failing, the cached position is the fallback.
+			client.failMetadata = true;
+			const next = await poll(client, first.state);
+			assert.equal(next.updates.length, 1);
+			assert.deepEqual(next.positions, { doc: {} });
+			client.failMetadata = false;
+			const repaired = await poll(client, next.state);
+			assert.equal(repaired.positions.doc.location?.path, 'Gety / API');
+		},
+	);
+}
+
+Deno.test('the position cache only seeds polls of the state it was written with', async () => {
 	const client = wikiClient();
 	const first = await poll(client);
-	const e = client.entity;
-	const oldData = JSON.stringify([
-		e.token,
-		e.type,
-		e.title,
-		e.editedAt,
-		e.createdAt,
-		e.url,
-		e.owner,
-		first.state.doc_positions?.doc,
-	]);
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(oldData),
-	);
-	const oldSignature = Array.from(
-		new Uint8Array(digest),
-		(value) => value.toString(16).padStart(2, '0'),
-	).join('');
-	const upgraded = await poll(client, {
-		...first.state,
-		doc_signatures: { doc: oldSignature },
-	});
-	assert.equal(upgraded.updates.length, 1);
-	const update = upgraded.updates[0];
-	assert.equal(update.kind, 'upsert');
-	if (update.kind === 'upsert') {
-		assert.ok(
-			update.doc.content?.includes(
-				'> **知识库：** [Engineering](<https://team.feishu.cn/wiki/space/space>)',
-			),
-		);
-	}
-	const next = await poll(client, upgraded.state);
-	assert.equal(next.updates.length, 0);
+	assert.equal(first.positions.doc.location?.path, 'Gety / API');
+	// A resync (no state) must not trust positions cached by an older index:
+	// with lookups failing, the doc is rebuilt without the stale location.
+	client.failMetadata = true;
+	const resync = await poll(client);
+	assert.equal(resync.updates.length, 1);
+	const update = resync.updates[0];
+	assert.ok(update.kind === 'upsert' && !update.doc.content?.includes('API'));
+	assert.notEqual(resync.state.positions_epoch, first.state.positions_epoch);
+	assert.deepEqual(resync.positions, { doc: {} });
 });
 
 Deno.test('Wiki links preserve Lark tenant domains and omit links without a known tenant', async () => {
@@ -421,37 +423,6 @@ Deno.test('Drive paths link folders only when the API provides their URLs', asyn
 			'> **父节点：** [API](<https://team.feishu.cn/drive/folder/parent>)',
 		),
 	);
-});
-
-Deno.test('Markdown v1 signatures refresh once even when locations remain unchanged', async () => {
-	const client = new FakeClient();
-	const first = await poll(client);
-	const e = client.entity;
-	const data = JSON.stringify([
-		'markdown-source-v1',
-		e.token,
-		e.type,
-		e.title,
-		e.editedAt,
-		e.createdAt,
-		e.url,
-		e.owner,
-		first.state.doc_positions?.doc,
-	]);
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(data),
-	);
-	const signature = Array.from(
-		new Uint8Array(digest),
-		(value) => value.toString(16).padStart(2, '0'),
-	).join('');
-	const upgraded = await poll(client, {
-		...first.state,
-		doc_signatures: { doc: signature },
-	});
-	assert.equal(upgraded.updates.length, 1);
-	assert.equal((await poll(client, upgraded.state)).updates.length, 0);
 });
 
 const never = <T>() => new Promise<T>(() => {});
@@ -524,7 +495,7 @@ class PagedClient extends FakeClient {
 	}
 }
 
-Deno.test('an interrupted first sync resumes from the committed batches', async () => {
+Deno.test('an interrupted first sync commits no state and the next poll redoes it', async () => {
 	const client = new PagedClient();
 	const entity = (token: string): SearchEntity => ({
 		...client.entity,
@@ -533,24 +504,21 @@ Deno.test('an interrupted first sync resumes from the committed batches', async 
 	});
 	client.pages = [[entity('a'), entity('b')], [entity('c')]];
 	const generator = new TestConnector(client).poll();
-	const first = (await generator.next()).value as PollResult;
+	const first = (await generator.next()).value;
 	// The host cancels the poll after the first batch (e.g. idle timeout).
+	// Intermediate batches carry no state, so nothing is committed.
 	await generator.return(undefined);
+	assert.ok(first != null && !Object.hasOwn(first, 'state'));
 	assert.equal(first.updates.length, 2);
-	const committed = first.state as FeishuState;
-	assert.deepEqual(Object.keys(committed.docs ?? {}).sort(), ['a', 'b']);
-	assert.equal(committed.docs_high_water, undefined);
-	assert.equal(client.bodyCalls, 2);
 
-	const resumed = await poll(client, committed);
+	const redone = await poll(client);
 	assert.deepEqual(
-		resumed.updates.map((update) =>
+		redone.updates.map((update) =>
 			update.kind === 'upsert' ? update.doc.id : update.id
 		),
-		['feishu:doc:c'],
+		['feishu:doc:a', 'feishu:doc:b', 'feishu:doc:c'],
 	);
-	assert.equal(client.bodyCalls, 3);
-	assert.deepEqual(Object.keys(resumed.state.docs ?? {}).sort(), [
+	assert.deepEqual(Object.keys(redone.state.docs ?? {}).sort(), [
 		'a',
 		'b',
 		'c',

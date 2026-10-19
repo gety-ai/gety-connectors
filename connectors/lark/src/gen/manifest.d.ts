@@ -4,5 +4,4 @@ export interface ManifestConfig {
 	index_chat_history: boolean;
 	chat_grouping: string;
 	chat_history_days?: number;
-	lark_cli_path?: string;
 }

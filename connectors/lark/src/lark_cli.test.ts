@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
+import { IncompleteEnumerationError } from '@gety-connectors/utils/paginate';
+import type { Logger } from '@gety-connectors/utils/log';
 import {
-	buildDocUrl,
 	extractDocContent,
 	extractSearchPage,
+	isConfirmedGone,
 	isoFromLarkTime,
-	isRateLimitFailure,
+	isRetryableFailure,
 	LarkCliClient,
 	LarkCliError,
+	LarkCliTimeoutError,
+	LarkCliUnavailableError,
 	normalizeSourceTime,
 	stripHighlightTags,
 } from './lark_cli.ts';
+import { fail, installFakeLarkCli, ok } from './testdata/fake_cli.ts';
 
 Deno.test('isoFromLarkTime parses local minute timestamps', () => {
 	const iso = isoFromLarkTime('2026-07-10 11:22');
@@ -82,13 +87,20 @@ Deno.test('extractSearchPage maps doc_wiki search entities', () => {
 	assert.equal(page.pageToken, 'next');
 });
 
-Deno.test('extractSearchPage tolerates unknown shapes', () => {
-	assert.deepEqual(extractSearchPage(null), { entities: [], hasMore: false });
-	assert.deepEqual(extractSearchPage({ unexpected: true }), {
+Deno.test('extractSearchPage reads a null result list as empty and rejects unknown shapes', () => {
+	assert.deepEqual(extractSearchPage({ results: null, has_more: false }), {
 		entities: [],
 		hasMore: false,
 		pageToken: undefined,
 	});
+	// An unrecognized page must not read as "no documents": that would
+	// delete the whole index.
+	for (const data of [null, { unexpected: true }, { results: {} }]) {
+		assert.throws(
+			() => extractSearchPage(data),
+			IncompleteEnumerationError,
+		);
+	}
 });
 
 Deno.test('search results without an original URL do not invent a display link', () => {
@@ -175,34 +187,222 @@ Deno.test('extractDocContent finds markdown in nested payloads', () => {
 	assert.equal(extractDocContent(42), null);
 });
 
-Deno.test('buildDocUrl maps source types to url paths', () => {
-	assert.equal(buildDocUrl('docx', 't'), 'https://feishu.cn/docx/t');
-	assert.equal(buildDocUrl('wiki', 't'), 'https://feishu.cn/wiki/t');
-	assert.equal(buildDocUrl('doc', 't'), 'https://feishu.cn/docs/t');
-});
-
-Deno.test('isRateLimitFailure matches only explicit rate-limit errors', () => {
+Deno.test('isRetryableFailure matches rate limits and errors marked retryable', () => {
 	assert.equal(
-		isRateLimitFailure({
+		isRetryableFailure({
 			ok: false,
-			error: { type: 'rate_limit', message: 'slow down' },
+			error: { type: 'api', subtype: 'rate_limit', message: 'slow down' },
 		}),
 		true,
 	);
 	assert.equal(
-		isRateLimitFailure({
+		isRetryableFailure({
 			ok: false,
 			error: { message: 'HTTP 429 Too Many Requests' },
 		}),
 		true,
 	);
 	assert.equal(
-		isRateLimitFailure({
+		isRetryableFailure({
+			ok: false,
+			error: { type: 'network', message: 'connection reset', retryable: true },
+		}),
+		true,
+	);
+	assert.equal(
+		isRetryableFailure({
 			ok: false,
 			error: { type: 'authorization', message: 'missing scope' },
 		}),
 		false,
 	);
-	assert.equal(isRateLimitFailure(null), false);
-	assert.equal(isRateLimitFailure({ ok: false }), false);
+	assert.equal(isRetryableFailure(null), false);
+	assert.equal(isRetryableFailure({ ok: false }), false);
+});
+
+Deno.test('only not_found and permission_denied confirm a document is gone', () => {
+	const error = (type: string, subtype: string) =>
+		new LarkCliError('failed', { type, subtype });
+	assert.equal(isConfirmedGone(error('api', 'not_found')), true);
+	assert.equal(
+		isConfirmedGone(error('authorization', 'permission_denied')),
+		true,
+	);
+	assert.equal(isConfirmedGone(error('api', 'unknown')), false);
+	assert.equal(isConfirmedGone(error('authorization', 'missing_scope')), false);
+	assert.equal(isConfirmedGone(error('network', 'timeout')), false);
+	assert.equal(isConfirmedGone(new Error('not found')), false);
+});
+
+async function fakeCli(
+	rules: Parameters<typeof installFakeLarkCli>[1]['rules'],
+) {
+	return await installFakeLarkCli(
+		await Deno.makeTempDir({ prefix: 'lark-cli-test-' }),
+		{ rules },
+	);
+}
+
+const FAST = { retryBaseDelayMs: 1 };
+
+Deno.test('the CLI client parses success and error envelopes of the real binary', async () => {
+	const fake = await fakeCli([
+		{ cmd: 'im +chat-list', responses: [ok({ chats: null, has_more: false })] },
+		{
+			cmd: 'docs +fetch',
+			responses: [fail({
+				type: 'authorization',
+				subtype: 'missing_scope',
+				message: 'missing scope',
+				missing_scopes: ['docx:document:readonly'],
+			})],
+		},
+	]);
+	const client = new LarkCliClient(
+		fake.bin,
+		new AbortController().signal,
+		FAST,
+	);
+	assert.deepEqual(await client.listChats(), {
+		chats: [],
+		hasMore: false,
+		pageToken: undefined,
+	});
+	await assert.rejects(client.fetchDocMarkdown('doc'), (error: unknown) => {
+		assert.ok(error instanceof LarkCliError);
+		assert.deepEqual(error.missingScopes, ['docx:document:readonly']);
+		assert.equal(error.type, 'authorization');
+		assert.equal(error.subtype, 'missing_scope');
+		return true;
+	});
+	assert.equal((await fake.calls()).length, 2);
+});
+
+Deno.test('the CLI client retries rate limits and then succeeds', async () => {
+	const fake = await fakeCli([{
+		cmd: 'im +chat-list',
+		responses: [
+			fail({ type: 'api', subtype: 'rate_limit', message: 'slow down' }),
+			ok({ chats: [{ chat_id: 'oc_1', name: 'Team' }], has_more: false }),
+		],
+	}]);
+	const client = new LarkCliClient(
+		fake.bin,
+		new AbortController().signal,
+		FAST,
+	);
+	const page = await client.listChats();
+	assert.deepEqual(page.chats.map((chat) => chat.chat_id), ['oc_1']);
+	assert.equal((await fake.calls()).length, 2);
+});
+
+// The backoff is a real wait inside utils retry (it has no clock seam), so
+// where the log lines fall against it is measured on the platform clock.
+Deno.test('a retry is logged before its backoff wait and again when its attempt starts', async () => {
+	const fake = await fakeCli([{
+		cmd: 'im +chat-list',
+		responses: [
+			fail({
+				type: 'api',
+				subtype: 'rate_limit',
+				message: 'slow down',
+				retry_after_seconds: 1,
+			}),
+			ok({ chats: null, has_more: false }),
+		],
+	}]);
+	const logged: number[] = [];
+	const logger: Logger = {
+		info: () => logged.push(Date.now()),
+		warn: () => {},
+		warnOnce: () => {},
+		progress: () => {},
+	};
+	const client = new LarkCliClient(fake.bin, new AbortController().signal, {
+		logger,
+	});
+	await client.listChats();
+	const [first, second] = await fake.callTimes();
+	assert.equal(logged.length, 2);
+	// Without a line before the wait, a slow failed call plus the wait would
+	// be silent; without one after it, the wait plus the next call would.
+	assert.ok(
+		second - logged[0] >= 900,
+		`wait logged ${second - logged[0]}ms early`,
+	);
+	assert.ok(
+		logged[0] - first < 900,
+		`failure logged ${logged[0] - first}ms in`,
+	);
+	assert.ok(
+		logged[1] - first >= 900,
+		`attempt logged ${logged[1] - first}ms in`,
+	);
+	assert.ok(
+		second - logged[1] < 900,
+		`call started ${second - logged[1]}ms on`,
+	);
+});
+
+// The timeout is the wall-clock kill of a real subprocess, so it is exercised
+// with a real (short) budget against a fake that hangs.
+Deno.test('a hung CLI call is killed at its timeout and retried once', async () => {
+	const fake = await fakeCli([{
+		cmd: 'im +chat-list',
+		responses: [{ sleepMs: 30_000, stdout: '' }],
+	}]);
+	const client = new LarkCliClient(fake.bin, new AbortController().signal, {
+		...FAST,
+		timeoutMs: 500,
+	});
+	const started = Date.now();
+	await assert.rejects(client.listChats(), LarkCliTimeoutError);
+	assert.ok(Date.now() - started < 10_000);
+	assert.equal((await fake.calls()).length, 2);
+});
+
+Deno.test('a cancelled poll kills the CLI call and does not retry it', async () => {
+	const fake = await fakeCli([{
+		cmd: 'im +chat-list',
+		responses: [{ sleepMs: 30_000, stdout: '' }],
+	}]);
+	const controller = new AbortController();
+	const client = new LarkCliClient(fake.bin, controller.signal, FAST);
+	const watcher = Deno.watchFs(fake.dir);
+	const started = Date.now();
+	const pending = client.listChats();
+	// Cancel once the fake has started (it logs the call, then hangs).
+	for await (const event of watcher) {
+		if (event.paths.some((path) => path.endsWith('calls.jsonl'))) break;
+	}
+	controller.abort(new Error('cancelled'));
+	await assert.rejects(pending, /cancelled/);
+	assert.ok(Date.now() - started < 10_000);
+	assert.equal((await fake.calls()).length, 1);
+});
+
+Deno.test('a missing binary is reported as unavailable, not as an API failure', async () => {
+	const client = new LarkCliClient(
+		`lark-cli-missing-${crypto.randomUUID()}`,
+		new AbortController().signal,
+		FAST,
+	);
+	await assert.rejects(client.listChats(), LarkCliUnavailableError);
+});
+
+Deno.test('a list command with an unknown output shape fails instead of reading as empty', async () => {
+	const fake = await fakeCli([
+		{ cmd: 'im +chat-list', responses: [ok({ items: [] })] },
+		{ cmd: 'im +chat-messages-list', responses: [ok({ messages: 'x' })] },
+	]);
+	const client = new LarkCliClient(
+		fake.bin,
+		new AbortController().signal,
+		FAST,
+	);
+	await assert.rejects(client.listChats(), IncompleteEnumerationError);
+	await assert.rejects(
+		client.listMessages('oc_1', '2026-01-01T00:00:00.000Z'),
+		IncompleteEnumerationError,
+	);
 });

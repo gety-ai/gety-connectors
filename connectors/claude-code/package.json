@@ -2,6 +2,7 @@
 	"name": "@gety-connectors/claude-code",
 	"version": "0.1.0",
 	"description": "Search your local Claude Code sessions in Gety.",
+	"license": "Apache-2.0",
 	"keywords": [
 		"gety",
 		"gety-connector"

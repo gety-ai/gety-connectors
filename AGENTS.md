@@ -72,6 +72,9 @@ only check.
   OIDC. Lint workflow changes with `actionlint`.
 - **Releases**: never run `npm publish`, `pnpm publish` or `changeset publish`
   yourself.
+- **License**: everything is Apache-2.0 (root `LICENSE`). Every published
+  `package.json` has `"license": "Apache-2.0"`; do not add per-package LICENSE
+  copies, pnpm packs the root one (`verify:packs` checks it).
 
 ## Style
 

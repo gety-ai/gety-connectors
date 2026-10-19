@@ -2,6 +2,7 @@
 	"name": "@gety-connectors/lark",
 	"version": "0.1.0",
 	"description": "通过本机已登录的 lark-cli 索引飞书云文档与聊天记录。",
+	"license": "Apache-2.0",
 	"keywords": [
 		"gety",
 		"gety-connector"

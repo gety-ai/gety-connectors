@@ -18,6 +18,7 @@ import {
 	equalJson,
 	exists,
 	formatJson,
+	license,
 	listConnectors,
 	type Manifest,
 	oneLine,
@@ -78,6 +79,9 @@ async function syncConnector(
 		result.errors.push(
 			`${label}/package.json: publishConfig.access must be public`,
 		);
+	}
+	if (pkg.license !== license) {
+		result.errors.push(`${label}/package.json: license must be ${license}`);
 	}
 	if (!(await exists(new URL('CHANGELOG.md', connector.dir)))) {
 		result.errors.push(`${label}: CHANGELOG.md is missing`);

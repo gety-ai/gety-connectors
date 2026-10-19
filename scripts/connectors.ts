@@ -5,6 +5,8 @@ export const repoRoot = new URL('../', import.meta.url);
 export const npmScope = '@gety-connectors';
 export const repositoryUrl =
 	'git+https://github.com/gety-ai/gety-connectors.git';
+/** SPDX license of every published package (text in the root LICENSE). */
+export const license = 'Apache-2.0';
 export const catalogDir = new URL('packages/catalog/', repoRoot);
 
 export interface Manifest {
@@ -21,6 +23,7 @@ export interface PackageJson {
 	name: string;
 	version: string;
 	description?: string;
+	license?: string;
 	files?: string[];
 	repository?: { type?: string; url?: string; directory?: string };
 	publishConfig?: { access?: string };

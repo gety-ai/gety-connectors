@@ -2,6 +2,7 @@
 	"name": "@gety-connectors/catalog",
 	"version": "0.1.0",
 	"description": "Catalog of the official Gety connectors.",
+	"license": "Apache-2.0",
 	"keywords": [
 		"gety"
 	],

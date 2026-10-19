@@ -195,3 +195,10 @@ enabled.
 3. Add a changeset for the catalog so the next release includes the new
    connector. The first publish of the new package is manual: follow the
    bootstrap steps for that one package.
+
+## License
+
+[Apache-2.0](LICENSE). Packages carry no copy of the license: pnpm packs the
+workspace root `LICENSE` into every package that has none of its own, and
+`deno task verify:packs` checks it is there. Plain `npm pack`/`npm publish`
+would leave it out, so publish only through changesets (which uses pnpm here).

@@ -18,10 +18,12 @@ import {
 import {
 	catalogDir,
 	equalJson,
+	license,
 	listConnectors,
 	type Manifest,
 	type PackageJson,
 	readJson,
+	repoRoot,
 } from './connectors.ts';
 
 /** Bare specifiers a bundle may import: Node built-ins and the host SDK. */
@@ -41,6 +43,7 @@ interface Tarball {
 }
 
 const decoder = new TextDecoder();
+const rootLicense = await Deno.readTextFile(new URL('LICENSE', repoRoot));
 const workDir = await Deno.makeTempDir({ prefix: 'gety-connectors-pack-' });
 const errors: string[] = [];
 
@@ -141,6 +144,7 @@ function checkConnector(name: string, tarball: Tarball, manifest: Manifest) {
 		errors.push(`${name}: icon ${pkg.gety.icon} is missing`);
 	}
 	checkChangelog(name, tarball, pkg.version);
+	checkLicense(name, tarball, pkg);
 	report(name, pkg.version, tarball);
 }
 
@@ -168,6 +172,7 @@ function checkCatalog(name: string, tarball: Tarball, connectorCount: number) {
 		);
 	}
 	checkChangelog(name, tarball, pkg.version);
+	checkLicense(name, tarball, pkg);
 	report(name, pkg.version, tarball, `package.json ${size} bytes`);
 }
 
@@ -189,6 +194,22 @@ function checkChangelog(name: string, tarball: Tarball, version: string) {
 		errors.push(`${name}: CHANGELOG.md is missing`);
 	} else if (!decoder.decode(changelog).includes(`\n## ${version}\n`)) {
 		errors.push(`${name}: CHANGELOG.md has no "## ${version}" entry`);
+	}
+}
+
+/**
+ * pnpm packs the workspace root LICENSE into every package that has none of
+ * its own, so the packages carry no copies; this guards that behavior.
+ */
+function checkLicense(name: string, tarball: Tarball, pkg: PackageJson) {
+	if (pkg.license !== license) {
+		errors.push(`${name}: package.json license must be ${license}`);
+	}
+	const packed = tarball.files.get('LICENSE');
+	if (!packed) {
+		errors.push(`${name}: LICENSE is missing`);
+	} else if (decoder.decode(packed) !== rootLicense) {
+		errors.push(`${name}: LICENSE differs from the repository LICENSE`);
 	}
 }
 

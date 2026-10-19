@@ -9,6 +9,8 @@
  * fenced/inline code is never modified.
  */
 
+import { pipeTable } from '@gety-connectors/utils/text';
+
 const EPHEMERAL_URL_MARKERS = ['internal-api-drive-stream', '/authcode/'];
 
 export function cleanupDocMarkdown(text: string): string {
@@ -57,26 +59,15 @@ function convertTables(text: string): string {
 			}
 			rows.push(cells);
 		}
-		if (rows.length === 0) {
-			return '';
-		}
-		const width = Math.max(...rows.map((cells) => cells.length), 1);
-		const line = (cells: string[]) =>
-			`| ${
-				Array.from({ length: width }, (_, i) => cells[i] ?? '').join(' | ')
-			} |`;
-		const separator = `| ${Array(width).fill('---').join(' | ')} |`;
-		return [
-			'',
-			line(rows[0]),
-			separator,
-			...rows.slice(1).map(line),
-			'',
-		].join('\n');
+		const table = pipeTable(rows, { header: true });
+		return table === '' ? '' : `\n${table}\n`;
 	});
 }
 
-/** Cell content must stay on one pipe-table line with pipes escaped. */
+/**
+ * Cell content must stay on one pipe-table line; `pipeTable` escapes pipes
+ * and line breaks, so only markup and runs of whitespace are flattened here.
+ */
 function flattenCell(content: string): string {
 	let out = content;
 	out = transformInline(out);
@@ -86,7 +77,7 @@ function flattenCell(content: string): string {
 		.replace(/<li(?:\s[^>]*)?>/g, ' • ')
 		.replace(/<\/li>/g, ' ')
 		.replace(/<\/?(?:ul|ol|blockquote)(?:\s[^>]*)?>/g, ' ');
-	return out.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+	return out.replace(/\s+/g, ' ').trim();
 }
 
 /** `<callout emoji="💡">…</callout>` becomes a quoted block. */

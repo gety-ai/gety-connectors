@@ -8,7 +8,7 @@
 	"icon": "icon.png",
 	"description": "通过本机已登录的 lark-cli 索引飞书云文档与聊天记录。",
 	"author": {
-		"name": "yuche"
+		"name": "Gety"
 	},
 	"schedule": {
 		"strategy": "interval",

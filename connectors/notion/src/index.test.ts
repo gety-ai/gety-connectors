@@ -467,6 +467,47 @@ Deno.test('a same-minute edit is not lost when the block fetch runs minutes afte
 	}
 });
 
+Deno.test('a page listed twice in one poll is fetched once', async () => {
+	const notion = fakeNotion(
+		[page('a', TS_NEW), page('b', TS_NEW), page('a', TS_NEW)],
+		{ a: [paragraph('A')], b: [paragraph('B')] },
+	);
+
+	const run = await runPoll(new TestConnector(notion), { config: CONFIG });
+
+	assert.deepEqual(updateIds(run.updates), [
+		['upsert', 'a'],
+		['upsert', 'b'],
+	]);
+	assert.equal(
+		notion.requests.filter((url) => url.includes('/blocks/a/')).length,
+		1,
+	);
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { a: TS_NEW, b: TS_NEW },
+	});
+});
+
+Deno.test('a page edited during the search is fetched again', async () => {
+	const TS_LATER = '2026-02-03T00:00:00.000Z';
+	const notion = fakeNotion(
+		[page('a', TS_NEW), page('a', TS_LATER)],
+		{ a: [paragraph('A')] },
+	);
+
+	const run = await runPoll(new TestConnector(notion), { config: CONFIG });
+
+	assert.deepEqual(updateIds(run.updates), [
+		['upsert', 'a'],
+		['upsert', 'a'],
+	]);
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { a: TS_LATER },
+	});
+});
+
 Deno.test('a cancelled poll deletes nothing and commits no state', async () => {
 	const controller = new AbortController();
 	const notion = fakeNotion([page('a', TS_NEW), page('b', TS_NEW)], {

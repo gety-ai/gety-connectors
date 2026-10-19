@@ -190,7 +190,11 @@ export default class NotionConnector extends Connector<
 		const known = knownPagesFromState(this.lastState);
 		/** Next state: every listed, readable page → its recorded edit time. */
 		const pages: Record<string, string> = {};
-		let fetched = 0;
+		/**
+		 * Pages fetched by this poll → the edit time they were fetched at. The
+		 * ascending sort repeats a page edited during the search further on.
+		 */
+		const fetched = new Map<string, string>();
 		/**
 		 * Taken before the search: the title and properties in each document
 		 * come from the search response, which can be minutes older than the
@@ -206,8 +210,11 @@ export default class NotionConnector extends Connector<
 				const lastEdited = typeof page.last_edited_time === 'string'
 					? page.last_edited_time
 					: '';
-				if (lastEdited.length > 0 && known[page.id] === lastEdited) {
-					pages[page.id] = lastEdited;
+				if (
+					(lastEdited.length > 0 && known[page.id] === lastEdited) ||
+					fetched.get(page.id) === lastEdited
+				) {
+					pages[page.id] ??= lastEdited;
 					continue;
 				}
 
@@ -229,7 +236,7 @@ export default class NotionConnector extends Connector<
 					pollStartedAt - Date.parse(lastEdited) >= EDIT_TIME_SETTLED_MS
 						? lastEdited
 						: '';
-				fetched += 1;
+				fetched.set(page.id, lastEdited);
 				yield { updates: [upsert(buildPageDoc(page, markdown))] };
 			}
 		}
@@ -242,7 +249,7 @@ export default class NotionConnector extends Connector<
 		});
 		logger.info('Notion sync finished', {
 			pages: Object.keys(pages).length,
-			fetched,
+			fetched: fetched.size,
 			deleted: deleted.length,
 		});
 		yield {

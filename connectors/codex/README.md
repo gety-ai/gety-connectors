@@ -6,15 +6,16 @@ markdown documents.
 ## Scope
 
 - Creates one `codex:session` document per Codex session. Codex continues a long
-  session in segment files (`rollout-<time>-<session id>_<segment
-  id>.jsonl`);
+  session in segment files (`rollout-<time>-<session id>_<segment id>.jsonl`);
   all segments of a session are merged, in order, into its document, and a
   change to any of them rebuilds it from all of them.
 - Uses the session summary as the title when available, otherwise falls back to
   the first user prompt.
 - Adds a short session block with workspace roots and model when available.
 - Indexes user messages and Codex final answers.
-- Skips prompt-only sessions that do not have a Codex final answer.
+- Skips prompt-only sessions that do not have a Codex final answer. This applies
+  to the merged segments: if removing a segment leaves a session without a Codex
+  final answer, its document is deleted like any other prompt-only one.
 - Renders Codex as `Codex`, not `Assistant`.
 - Separates conversation rounds with `---`.
 - Never indexes tool outputs.
@@ -48,8 +49,9 @@ not have archived any session yet.
 
 Normal incremental polls do not reread unchanged JSONL content. They compare the
 current file list with the stored fingerprints and remove previously indexed
-sessions when their source file disappears. If a file disappears while a poll is
-running, that poll deletes nothing; the next one does.
+sessions when their last source file disappears. If a file disappears while a
+poll is running, that poll deletes and rebuilds nothing for its session; the
+next one does.
 
 ## Files
 

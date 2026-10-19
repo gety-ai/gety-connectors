@@ -138,14 +138,17 @@ Releases are driven by [changesets](https://changesets.dev) and
 1. A pull request that changes what a package ships adds a changeset:
    `pnpm changeset`, select the packages and bump types, and write the changelog
    line. Gety shows these CHANGELOG.md entries in its version dialog.
-2. On every push to `main` with pending changesets, the release workflow opens
-   or updates the "chore: version packages" pull request. Its version step
-   (`pnpm version-packages`, `scripts/version.ts`) runs `changeset version`
-   (versions, CHANGELOG.md), then the sync script (manifest.json, `gety`), then
-   regenerates the catalog. When the catalog content changed (a connector's
-   name, description or icon) and no changeset already bumped the catalog, the
-   catalog gets a patch bump and a changelog entry so it is republished. The
-   catalog's `getyCatalog` field is written only here; never edit it by hand.
+2. On every push to `main` with pending changesets, the release workflow
+   force-pushes the version changes to the `changeset-release/main` branch. An
+   open "chore: version packages" pull request from that branch updates with the
+   push; when none is open, a maintainer opens it from the link in the job
+   summary. Its version step (`pnpm version-packages`, `scripts/version.ts`)
+   runs `changeset version` (versions, CHANGELOG.md), then the sync script
+   (manifest.json, `gety`), then regenerates the catalog. When the catalog
+   content changed (a connector's name, description or icon) and no changeset
+   already bumped the catalog, the catalog gets a patch bump and a changelog
+   entry so it is republished. The catalog's `getyCatalog` field is written only
+   here; never edit it by hand.
 3. Merging that pull request makes the workflow build every connector, verify
    the tarballs (`deno task verify:packs`), pack the packages whose version is
    not on npm yet, publish them and push `<package>@<version>` tags. No GitHub
@@ -153,9 +156,10 @@ Releases are driven by [changesets](https://changesets.dev) and
    connector releases without the assets it requires.
 
 Only the publish job can mint an OIDC token (`id-token: write`); the version job
-has `contents: write` and `pull-requests: write`. In the repository settings
-(Actions → General), allow GitHub Actions to create pull requests. Pull requests
-opened with the workflow's `GITHUB_TOKEN` do not trigger `verify.yml`; the
+has `contents: write` to push its branch and `pull-requests: read` to find the
+open pull request. The organization does not allow GitHub Actions to create pull
+requests, so the workflow never opens one itself. Pushes made with the
+workflow's `GITHUB_TOKEN` do not trigger `verify.yml` on that pull request; the
 publish path re-runs the sync check and tarball verification before packing.
 
 npm only installs `latest` or an exact version in Gety, and npm never lets a
@@ -191,9 +195,10 @@ first npm release 0.2.0 for every connector (0.1.0 was the pre-npm version from
 the connector's own repository). The catalog keeps its own version and is first
 published at 0.1.0.
 
-1. Push `main`. The release workflow finds the pending changesets and opens the
-   "chore: version packages" pull request (connectors at 0.2.0). Check its
-   CHANGELOG.md, manifest.json and `package.json` changes.
+1. Push `main`. The release workflow finds the pending changesets and pushes the
+   version changes to `changeset-release/main` (connectors at 0.2.0). Open the
+   "chore: version packages" pull request from the job summary link and check
+   its CHANGELOG.md, manifest.json and `package.json` changes.
 2. Disable the Release workflow (Actions → Release → Disable workflow), so that
    merging the pull request does not try to publish packages npm does not know
    yet, then merge it.

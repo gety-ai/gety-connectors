@@ -2,9 +2,13 @@
 # npm trusted publishers are bound to this file name: keep it release.yml.
 #
 # On every push to main, select-mode decides what to do:
-# - version: pending changesets exist, so the version job opens or updates the
-#   "Version Packages" pull request (versions, CHANGELOG.md, manifest.json,
-#   package.json `gety` and the catalog, see scripts/version.ts).
+# - version: pending changesets exist, so the version job runs
+#   `pnpm version-packages` (versions, CHANGELOG.md, manifest.json, package.json
+#   `gety` and the catalog, see scripts/version.ts) and force-pushes the result
+#   to the changeset-release/main branch. The organization does not let
+#   GITHUB_TOKEN create pull requests, so the job does not open one: an open
+#   pull request from that branch updates with the push; otherwise the job
+#   summary links to opening it.
 # - publish: some package version is not on npm yet (the version PR was
 #   merged), so the pack job builds and packs them and the publish job
 #   publishes the tarballs and pushes `<package>@<version>` tags.
@@ -59,8 +63,8 @@ jobs:
     needs: select-mode
     runs-on: ubuntu-latest
     permissions:
-      contents: write # commit version changes
-      pull-requests: write # open the Version Packages pull request
+      contents: write # push the version branch
+      pull-requests: read # find the open version pull request
     steps:
       - name: Check out repo
         uses: actions/checkout@v7
@@ -89,11 +93,30 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Version packages
-        uses: changesets/action/version@v2
-        with:
-          script: pnpm version-packages
-          commit-message: 'chore: version packages'
-          pr-title: 'chore: version packages'
+        run: pnpm version-packages
+
+      - name: Push the version branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: changeset-release/main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B "${BRANCH}"
+          git add --all
+          git commit --quiet --message 'chore: version packages'
+          auth="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 --wrap=0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+            push --force origin "HEAD:refs/heads/${BRANCH}"
+          pr="$(gh pr list --head "${BRANCH}" --base main --state open --json url --jq '.[0].url // empty')"
+          if [ -n "${pr}" ]; then
+            echo "Updated the version pull request: ${pr}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1&title=chore%3A%20version%20packages"
+            echo "::notice::No open version pull request; open it at ${url}"
+            echo "No open version pull request. [Open it](${url})." >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
   pack:
     if: needs.select-mode.outputs.mode == 'publish'

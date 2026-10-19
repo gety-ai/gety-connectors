@@ -1,4 +1,4 @@
-// The version step (run by the release workflow's "Version Packages" job and
+// The version step (run by the release workflow's version job and
 // by `pnpm version-packages` locally):
 //
 // 1. `changeset version` bumps package.json versions and writes CHANGELOG.md.

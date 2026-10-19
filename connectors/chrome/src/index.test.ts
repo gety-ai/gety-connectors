@@ -5,7 +5,6 @@ import {
 	type BookmarkEntry,
 	buildBookmarkDoc,
 	buildHistoryDoc,
-	computeDeletes,
 	defaultChromeProfilePath,
 	flattenBookmarks,
 	historyCutoffWebkitMicros,
@@ -131,10 +130,10 @@ Deno.test('flattenBookmarks builds folder breadcrumbs and stable ids', () => {
 	assert.equal(nested.dateModified, 13377617858724200n);
 });
 
-Deno.test('flattenBookmarks tolerates missing/garbage input', () => {
-	assert.deepEqual(flattenBookmarks(null), []);
-	assert.deepEqual(flattenBookmarks({}), []);
-	assert.deepEqual(flattenBookmarks({ roots: 5 }), []);
+Deno.test('flattenBookmarks rejects input without a roots object', () => {
+	for (const input of [null, {}, { roots: 5 }, { roots: [] }]) {
+		assert.throws(() => flattenBookmarks(input), /Unrecognized/);
+	}
 });
 
 Deno.test('buildBookmarkDoc emits a linkable web doc', () => {
@@ -195,15 +194,6 @@ Deno.test('buildHistoryDoc falls back to url when title is blank', () => {
 		lastVisit: WEBKIT_UNIX_EPOCH,
 	});
 	assert.equal(doc.title, 'https://example.com/x');
-});
-
-Deno.test('computeDeletes returns ids no longer present', () => {
-	assert.deepEqual(
-		computeDeletes(['a', 'b', 'c'], new Set(['a', 'c'])),
-		['b'],
-	);
-	assert.deepEqual(computeDeletes(undefined, new Set(['a'])), []);
-	assert.deepEqual(computeDeletes(['a'], new Set(['a'])), []);
 });
 
 Deno.test('doc id helpers are stable', () => {

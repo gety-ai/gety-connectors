@@ -60,6 +60,7 @@ export class NotionClient {
 	#timeoutMs: number | undefined;
 	#retry: Partial<RetryPolicy>;
 	#logger: Logger;
+	#requests = 0;
 	#nextRequestAt = 0;
 
 	constructor(
@@ -191,8 +192,9 @@ export class NotionClient {
 		path: string,
 		body?: Record<string, unknown>,
 	): Promise<Record<string, unknown>> {
+		let response: Record<string, unknown>;
 		try {
-			return await requestJson(`${this.#baseUrl}${path}`, {
+			response = await requestJson(`${this.#baseUrl}${path}`, {
 				method,
 				headers: {
 					'Authorization': `Bearer ${this.#token}`,
@@ -228,6 +230,11 @@ export class NotionClient {
 			}
 			throw error;
 		}
+		// A finished request is real progress; the logger throttles the lines
+		// and each one resets Gety's idle timer during long block fetches.
+		this.#requests += 1;
+		this.#logger.progress('Reading Notion', { requests: this.#requests });
+		return response;
 	}
 
 	async #waitForRequestSlot(signal: AbortSignal): Promise<void> {

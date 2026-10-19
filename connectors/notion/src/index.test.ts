@@ -1,31 +1,73 @@
 import assert from 'node:assert/strict';
-import { runPoll } from '@gety-connectors/testing';
-import type { PollResult } from '@gety-ai/connector-sdk';
+import type { Logger } from '@gety-connectors/utils/log';
+import { jsonResponse, runPoll } from '@gety-connectors/testing';
+import type { FetchLike } from '@gety-connectors/utils/http';
 import NotionConnector, {
 	buildPageDoc,
-	collectDeletes,
 	knownPagesFromState,
-	type NotionState,
 	pageTitle,
 	STATE_VERSION,
 } from './index.ts';
-import type { FetchLike } from '@gety-connectors/utils/http';
 import { NotionClient } from './notion/api.ts';
 import type { NotionPage } from './notion/types.ts';
 
 const TS_OLD = '2026-01-01T00:00:00.000Z';
 const TS_NEW = '2026-02-02T00:00:00.000Z';
-
-function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { 'content-type': 'application/json' },
-		...init,
-	});
-}
+const CONFIG = { personal_access_token: 'test-token' };
+const NOT_FOUND = { object: 'error', code: 'object_not_found', message: 'x' };
 
 function titleProperty(text: string): Record<string, unknown> {
 	return { Name: { type: 'title', title: [{ plain_text: text }] } };
+}
+
+function page(
+	id: string,
+	lastEdited: string,
+	extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+	return {
+		object: 'page',
+		id,
+		last_edited_time: lastEdited,
+		properties: titleProperty(id.toUpperCase()),
+		...extra,
+	};
+}
+
+function paragraph(text: string): Record<string, unknown> {
+	return {
+		id: `p-${text}`,
+		type: 'paragraph',
+		paragraph: { rich_text: [{ plain_text: text }] },
+	};
+}
+
+/**
+ * A fake Notion API: one search page with `pages`, block children from
+ * `blocks` (keyed by parent id) and 404 for any other block. Every request
+ * URL is recorded in `requests`.
+ */
+function fakeNotion(
+	pages: Record<string, unknown>[],
+	blocks: Record<string, Record<string, unknown>[]> = {},
+): FetchLike & { requests: string[] } {
+	const requests: string[] = [];
+	const fetchFn = (url: string) => {
+		requests.push(url);
+		if (url.endsWith('/search')) {
+			return Promise.resolve(
+				jsonResponse({ results: pages, has_more: false, next_cursor: null }),
+			);
+		}
+		const id = url.match(/\/blocks\/([^/?]+)\/children/)?.[1] ?? '';
+		const children = blocks[decodeURIComponent(id)];
+		return Promise.resolve(
+			children === undefined
+				? jsonResponse(NOT_FOUND, { status: 404 })
+				: jsonResponse({ results: children, has_more: false }),
+		);
+	};
+	return Object.assign(fetchFn, { requests });
 }
 
 class TestConnector extends NotionConnector {
@@ -33,33 +75,30 @@ class TestConnector extends NotionConnector {
 		super();
 	}
 
-	protected override createClient(token: string): NotionClient {
+	protected override createClient(
+		token: string,
+		logger: Logger,
+	): NotionClient {
 		return new NotionClient(token, this.signal, {
 			baseUrl: 'https://notion.test/v1',
 			fetchFn: this.fetchFn,
 			requestIntervalMs: 0,
+			retry: { baseDelayMs: 0 },
+			logger,
 		});
 	}
 }
 
-function prime(
-	connector: NotionConnector,
-	state: NotionState | null,
-	token = 'test-token',
-): void {
-	Object.assign(connector, {
-		config: { personal_access_token: token },
-		lastState: state,
-		signal: new AbortController().signal,
+/** The updates of a run as `[kind, id]` pairs. */
+function updateIds(updates: unknown[]): [string, string][] {
+	return updates.map((update) => {
+		const { kind, id, doc } = update as {
+			kind: string;
+			id?: string;
+			doc?: { id: string };
+		};
+		return [kind, doc?.id ?? id ?? ''];
 	});
-}
-
-async function collect(connector: NotionConnector): Promise<PollResult[]> {
-	const results: PollResult[] = [];
-	for await (const result of connector.poll()) {
-		results.push(result);
-	}
-	return results;
 }
 
 Deno.test('pageTitle finds the title property regardless of its name', () => {
@@ -107,280 +146,6 @@ Deno.test('buildPageDoc falls back to a constructed notion url', () => {
 		'',
 	);
 	assert.deepEqual(doc.metadata, { url: 'https://www.notion.so/abc123' });
-});
-
-Deno.test('collectDeletes returns known ids missing from the enumeration', () => {
-	assert.deepEqual(
-		collectDeletes({ a: TS_OLD, b: TS_OLD }, new Set(['b'])),
-		['a'],
-	);
-});
-
-Deno.test('poll fails fast without a personal access token', async () => {
-	const connector = new TestConnector(() => {
-		throw new Error('poll must not reach the network without a token');
-	});
-	prime(connector, null, '   ');
-
-	await assert.rejects(
-		() => connector.poll().next(),
-		/Personal Access Token is required/,
-	);
-});
-
-Deno.test('a 200 HTML search response fails the poll and deletes nothing', async () => {
-	// A captive portal or proxy answering 200 with HTML used to end the
-	// enumeration early, and the delete diff then removed every known page.
-	const connector = new TestConnector(() =>
-		Promise.resolve(
-			new Response('<html>Sign in to the network</html>', {
-				headers: { 'content-type': 'text/html' },
-			}),
-		)
-	);
-
-	const run = await runPoll(connector, {
-		config: { personal_access_token: 'test-token' },
-		lastState: {
-			version: STATE_VERSION,
-			pages: { a: TS_OLD, b: TS_OLD, c: TS_OLD },
-		},
-	});
-
-	assert.equal(run.outcome, 'error');
-	assert.deepEqual(run.updates, []);
-	assert.equal(run.committedState, undefined);
-});
-
-Deno.test('an unshared synced original keeps the page indexed', async () => {
-	const connector = new TestConnector((url) => {
-		if (url.endsWith('/search')) {
-			return Promise.resolve(jsonResponse({
-				results: [{
-					object: 'page',
-					id: 'a',
-					last_edited_time: TS_NEW,
-					properties: titleProperty('With synced block'),
-				}],
-				has_more: false,
-			}));
-		}
-		if (url.includes('/blocks/a/children')) {
-			return Promise.resolve(jsonResponse({
-				results: [
-					{
-						id: 'sync',
-						type: 'synced_block',
-						has_children: true,
-						synced_block: { synced_from: { block_id: 'unshared' } },
-					},
-					{
-						id: 'para',
-						type: 'paragraph',
-						paragraph: { rich_text: [{ plain_text: 'Own text.' }] },
-					},
-				],
-				has_more: false,
-			}));
-		}
-		return Promise.resolve(jsonResponse(
-			{ object: 'error', code: 'object_not_found', message: 'x' },
-			{ status: 404 },
-		));
-	});
-
-	const run = await runPoll(connector, {
-		config: { personal_access_token: 'test-token' },
-		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
-	});
-
-	assert.equal(run.outcome, 'done');
-	assert.deepEqual(
-		run.updates.map((update) =>
-			update.kind === 'upsert'
-				? [update.kind, update.doc.id, update.doc.content]
-				: [update.kind, update.id]
-		),
-		[['upsert', 'a', 'Own text.\n']],
-	);
-	assert.deepEqual(run.committedState, {
-		version: STATE_VERSION,
-		pages: { a: TS_NEW },
-	});
-});
-
-Deno.test('a page that is gone when its blocks are fetched is deleted', async () => {
-	const connector = new TestConnector((url) => {
-		if (url.endsWith('/search')) {
-			return Promise.resolve(jsonResponse({
-				results: [{ object: 'page', id: 'a', last_edited_time: TS_NEW }],
-				has_more: false,
-			}));
-		}
-		return Promise.resolve(jsonResponse(
-			{ object: 'error', code: 'object_not_found', message: 'x' },
-			{ status: 404 },
-		));
-	});
-
-	const run = await runPoll(connector, {
-		config: { personal_access_token: 'test-token' },
-		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
-	});
-
-	assert.equal(run.outcome, 'done');
-	assert.deepEqual(run.updates, [{ kind: 'delete', id: 'a' }]);
-	assert.deepEqual(run.committedState, { version: STATE_VERSION, pages: {} });
-});
-
-Deno.test('poll upserts changed pages, skips unchanged ones, deletes gone ones', async () => {
-	const requested: string[] = [];
-	const connector = new TestConnector((url, init) => {
-		requested.push(url);
-		if (url.endsWith('/search')) {
-			assert.equal(init.method, 'POST');
-			return Promise.resolve(jsonResponse({
-				results: [
-					{
-						object: 'page',
-						id: 'aaa',
-						url: 'https://www.notion.so/aaa',
-						created_time: TS_OLD,
-						last_edited_time: TS_OLD,
-						properties: titleProperty('Unchanged'),
-					},
-					{
-						object: 'page',
-						id: 'bbb',
-						url: 'https://www.notion.so/bbb',
-						created_time: TS_OLD,
-						last_edited_time: TS_NEW,
-						properties: titleProperty('Changed'),
-					},
-				],
-				has_more: false,
-			}));
-		}
-		if (url.includes('/blocks/bbb/children')) {
-			return Promise.resolve(jsonResponse({
-				results: [
-					{
-						id: 'blk1',
-						type: 'paragraph',
-						has_children: false,
-						paragraph: {
-							rich_text: [{ type: 'text', plain_text: 'Hello from B.' }],
-						},
-					},
-				],
-				has_more: false,
-			}));
-		}
-		throw new Error(`Unexpected request: ${url}`);
-	});
-	prime(connector, {
-		version: STATE_VERSION,
-		pages: { aaa: TS_OLD, ccc: TS_OLD },
-	});
-
-	const results = await collect(connector);
-
-	assert.equal(results.length, 2);
-
-	const [batch, finale] = results;
-	assert.equal(batch.updates.length, 1);
-	const update = batch.updates[0];
-	assert.equal(update.kind, 'upsert');
-	if (update.kind !== 'upsert') {
-		throw new Error('Expected an upsert update.');
-	}
-	assert.equal(update.doc.id, 'bbb');
-	assert.equal(update.doc.title, 'Changed');
-	assert.equal(update.doc.content, 'Hello from B.\n');
-	assert.deepEqual(batch.state, {
-		version: STATE_VERSION,
-		pages: { aaa: TS_OLD, ccc: TS_OLD, bbb: TS_NEW },
-	});
-
-	assert.deepEqual(finale.updates, [{ kind: 'delete', id: 'ccc' }]);
-	assert.deepEqual(finale.state, {
-		version: STATE_VERSION,
-		pages: { aaa: TS_OLD, bbb: TS_NEW },
-	});
-
-	assert.ok(
-		!requested.some((url) => url.includes('/blocks/aaa/')),
-		'unchanged pages must not be re-fetched',
-	);
-});
-
-Deno.test('poll skips archived pages entirely', async () => {
-	const connector = new TestConnector((url) => {
-		if (url.endsWith('/search')) {
-			return Promise.resolve(jsonResponse({
-				results: [
-					{
-						object: 'page',
-						id: 'zzz',
-						archived: true,
-						last_edited_time: TS_NEW,
-						properties: titleProperty('Archived'),
-					},
-				],
-				has_more: false,
-			}));
-		}
-		throw new Error(`Unexpected request: ${url}`);
-	});
-	prime(connector, { version: STATE_VERSION, pages: { zzz: TS_OLD } });
-
-	const results = await collect(connector);
-	const finale = results.at(-1);
-
-	assert.ok(finale != null);
-	assert.deepEqual(finale.updates, [{ kind: 'delete', id: 'zzz' }]);
-	assert.deepEqual(finale.state, { version: STATE_VERSION, pages: {} });
-});
-
-Deno.test('poll skips pages flagged is_archived (2026-03-11 field name)', async () => {
-	const connector = new TestConnector((url) => {
-		if (url.endsWith('/search')) {
-			return Promise.resolve(jsonResponse({
-				results: [
-					{
-						object: 'page',
-						id: 'yyy',
-						is_archived: true,
-						last_edited_time: TS_NEW,
-						properties: titleProperty('Archived'),
-					},
-				],
-				has_more: false,
-			}));
-		}
-		throw new Error(`Unexpected request: ${url}`);
-	});
-	prime(connector, { version: STATE_VERSION, pages: {} });
-
-	const results = await collect(connector);
-
-	assert.deepEqual(results.flatMap((result) => result.updates), []);
-});
-
-Deno.test('stale or malformed state triggers a full resync', () => {
-	assert.deepEqual(knownPagesFromState(undefined), {});
-	assert.deepEqual(knownPagesFromState({ pages: { a: TS_OLD } }), {});
-	assert.deepEqual(
-		knownPagesFromState({ version: 99, pages: { a: TS_OLD } }),
-		{},
-	);
-	assert.deepEqual(
-		knownPagesFromState({
-			version: STATE_VERSION,
-			pages: { a: TS_OLD, b: 42 as unknown as string },
-		}),
-		{ a: TS_OLD },
-	);
 });
 
 Deno.test('buildPageDoc links child pages to their parent page', () => {
@@ -433,4 +198,250 @@ Deno.test('buildPageDoc prepends database properties to the content', () => {
 		'# Body\n',
 	);
 	assert.equal(plain.content, '# Body\n');
+});
+
+Deno.test('stale or malformed state triggers a full resync', () => {
+	assert.deepEqual(knownPagesFromState(undefined), {});
+	assert.deepEqual(knownPagesFromState({ pages: { a: TS_OLD } }), {});
+	assert.deepEqual(
+		knownPagesFromState({ version: 99, pages: { a: TS_OLD } }),
+		{},
+	);
+	assert.deepEqual(
+		knownPagesFromState({
+			version: STATE_VERSION,
+			pages: { a: TS_OLD, b: 42 as unknown as string },
+		}),
+		{ a: TS_OLD },
+	);
+});
+
+Deno.test('poll fails fast without a personal access token', async () => {
+	const run = await runPoll(
+		new TestConnector(() => {
+			throw new Error('poll must not reach the network without a token');
+		}),
+		{ config: { personal_access_token: '   ' } },
+	);
+
+	assert.equal(run.outcome, 'error');
+	assert.match(String(run.error), /Personal Access Token is required/);
+});
+
+Deno.test('a 200 HTML search response fails the poll and deletes nothing', async () => {
+	// A captive portal or proxy answering 200 with HTML used to end the
+	// enumeration early, and the delete diff then removed every known page.
+	const connector = new TestConnector(() =>
+		Promise.resolve(
+			new Response('<html>Sign in to the network</html>', {
+				headers: { 'content-type': 'text/html' },
+			}),
+		)
+	);
+
+	const run = await runPoll(connector, {
+		config: CONFIG,
+		lastState: {
+			version: STATE_VERSION,
+			pages: { a: TS_OLD, b: TS_OLD, c: TS_OLD },
+		},
+	});
+
+	assert.equal(run.outcome, 'error');
+	assert.deepEqual(run.updates, []);
+	assert.equal(run.committedState, undefined);
+});
+
+Deno.test('a search result that is not a page fails the poll and deletes nothing', async () => {
+	const connector = new TestConnector(() =>
+		Promise.resolve(
+			jsonResponse({
+				results: [{ object: 'unexpected', id: 'a' }],
+				has_more: false,
+				next_cursor: null,
+			}),
+		)
+	);
+
+	const run = await runPoll(connector, {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'error');
+	assert.deepEqual(run.updates, []);
+	assert.equal(run.committedState, undefined);
+});
+
+Deno.test('an unshared synced original keeps the page indexed', async () => {
+	const notion = fakeNotion([page('a', TS_NEW)], {
+		a: [
+			{
+				id: 'sync',
+				type: 'synced_block',
+				has_children: true,
+				synced_block: { synced_from: { block_id: 'unshared' } },
+			},
+			paragraph('Own text.'),
+		],
+	});
+
+	const run = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(updateIds(run.updates), [['upsert', 'a']]);
+	const update = run.updates[0] as { doc: { content: string } };
+	assert.equal(update.doc.content, 'Own text.\n');
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { a: TS_NEW },
+	});
+});
+
+Deno.test('a page that is gone when its blocks are fetched is deleted', async () => {
+	const notion = fakeNotion([page('a', TS_NEW)]);
+
+	const run = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(updateIds(run.updates), [['delete', 'a']]);
+	assert.deepEqual(run.committedState, { version: STATE_VERSION, pages: {} });
+});
+
+Deno.test('a proxy 404 for a listed page fails the poll and deletes nothing', async () => {
+	const connector = new TestConnector((url) =>
+		Promise.resolve(
+			url.endsWith('/search')
+				? jsonResponse({
+					results: [page('a', TS_NEW)],
+					has_more: false,
+					next_cursor: null,
+				})
+				: new Response('<html>proxy route not found</html>', {
+					status: 404,
+					headers: { 'content-type': 'text/html' },
+				}),
+		)
+	);
+
+	const run = await runPoll(connector, {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { a: TS_OLD } },
+	});
+
+	assert.equal(run.outcome, 'error');
+	assert.deepEqual(run.updates, []);
+	assert.equal(run.committedState, undefined);
+});
+
+Deno.test('poll upserts changed pages, skips unchanged ones, deletes gone ones', async () => {
+	const notion = fakeNotion(
+		[page('aaa', TS_OLD), page('bbb', TS_NEW)],
+		{ bbb: [paragraph('Hello from B.')] },
+	);
+
+	const run = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: {
+			version: STATE_VERSION,
+			pages: { aaa: TS_OLD, ccc: TS_OLD },
+		},
+	});
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(updateIds(run.updates), [
+		['upsert', 'bbb'],
+		['delete', 'ccc'],
+	]);
+	const update = run.updates[0] as { doc: { title: string; content: string } };
+	assert.equal(update.doc.title, 'BBB');
+	assert.equal(update.doc.content, 'Hello from B.\n');
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { aaa: TS_OLD, bbb: TS_NEW },
+	});
+	assert.ok(
+		!notion.requests.some((url) => url.includes('/blocks/aaa/')),
+		'unchanged pages must not be re-fetched',
+	);
+});
+
+Deno.test('each changed page is its own batch and only the last carries state', async () => {
+	const notion = fakeNotion(
+		[page('a', TS_NEW), page('b', TS_NEW), page('c', TS_NEW)],
+		{ a: [paragraph('A')], b: [paragraph('B')], c: [paragraph('C')] },
+	);
+
+	const run = await runPoll(new TestConnector(notion), { config: CONFIG });
+
+	assert.equal(run.outcome, 'done');
+	assert.deepEqual(
+		run.batches.map((batch) => [
+			updateIds(batch.updates),
+			Object.hasOwn(batch, 'state'),
+		]),
+		[
+			[[['upsert', 'a']], false],
+			[[['upsert', 'b']], false],
+			[[['upsert', 'c']], false],
+			[[], true],
+		],
+	);
+	assert.deepEqual(run.committedState, {
+		version: STATE_VERSION,
+		pages: { a: TS_NEW, b: TS_NEW, c: TS_NEW },
+	});
+});
+
+Deno.test('a cancelled poll deletes nothing and commits no state', async () => {
+	const controller = new AbortController();
+	const notion = fakeNotion([page('a', TS_NEW), page('b', TS_NEW)], {
+		a: [paragraph('A')],
+		b: [paragraph('B')],
+	});
+	const cancelling: FetchLike = (url, init) => {
+		if (url.includes('/blocks/b/')) {
+			controller.abort(new Error('cancelled by host'));
+		}
+		return notion(url, init);
+	};
+
+	const run = await runPoll(new TestConnector(cancelling), {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { old: TS_OLD } },
+		signal: controller.signal,
+	});
+
+	assert.equal(run.outcome, 'cancelled');
+	assert.ok(updateIds(run.updates).every(([kind]) => kind === 'upsert'));
+	assert.equal(run.committedState, undefined);
+});
+
+Deno.test('poll skips archived pages entirely', async () => {
+	const notion = fakeNotion([page('zzz', TS_NEW, { archived: true })]);
+
+	const run = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: { zzz: TS_OLD } },
+	});
+
+	assert.deepEqual(updateIds(run.updates), [['delete', 'zzz']]);
+	assert.deepEqual(run.committedState, { version: STATE_VERSION, pages: {} });
+});
+
+Deno.test('poll skips pages flagged is_archived (2026-03-11 field name)', async () => {
+	const notion = fakeNotion([page('yyy', TS_NEW, { is_archived: true })]);
+
+	const run = await runPoll(new TestConnector(notion), {
+		config: CONFIG,
+		lastState: { version: STATE_VERSION, pages: {} },
+	});
+
+	assert.deepEqual(run.updates, []);
 });

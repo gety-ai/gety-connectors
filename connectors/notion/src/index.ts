@@ -1,11 +1,12 @@
 import {
 	Connector,
 	del,
-	type DocUpdate,
 	type PollResult,
 	upsert,
 	type WireDoc,
 } from '@gety-ai/connector-sdk';
+import { createLogger, type Logger } from '@gety-connectors/utils/log';
+import { staleIds } from '@gety-connectors/utils/reconcile';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import { isObjectNotFound, NotionClient } from './notion/api.ts';
 import { blocksToMarkdown } from './notion/markdown.ts';
@@ -129,14 +130,6 @@ export function knownPagesFromState(
 	return pages;
 }
 
-/** Known page ids that a full enumeration no longer returned. */
-export function collectDeletes(
-	known: Record<string, string>,
-	seen: ReadonlySet<string>,
-): string[] {
-	return Object.keys(known).filter((id) => !seen.has(id));
-}
-
 function clampContent(text: string): { content: string; bytes: number } {
 	const encoder = new TextEncoder();
 	const bytes = encoder.encode(text).length;
@@ -164,10 +157,17 @@ export default class NotionConnector extends Connector<
 	NotionState
 > {
 	/** Split out so tests can inject a client with a stubbed fetch. */
-	protected createClient(token: string): NotionClient {
-		return new NotionClient(token, this.signal);
+	protected createClient(token: string, logger: Logger): NotionClient {
+		return new NotionClient(token, this.signal, { logger });
 	}
 
+	/**
+	 * Lists every page, upserts the changed ones as it goes (one batch per
+	 * page, without state) and ends with one batch carrying the deletions
+	 * and the new state. Gety commits state only when the poll succeeds, so
+	 * intermediate batches have nothing to checkpoint; they keep the poll
+	 * visibly alive and its memory flat.
+	 */
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
 		const token = (this.config.personal_access_token ?? '').trim();
 		if (token.length === 0) {
@@ -178,22 +178,23 @@ export default class NotionConnector extends Connector<
 			);
 		}
 
-		const client = this.createClient(token);
+		const logger = createLogger('notion');
+		const client = this.createClient(token, logger);
 		const known = knownPagesFromState(this.lastState);
-		const merged: Record<string, string> = { ...known };
-		const seen = new Set<string>();
+		/** Next state: every listed, readable page → its recorded edit time. */
+		const pages: Record<string, string> = {};
+		let fetched = 0;
 
-		for await (const pages of client.searchPages()) {
-			const updates: DocUpdate[] = [];
-			for (const page of pages) {
+		for await (const results of client.searchPages()) {
+			for (const page of results) {
 				if (isGonePage(page)) {
 					continue;
 				}
-				seen.add(page.id);
 				const lastEdited = typeof page.last_edited_time === 'string'
 					? page.last_edited_time
 					: '';
 				if (lastEdited.length > 0 && known[page.id] === lastEdited) {
+					pages[page.id] = lastEdited;
 					continue;
 				}
 
@@ -202,35 +203,32 @@ export default class NotionConnector extends Connector<
 					markdown = blocksToMarkdown(await client.fetchBlockTree(page.id));
 				} catch (error) {
 					if (isObjectNotFound(error)) {
-						// Deleted or unshared between search and fetch; the delete
-						// diff below (or the next poll) will clean it up.
-						seen.delete(page.id);
+						// Deleted or unshared between search and fetch: leaving it
+						// out of `pages` deletes it below.
+						delete pages[page.id];
 						continue;
 					}
 					throw error;
 				}
-				updates.push(upsert(buildPageDoc(page, markdown)));
-				merged[page.id] = lastEdited;
+				pages[page.id] = lastEdited;
+				fetched += 1;
+				yield { updates: [upsert(buildPageDoc(page, markdown))] };
 			}
-			// Checkpoint after each search batch so a failed poll can resume
-			// without refetching already-processed pages.
-			yield {
-				updates,
-				state: { version: STATE_VERSION, pages: { ...merged } },
-			};
 		}
 
-		// Full enumeration finished: anything previously known but unseen is gone.
-		const deletedIds = collectDeletes(known, seen);
-		const pages: Record<string, string> = {};
-		for (const id of seen) {
-			const lastEdited = merged[id];
-			if (lastEdited != null) {
-				pages[id] = lastEdited;
-			}
-		}
+		// The search above ran to completion (any failure throws), so a known
+		// page missing from `pages` is gone from Notion, archived or unshared.
+		const deleted = staleIds(Object.keys(known), {
+			seen: new Set(Object.keys(pages)),
+			complete: true,
+		});
+		logger.info('Notion sync finished', {
+			pages: Object.keys(pages).length,
+			fetched,
+			deleted: deleted.length,
+		});
 		yield {
-			updates: deletedIds.map((id) => del(id)),
+			updates: deleted.map((id) => del(id)),
 			state: { version: STATE_VERSION, pages },
 		};
 	}

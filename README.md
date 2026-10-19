@@ -22,6 +22,16 @@ A connector's directory name is its short name, and both its npm package name
 connectors (name, description, icon) that Gety's connector gallery reads; see
 [its README](packages/catalog/README.md).
 
+`packages/utils` (`@gety-connectors/utils`) and `packages/testing`
+(`@gety-connectors/testing`) are workspace-only Deno packages, never published:
+they have no `package.json`, so pnpm, changesets and `verify:packs` do not see
+them. Connectors import utils by subpath (`@gety-connectors/utils/http`,
+`/retry`, `/paginate`, ...; see `packages/utils/deno.json`) and esbuild bundles
+the modules they use into `dist/main.js`. The testing helpers (`runPoll` with
+the host's state-commit semantics, `jsonResponse`, the StartFrame budget) are
+for tests only. A change to utils ships only through the connectors that bundle
+it, so its changeset lists every affected connector.
+
 Each connector directory keeps the git history of the repository it came from.
 
 ## Layout
@@ -30,21 +40,23 @@ Each connector directory keeps the git history of the repository it came from.
 connectors/<short>/   one connector: manifest.json, src/, package.json (npm
                       metadata), CHANGELOG.md
 packages/catalog/     @gety-connectors/catalog
+packages/utils/       shared runtime modules bundled into connectors (not published)
+packages/testing/     test helpers for connectors (not published)
 tools/                connector tooling shared by every connector (build,
                       config types, dev runner, SDK sync)
 vendor/gety-deno/     byte-exact copy of Gety's Deno connector SDK and runner
 scripts/              repository scripts (sync, catalog, version step, pack checks)
 .changeset/           pending changesets
-deno.json             Deno workspace (all connectors) and repository tasks
+deno.json             Deno workspace (connectors, utils, testing) and repository tasks
 package.json          pnpm workspace root (changesets only)
 ```
 
 Two tools, two jobs:
 
 - **Deno** builds, type-checks, tests, lints and formats everything. The root
-  `deno.json` is a Deno workspace with every connector as a member, so there is
-  one `deno.lock`, one formatter/linter configuration for the repository
-  scripts, and connectors can later share workspace packages by name.
+  `deno.json` is a Deno workspace with every connector and the shared packages
+  as members, so there is one `deno.lock`, one formatter/linter configuration
+  for the repository scripts, and connectors import the shared packages by name.
   `nodeModulesDir` is `none`: Deno resolves `npm:` imports from its own cache
   and ignores pnpm's `node_modules`.
 - **pnpm** only carries npm package metadata and runs changesets. No connector

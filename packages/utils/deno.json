@@ -1,0 +1,30 @@
+{
+	"name": "@gety-connectors/utils",
+	"exports": {
+		"./abort": "./src/abort.ts",
+		"./fs": "./src/fs.ts",
+		"./hash": "./src/hash.ts",
+		"./http": "./src/http.ts",
+		"./json": "./src/json.ts",
+		"./jsonl": "./src/jsonl.ts",
+		"./log": "./src/log.ts",
+		"./paginate": "./src/paginate.ts",
+		"./reconcile": "./src/reconcile.ts",
+		"./retry": "./src/retry.ts",
+		"./text": "./src/text.ts"
+	},
+	"tasks": {
+		"check": "deno check src/",
+		"test": "deno test --allow-read --allow-write src/"
+	},
+	"lint": {
+		"include": [
+			"src/"
+		],
+		"rules": {
+			"tags": [
+				"recommended"
+			]
+		}
+	}
+}

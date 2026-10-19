@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { runPoll } from '@gety-connectors/testing';
 import type { PollResult } from '@gety-ai/connector-sdk';
 import NotionConnector, {
 	buildPageDoc,
@@ -8,7 +9,8 @@ import NotionConnector, {
 	pageTitle,
 	STATE_VERSION,
 } from './index.ts';
-import { type FetchLike, NotionClient } from './notion/api.ts';
+import type { FetchLike } from '@gety-connectors/utils/http';
+import { NotionClient } from './notion/api.ts';
 import type { NotionPage } from './notion/types.ts';
 
 const TS_OLD = '2026-01-01T00:00:00.000Z';
@@ -32,7 +34,7 @@ class TestConnector extends NotionConnector {
 	}
 
 	protected override createClient(token: string): NotionClient {
-		return new NotionClient(token, new AbortController().signal, {
+		return new NotionClient(token, this.signal, {
 			baseUrl: 'https://notion.test/v1',
 			fetchFn: this.fetchFn,
 			requestIntervalMs: 0,
@@ -124,6 +126,30 @@ Deno.test('poll fails fast without a personal access token', async () => {
 		() => connector.poll().next(),
 		/Personal Access Token is required/,
 	);
+});
+
+Deno.test('a 200 HTML search response fails the poll and deletes nothing', async () => {
+	// A captive portal or proxy answering 200 with HTML used to end the
+	// enumeration early, and the delete diff then removed every known page.
+	const connector = new TestConnector(() =>
+		Promise.resolve(
+			new Response('<html>Sign in to the network</html>', {
+				headers: { 'content-type': 'text/html' },
+			}),
+		)
+	);
+
+	const run = await runPoll(connector, {
+		config: { personal_access_token: 'test-token' },
+		lastState: {
+			version: STATE_VERSION,
+			pages: { a: TS_OLD, b: TS_OLD, c: TS_OLD },
+		},
+	});
+
+	assert.equal(run.outcome, 'error');
+	assert.deepEqual(run.updates, []);
+	assert.equal(run.committedState, undefined);
 });
 
 Deno.test('poll upserts changed pages, skips unchanged ones, deletes gone ones', async () => {

@@ -1,23 +1,40 @@
 import assert from 'node:assert/strict';
-import { NotionApiError, NotionClient } from './api.ts';
+import { jsonResponse } from '@gety-connectors/testing';
+import { HttpError, ResponseShapeError } from '@gety-connectors/utils/http';
+import type { LogDetails, Logger } from '@gety-connectors/utils/log';
+import { IncompleteEnumerationError } from '@gety-connectors/utils/paginate';
+import { NotionClient, type NotionClientOptions } from './api.ts';
 import type { NotionPage } from './types.ts';
 
-function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { 'content-type': 'application/json' },
-		...init,
-	});
-}
+type StubFetch = (
+	url: string,
+	init: RequestInit,
+) => Response | Promise<Response>;
 
 function makeClient(
-	fetchFn: (url: string, init: RequestInit) => Response | Promise<Response>,
+	fetchFn: StubFetch,
+	options: NotionClientOptions & { signal?: AbortSignal } = {},
 ): NotionClient {
-	return new NotionClient('test-token', new AbortController().signal, {
+	const { signal = new AbortController().signal, ...rest } = options;
+	return new NotionClient('test-token', signal, {
 		baseUrl: 'https://notion.test/v1',
 		fetchFn: (url, init) => Promise.resolve(fetchFn(url, init)),
 		requestIntervalMs: 0,
+		retry: { baseDelayMs: 0 },
+		logger: silentLogger(),
+		...rest,
 	});
+}
+
+function silentLogger(
+	onWarn: (message: string, details?: LogDetails) => void = () => {},
+): Logger {
+	return {
+		info: () => {},
+		warn: onWarn,
+		warnOnce: (_key, message, details) => onWarn(message, details),
+		progress: () => {},
+	};
 }
 
 async function collect<T>(iterator: AsyncGenerator<T>): Promise<T[]> {
@@ -28,7 +45,9 @@ async function collect<T>(iterator: AsyncGenerator<T>): Promise<T[]> {
 	return items;
 }
 
-Deno.test('searchPages paginates and keeps only page objects', async () => {
+const EMPTY_LIST = { results: [], has_more: false, next_cursor: null };
+
+Deno.test('searchPages paginates the page-filtered search', async () => {
 	const bodies: Record<string, unknown>[] = [];
 	const client = makeClient((_url, init) => {
 		const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -41,10 +60,7 @@ Deno.test('searchPages paginates and keeps only page objects', async () => {
 			});
 		}
 		return jsonResponse({
-			results: [
-				{ object: 'page', id: 'p2' },
-				{ object: 'database', id: 'd1' },
-			],
+			results: [{ object: 'page', id: 'p2' }],
 			has_more: false,
 			next_cursor: null,
 		});
@@ -56,6 +72,7 @@ Deno.test('searchPages paginates and keeps only page objects', async () => {
 	assert.deepEqual(batches[0].map((page: NotionPage) => page.id), ['p1']);
 	assert.deepEqual(batches[1].map((page: NotionPage) => page.id), ['p2']);
 	assert.equal(bodies[1].start_cursor, 'cursor-2');
+	assert.deepEqual(bodies[0].filter, { property: 'object', value: 'page' });
 	// Ascending keeps mid-poll edits enumerable; descending could skip
 	// pages and cause false diff-deletes.
 	assert.deepEqual(bodies[0].sort, {
@@ -74,7 +91,7 @@ Deno.test('request retries 429 responses honoring retry-after', async () => {
 				headers: { 'retry-after': '0' },
 			});
 		}
-		return jsonResponse({ results: [], has_more: false });
+		return jsonResponse(EMPTY_LIST);
 	});
 
 	const batches = await collect(client.searchPages());
@@ -83,7 +100,156 @@ Deno.test('request retries 429 responses honoring retry-after', async () => {
 	assert.deepEqual(batches, [[]]);
 });
 
-Deno.test('non-ok responses throw NotionApiError with details', async () => {
+Deno.test('request retries 500, 529 and network errors', async () => {
+	const failures: (() => Response)[] = [
+		() => jsonResponse({ code: 'internal_server_error' }, { status: 500 }),
+		() => jsonResponse({ code: 'service_overload' }, { status: 529 }),
+		() => {
+			throw new TypeError('connection reset');
+		},
+	];
+	let attempts = 0;
+	const client = makeClient(() => {
+		attempts += 1;
+		const failure = failures[attempts - 1];
+		return failure === undefined ? jsonResponse(EMPTY_LIST) : failure();
+	});
+
+	assert.deepEqual(await collect(client.searchPages()), [[]]);
+	assert.equal(attempts, 4);
+});
+
+Deno.test('a request that exceeds the timeout is retried', async () => {
+	let attempts = 0;
+	const client = makeClient((_url, init) => {
+		attempts += 1;
+		if (attempts > 1) {
+			return jsonResponse(EMPTY_LIST);
+		}
+		// Hangs until the per-attempt timeout (AbortSignal.timeout, real clock)
+		// aborts it. The fallback answer, a non-JSON 200, only arrives when
+		// nothing aborts the attempt, so a missing timeout fails instead of
+		// hanging the test run.
+		const { promise, resolve, reject } = Promise.withResolvers<Response>();
+		const fallback = setTimeout(() => resolve(new Response('late')), 500);
+		init.signal?.addEventListener('abort', () => {
+			clearTimeout(fallback);
+			reject(init.signal?.reason);
+		});
+		return promise;
+	}, { timeoutMs: 20 });
+
+	assert.deepEqual(await collect(client.searchPages()), [[]]);
+	assert.equal(attempts, 2);
+});
+
+Deno.test('public_api_request_blocked is not retried', async () => {
+	let attempts = 0;
+	const client = makeClient(() => {
+		attempts += 1;
+		return jsonResponse(
+			{ object: 'error', code: 'public_api_request_blocked', message: 'no' },
+			{ status: 429, headers: { 'retry-after': '0' } },
+		);
+	});
+
+	await assert.rejects(() => collect(client.searchPages()), HttpError);
+	assert.equal(attempts, 1);
+});
+
+Deno.test('Retry-After above a minute is honored and announced', async () => {
+	const controller = new AbortController();
+	const warnings: LogDetails[] = [];
+	const client = makeClient(
+		() =>
+			jsonResponse({ code: 'rate_limited' }, {
+				status: 429,
+				headers: { 'retry-after': '120' },
+			}),
+		{
+			signal: controller.signal,
+			logger: silentLogger((_message, details) => {
+				warnings.push(details ?? {});
+				// Stop during the announced wait instead of sleeping through it.
+				controller.abort(new Error('test stop'));
+			}),
+		},
+	);
+
+	await assert.rejects(() => collect(client.searchPages()), /test stop/);
+	assert.equal(warnings.length, 1);
+	assert.equal(warnings[0].wait_s, 120);
+});
+
+Deno.test('a 2xx HTML response fails instead of ending the search', async () => {
+	const client = makeClient(() =>
+		new Response('<html>portal</html>', {
+			headers: { 'content-type': 'text/html' },
+		})
+	);
+
+	await assert.rejects(() => collect(client.searchPages()), ResponseShapeError);
+});
+
+Deno.test('a 2xx response without a results array fails', async () => {
+	for (const body of [{ has_more: false }, { results: {}, has_more: false }]) {
+		const client = makeClient(() => jsonResponse(body));
+		await assert.rejects(
+			() => collect(client.searchPages()),
+			IncompleteEnumerationError,
+		);
+	}
+});
+
+Deno.test('a search result that is not a page with an id fails the enumeration', async () => {
+	for (
+		const result of [
+			{ object: 'page' },
+			{ object: 'page', id: '' },
+			{ object: 'unexpected', id: 'a' },
+			{ object: 'database', id: 'd1' },
+		]
+	) {
+		const client = makeClient(() =>
+			jsonResponse({ results: [result], has_more: false })
+		);
+
+		await assert.rejects(
+			() => collect(client.searchPages()),
+			IncompleteEnumerationError,
+			JSON.stringify(result),
+		);
+	}
+});
+
+Deno.test('non-ok responses throw HttpError with the Notion error body', async () => {
+	const client = makeClient(() =>
+		jsonResponse(
+			{
+				object: 'error',
+				code: 'restricted_resource',
+				message: 'Insufficient permissions.',
+			},
+			{ status: 403 },
+		)
+	);
+
+	await assert.rejects(
+		() => client.searchPages().next(),
+		(error: unknown) => {
+			assert.ok(error instanceof HttpError);
+			assert.equal(error.status, 403);
+			assert.deepEqual(error.body, {
+				object: 'error',
+				code: 'restricted_resource',
+				message: 'Insufficient permissions.',
+			});
+			return true;
+		},
+	);
+});
+
+Deno.test('a 401 says the token is invalid or expired', async () => {
 	const client = makeClient(() =>
 		jsonResponse(
 			{
@@ -97,14 +263,28 @@ Deno.test('non-ok responses throw NotionApiError with details', async () => {
 
 	await assert.rejects(
 		() => client.searchPages().next(),
-		(error: unknown) => {
-			assert.ok(error instanceof NotionApiError);
-			assert.equal(error.status, 401);
-			assert.equal(error.code, 'unauthorized');
-			assert.match(error.message, /API token is invalid/);
-			return true;
-		},
+		/token invalid or expired/,
 	);
+});
+
+Deno.test('cancellation stops requests and rejects with the reason', async () => {
+	const controller = new AbortController();
+	let attempts = 0;
+	const client = makeClient(() => {
+		attempts += 1;
+		controller.abort(new Error('cancelled by host'));
+		return jsonResponse({
+			results: [],
+			has_more: true,
+			next_cursor: `c${attempts}`,
+		});
+	}, { signal: controller.signal });
+
+	await assert.rejects(
+		() => collect(client.searchPages()),
+		/cancelled by host/,
+	);
+	assert.equal(attempts, 1);
 });
 
 Deno.test('fetchBlockTree recurses children, skips child pages, resolves synced blocks', async () => {
@@ -169,7 +349,7 @@ Deno.test('requests carry auth and version headers', async () => {
 	let headers: Headers | null = null;
 	const client = makeClient((_url, init) => {
 		headers = new Headers(init.headers);
-		return jsonResponse({ results: [], has_more: false });
+		return jsonResponse(EMPTY_LIST);
 	});
 
 	await collect(client.searchPages());
@@ -193,24 +373,20 @@ Deno.test('has_more without next_cursor fails instead of truncating', async () =
 
 	await assert.rejects(
 		() => collect(client.searchPages()),
-		/has_more without a next_cursor/,
+		IncompleteEnumerationError,
 	);
 });
 
 Deno.test('requests are spaced by the configured interval', async () => {
 	const timestamps: number[] = [];
-	const client = new NotionClient('test-token', new AbortController().signal, {
-		baseUrl: 'https://notion.test/v1',
-		requestIntervalMs: 30,
-		fetchFn: (_url, _init) => {
-			timestamps.push(Date.now());
-			return Promise.resolve(jsonResponse({
-				results: [],
-				has_more: timestamps.length < 3,
-				next_cursor: timestamps.length < 3 ? `c${timestamps.length}` : null,
-			}));
-		},
-	});
+	const client = makeClient(() => {
+		timestamps.push(Date.now());
+		return jsonResponse({
+			results: [],
+			has_more: timestamps.length < 3,
+			next_cursor: timestamps.length < 3 ? `c${timestamps.length}` : null,
+		});
+	}, { requestIntervalMs: 30 });
 
 	await collect(client.searchPages());
 

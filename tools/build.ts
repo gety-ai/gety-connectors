@@ -1,3 +1,7 @@
+// Bundles the connector in the working directory (src/index.ts) into
+// dist/main.js. `@gety-ai/connector-sdk` stays external: Gety provides it
+// through the runner's import map.
+
 import * as esbuild from 'esbuild';
 import { denoPlugins } from '@luca/esbuild-deno-loader';
 import { builtinModules } from 'node:module';

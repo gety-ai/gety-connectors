@@ -1,27 +1,24 @@
 {
 	"imports": {
-		"@gety-ai/connector-sdk": "./dev/gety-connector-sdk/mod.ts",
 		"@linear/sdk": "npm:@linear/sdk@86.0.0",
-		"esbuild": "npm:esbuild@^0.24.2",
-		"@luca/esbuild-deno-loader": "jsr:@luca/esbuild-deno-loader@^0.11.1",
 		"mdast-util-from-markdown": "npm:mdast-util-from-markdown@^2.0.3",
 		"mdast-util-to-markdown": "npm:mdast-util-to-markdown@^2.1.2",
 		"mdast": "npm:@types/mdast@^4.0.4"
 	},
 	"tasks": {
-		"build": "deno run -A scripts/build.ts",
-		"dev": "deno run -A scripts/build.ts --watch",
-		"check": "deno task generate && deno check src/index.ts src/issue.ts src/comment.ts src/markdown.ts src/utils.ts scripts/build.ts scripts/setup.ts scripts/generate-manifest-config.ts dev/gety-connector-sdk/mod.ts dev/runner.ts src/gen/manifest.d.ts",
-		"generate": "deno run -A scripts/generate-manifest-config.ts",
+		"build": "deno run -A ../../tools/build.ts",
+		"dev": "deno run -A ../../tools/build.ts --watch",
+		"check": "deno task generate && deno check src/index.ts src/issue.ts src/comment.ts src/markdown.ts src/utils.ts scripts/setup.ts src/gen/manifest.d.ts",
+		"generate": "deno run -A ../../tools/generate-manifest-config.ts",
 		"setup": "deno run -A scripts/setup.ts",
 		"test": "deno test src",
-		"runner": "deno task build && deno run -A --env-file=.env dev/runner.ts",
+		"runner": "deno task build && deno run -A --env-file=.env ../../tools/dev-runner.ts",
 		"fix": "deno task fmt && deno task lint:fix",
 		"fmt": "deno fmt",
 		"fmt:check": "deno fmt --check",
 		"lint": "deno lint",
 		"lint:fix": "deno lint --fix",
-		"verify": "deno task fix && deno task check && deno task test && deno task build"
+		"verify": "deno task fmt:check && deno task lint && deno task check && deno task test && deno task build"
 	},
 	"fmt": {
 		"useTabs": true,
@@ -35,8 +32,7 @@
 	"lint": {
 		"include": [
 			"src/",
-			"scripts/",
-			"dev/"
+			"scripts/"
 		],
 		"exclude": [
 			"dist/"

@@ -120,7 +120,7 @@ full path.
 ## Local development
 
 ```bash
-deno task verify                    # fmt + lint + generate + type-check + test + build
+deno task verify                    # fmt/lint check + generate + type-check + test + build
 deno task runner -- --reset-state   # full sync into dev/runs/<timestamp>/
 deno task runner -- --polls 2       # verify incremental behavior
 ```

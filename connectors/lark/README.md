@@ -98,7 +98,7 @@ Drive 文件夹树，共享文档可能无法取得完整路径。
 ## 本地开发
 
 ```bash
-deno task verify                    # fmt + lint + generate + 类型检查 + 测试 + 构建
+deno task verify                    # fmt/lint 检查 + generate + 类型检查 + 测试 + 构建
 deno task runner -- --reset-state   # 全量同步,输出到 dev/runs/<timestamp>/
 deno task runner -- --polls 2       # 验证增量行为
 ```

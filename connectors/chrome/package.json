@@ -17,7 +17,7 @@
 	"files": [
 		"dist/main.js",
 		"dist/main.js.map",
-		"icon.png",
+		"assets/chrome.svg",
 		"CHANGELOG.md"
 	],
 	"publishConfig": {
@@ -29,7 +29,7 @@
 		"version": "0.1.0",
 		"min_gety_app_version": "0.7.0",
 		"entry": "dist/main.js",
-		"icon": "icon.png",
+		"icon": "assets/chrome.svg",
 		"description": "Indexes Google Chrome bookmarks and browsing history from a local Chrome profile.",
 		"author": {
 			"name": "yuche"

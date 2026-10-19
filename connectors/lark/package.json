@@ -17,7 +17,7 @@
 	"files": [
 		"dist/main.js",
 		"dist/main.js.map",
-		"icon.png",
+		"assets/lark.svg",
 		"CHANGELOG.md"
 	],
 	"publishConfig": {
@@ -32,7 +32,7 @@
 			"data-source"
 		],
 		"entry": "dist/main.js",
-		"icon": "icon.png",
+		"icon": "assets/lark.svg",
 		"description": "通过本机已登录的 lark-cli 索引飞书云文档与聊天记录。",
 		"author": {
 			"name": "Gety"

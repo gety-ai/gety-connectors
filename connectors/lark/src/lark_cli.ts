@@ -1,0 +1,565 @@
+/**
+ * Thin client over the locally authenticated lark-cli binary.
+ *
+ * lark-cli prints success envelopes ({ ok: true, data }) to stdout and error
+ * envelopes ({ ok: false, error }) to stderr; both streams are parsed. All
+ * Lark credentials live in lark-cli itself — this module never sees them.
+ */
+
+type JsonRecord = Record<string, unknown>;
+
+export type WikiNode = {
+	node_token: string;
+	obj_token?: string;
+	space_id?: string;
+	parent_node_token?: string;
+	title?: string;
+	origin_node_token?: string;
+	origin_space_id?: string;
+};
+
+export type DriveFile = {
+	token: string;
+	type: string;
+	name?: string;
+	parent_token?: string;
+	url?: string;
+};
+
+export type DrivePage = {
+	files: DriveFile[];
+	hasMore: boolean;
+	pageToken?: string;
+};
+
+export type SearchEntity = {
+	token: string;
+	type: string;
+	title: string;
+	editedAt?: string;
+	createdAt?: string;
+	url?: string;
+	owner?: string;
+};
+
+export type SearchPage = {
+	entities: SearchEntity[];
+	hasMore: boolean;
+	pageToken?: string;
+};
+
+export type ChatSummary = {
+	chat_id: string;
+	name?: string;
+	chat_mode?: string;
+};
+
+export type ChatPage = {
+	chats: ChatSummary[];
+	hasMore: boolean;
+	pageToken?: string;
+};
+
+export type ChatMessage = {
+	message_id?: string;
+	msg_type?: string;
+	content?: string;
+	create_time?: string;
+	deleted?: boolean;
+	sender?: {
+		id?: string;
+		name?: string;
+		sender_type?: string;
+	};
+};
+
+export type MessagePage = {
+	messages: ChatMessage[];
+	hasMore: boolean;
+	pageToken?: string;
+};
+
+export class LarkCliError extends Error {
+	readonly missingScopes: string[];
+	readonly code?: string;
+
+	constructor(message: string, missingScopes: string[] = [], code?: unknown) {
+		super(message);
+		this.name = 'LarkCliError';
+		this.missingScopes = missingScopes;
+		this.code = code == null ? undefined : String(code);
+	}
+}
+
+const DOCS_PAGE_SIZE = '20';
+const CHATS_PAGE_SIZE = '100';
+const MESSAGES_PAGE_SIZE = '50';
+
+type CliEnvelope = {
+	ok?: boolean;
+	data?: unknown;
+	error?: {
+		type?: string;
+		subtype?: string;
+		code?: unknown;
+		message?: string;
+		missing_scopes?: unknown;
+	};
+};
+
+export class LarkCliClient {
+	constructor(
+		private readonly bin: string,
+		private readonly signal: AbortSignal,
+		private readonly retryDelaysMs: readonly number[] = [1_000, 2_500, 5_000],
+	) {}
+
+	/** Same CLI, cancelled by `signal` instead (kills in-flight subprocesses). */
+	withSignal(signal: AbortSignal): LarkCliClient {
+		return new LarkCliClient(this.bin, signal, this.retryDelaysMs);
+	}
+
+	/**
+	 * One page of the Search v2 browse enumeration. An empty query needs the
+	 * wide --created-since window to browse instead of returning only recent
+	 * documents, and the server-side --doc-types filter returns zero results
+	 * in that mode, so type filtering must happen in the caller. The default
+	 * sort and edit_time sort have complementary recall and must be unioned.
+	 */
+	searchDocs(
+		options: { sortByEditTime?: boolean; pageToken?: string } = {},
+	): Promise<SearchPage> {
+		return this.run([
+			'drive',
+			'+search',
+			'--as',
+			'user',
+			'--query',
+			'',
+			'--created-since',
+			'2000-01-01',
+			'--page-size',
+			DOCS_PAGE_SIZE,
+			...(options.sortByEditTime ? ['--sort', 'edit_time'] : []),
+			...(options.pageToken == null ? [] : ['--page-token', options.pageToken]),
+		]).then(extractSearchPage);
+	}
+
+	/**
+	 * Fetches a document's markdown export. Prefer passing the URL: lark-cli
+	 * unwraps wiki URLs to the underlying document, which a bare wiki node
+	 * token would not resolve. Returns null when the document has no content.
+	 */
+	async fetchDocMarkdown(ref: string): Promise<string | null> {
+		const data = await this.run([
+			'docs',
+			'+fetch',
+			'--api-version',
+			'v2',
+			'--as',
+			'user',
+			'--doc',
+			ref,
+			'--doc-format',
+			'markdown',
+			'--scope',
+			'full',
+		]);
+		return extractDocContent(data);
+	}
+
+	async getWikiNode(token: string, objType?: string): Promise<WikiNode> {
+		const data = await this.api('/open-apis/wiki/v2/spaces/get_node', {
+			token,
+			...(objType == null ? {} : { obj_type: objType }),
+		});
+		const node = isRecord(data) && isRecord(data.node) ? data.node : null;
+		if (node == null || asString(node.node_token) == null) {
+			throw new LarkCliError('Wiki response contains no node');
+		}
+		return {
+			node_token: asString(node.node_token)!,
+			obj_token: asString(node.obj_token),
+			space_id: asString(node.space_id),
+			parent_node_token: asString(node.parent_node_token),
+			title: asString(node.title),
+			origin_node_token: asString(node.origin_node_token),
+			origin_space_id: asString(node.origin_space_id),
+		};
+	}
+
+	async getWikiSpaceName(spaceId: string): Promise<string | undefined> {
+		const data = await this.api(
+			`/open-apis/wiki/v2/spaces/${encodeURIComponent(spaceId)}`,
+		);
+		return isRecord(data) && isRecord(data.space)
+			? asString(data.space.name)
+			: undefined;
+	}
+
+	async listDriveFiles(
+		folderToken?: string,
+		pageToken?: string,
+	): Promise<DrivePage> {
+		const data = await this.api('/open-apis/drive/v1/files', {
+			page_size: 200,
+			...(folderToken == null ? {} : { folder_token: folderToken }),
+			...(pageToken == null ? {} : { page_token: pageToken }),
+		});
+		if (!isRecord(data) || !Array.isArray(data.files)) {
+			throw new LarkCliError('Drive response contains no file list');
+		}
+		const files: DriveFile[] = [];
+		for (const item of data.files) {
+			if (!isRecord(item)) continue;
+			const token = asString(item.token);
+			const type = asString(item.type);
+			if (token == null || type == null) continue;
+			files.push({
+				token,
+				type,
+				name: asString(item.name),
+				parent_token: asString(item.parent_token),
+				url: asString(item.url),
+			});
+		}
+		return {
+			files,
+			hasMore: data.has_more === true,
+			pageToken: asString(data.next_page_token),
+		};
+	}
+
+	private async api(
+		path: string,
+		params: Record<string, string | number> = {},
+	): Promise<unknown> {
+		const result = await this.run([
+			'api',
+			'GET',
+			path,
+			'--as',
+			'user',
+			'--format',
+			'json',
+			'--params',
+			JSON.stringify(params),
+		]);
+		// Raw API envelopes may contain the original OpenAPI code/data wrapper.
+		if (isRecord(result) && typeof result.code === 'number') {
+			if (result.code !== 0) {
+				throw new LarkCliError(
+					asString(result.msg) ?? `OpenAPI error ${result.code}`,
+					[],
+					result.code,
+				);
+			}
+			return result.data;
+		}
+		return result;
+	}
+
+	async listChats(pageToken?: string): Promise<ChatPage> {
+		const data = await this.run([
+			'im',
+			'+chat-list',
+			'--as',
+			'user',
+			'--types',
+			'group,p2p',
+			'--sort',
+			'active_time',
+			'--page-size',
+			CHATS_PAGE_SIZE,
+			...(pageToken == null ? [] : ['--page-token', pageToken]),
+		]);
+		if (!isRecord(data)) {
+			return { chats: [], hasMore: false };
+		}
+		const chats: ChatSummary[] = [];
+		for (const raw of Array.isArray(data.chats) ? data.chats : []) {
+			if (!isRecord(raw)) {
+				continue;
+			}
+			const chatId = asString(raw.chat_id);
+			if (chatId == null) {
+				continue;
+			}
+			chats.push({
+				chat_id: chatId,
+				name: asString(raw.name),
+				chat_mode: asString(raw.chat_mode),
+			});
+		}
+		return {
+			chats,
+			hasMore: data.has_more === true,
+			pageToken: asString(data.page_token),
+		};
+	}
+
+	async listMessages(
+		chatId: string,
+		startISO: string,
+		pageToken?: string,
+	): Promise<MessagePage> {
+		const data = await this.run([
+			'im',
+			'+chat-messages-list',
+			'--as',
+			'user',
+			'--chat-id',
+			chatId,
+			'--start',
+			startISO,
+			'--order',
+			'asc',
+			'--no-reactions',
+			'--page-size',
+			MESSAGES_PAGE_SIZE,
+			...(pageToken == null ? [] : ['--page-token', pageToken]),
+		]);
+		if (!isRecord(data)) {
+			return { messages: [], hasMore: false };
+		}
+		const messages: ChatMessage[] = [];
+		for (const raw of Array.isArray(data.messages) ? data.messages : []) {
+			if (isRecord(raw)) {
+				messages.push(raw as ChatMessage);
+			}
+		}
+		return {
+			messages,
+			hasMore: data.has_more === true,
+			pageToken: asString(data.page_token),
+		};
+	}
+
+	protected async run(args: string[]): Promise<unknown> {
+		for (let attempt = 0;; attempt += 1) {
+			this.signal.throwIfAborted();
+
+			const command = new Deno.Command(this.bin, {
+				args,
+				stdin: 'null',
+				stdout: 'piped',
+				stderr: 'piped',
+				signal: this.signal,
+			});
+
+			let output: Deno.CommandOutput;
+			try {
+				output = await command.output();
+			} catch (error) {
+				this.signal.throwIfAborted();
+				throw new LarkCliError(
+					`failed to run "${this.bin}": ${errorMessage(error)}. ` +
+						'Install lark-cli and finish `lark-cli auth login` first, ' +
+						'or set the lark-cli path in the connector config.',
+				);
+			}
+
+			const stdoutText = new TextDecoder().decode(output.stdout);
+			const stderrText = new TextDecoder().decode(output.stderr).trim();
+			const envelope = parseEnvelope(stdoutText) ?? parseEnvelope(stderrText);
+
+			if (envelope?.ok === true) {
+				return envelope.data ?? null;
+			}
+
+			const delay = this.retryDelaysMs[attempt];
+			if (delay != null && isRateLimitFailure(envelope)) {
+				await abortableDelay(delay, this.signal);
+				continue;
+			}
+
+			const detail = envelope?.error?.message ??
+				(stderrText || `exit code ${output.code}`);
+			throw new LarkCliError(
+				`lark-cli ${args.slice(0, 2).join(' ')} failed: ${detail}`,
+				missingScopes(envelope),
+				envelope?.error?.code,
+			);
+		}
+	}
+}
+
+export function isRateLimitFailure(
+	envelope: CliEnvelope | null | undefined,
+): boolean {
+	const error = envelope?.error;
+	if (error == null) {
+		return false;
+	}
+	const text = [error.type, error.subtype, error.code, error.message]
+		.map(String)
+		.join(' ');
+	return /rate.?limit|too many requests?|\b429\b/i.test(text);
+}
+
+function missingScopes(envelope: CliEnvelope | null | undefined): string[] {
+	const raw = envelope?.error?.missing_scopes;
+	return Array.isArray(raw)
+		? raw.filter((scope): scope is string => typeof scope === 'string')
+		: [];
+}
+
+function parseEnvelope(text: string): CliEnvelope | null {
+	try {
+		const parsed = JSON.parse(text) as unknown;
+		return isRecord(parsed) ? (parsed as CliEnvelope) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Maps a Search v2 doc_wiki page: `results[].result_meta` carries the token,
+ * tenant URL, and unix timestamps; the title arrives highlight-tagged in
+ * `title_highlighted`. `doc_types` is UPPERCASE (e.g. "DOCX") on the wire.
+ */
+export function extractSearchPage(data: unknown): SearchPage {
+	if (!isRecord(data)) {
+		return { entities: [], hasMore: false };
+	}
+
+	const results = Array.isArray(data.results) ? data.results : [];
+	const entities: SearchEntity[] = [];
+	for (const raw of results) {
+		if (!isRecord(raw)) {
+			continue;
+		}
+		const meta = isRecord(raw.result_meta) ? raw.result_meta : {};
+		const token = asString(meta.token);
+		if (token == null) {
+			continue;
+		}
+		const type = (asString(meta.doc_types) ?? asString(raw.entity_type) ??
+			'doc').toLowerCase();
+		const title = stripHighlightTags(
+			asString(raw.title_highlighted) ?? asString(raw.title) ?? '',
+		).trim();
+		entities.push({
+			token,
+			type,
+			title: title || '无标题文档',
+			editedAt: normalizeSourceTime(meta.update_time ?? meta.update_time_iso),
+			createdAt: normalizeSourceTime(
+				meta.create_time ?? meta.create_time_iso,
+			),
+			url: asString(meta.url),
+			owner: asString(meta.owner_name),
+		});
+	}
+
+	return {
+		entities,
+		hasMore: data.has_more === true,
+		pageToken: asString(data.page_token),
+	};
+}
+
+export function extractDocContent(data: unknown): string | null {
+	if (typeof data === 'string') {
+		return data.trim() === '' ? null : data;
+	}
+	if (!isRecord(data)) {
+		return null;
+	}
+	for (const key of ['content', 'markdown', 'text', 'document', 'data']) {
+		const value = data[key];
+		if (typeof value === 'string' && value.trim() !== '') {
+			return value;
+		}
+		if (isRecord(value)) {
+			const nested = extractDocContent(value);
+			if (nested != null) {
+				return nested;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * lark-cli emits local times like "2026-07-10 11:22"; the connector runs on
+ * the same machine as the CLI, so parsing in the local zone is correct.
+ */
+export function isoFromLarkTime(
+	value: string | undefined,
+): string | undefined {
+	if (!value) {
+		return undefined;
+	}
+	let normalized = value.trim();
+	if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(normalized)) {
+		normalized = normalized.replace(' ', 'T');
+		if (/T\d{2}:\d{2}$/.test(normalized)) {
+			normalized = `${normalized}:00`;
+		}
+	}
+	const date = new Date(normalized);
+	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+/** Accepts unix seconds/milliseconds (number or numeric string) or date text. */
+export function normalizeSourceTime(value: unknown): string | undefined {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		const ms = value > 1e12 ? value : value * 1000;
+		return new Date(ms).toISOString();
+	}
+	if (typeof value === 'string') {
+		if (/^\d+$/.test(value)) {
+			return normalizeSourceTime(Number(value));
+		}
+		return isoFromLarkTime(value);
+	}
+	return undefined;
+}
+
+export function stripHighlightTags(value: string): string {
+	return value.replace(/<\/?[a-z][^>]*>/gi, '');
+}
+
+export function buildDocUrl(type: string, token: string): string {
+	const path = type === 'docx'
+		? 'docx'
+		: type === 'wiki'
+		? 'wiki'
+		: type === 'sheet'
+		? 'sheets'
+		: type === 'bitable'
+		? 'base'
+		: 'docs';
+	return `https://feishu.cn/${path}/${token}`;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function asString(value: unknown): string | undefined {
+	return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function abortableDelay(
+	milliseconds: number,
+	signal: AbortSignal,
+): Promise<void> {
+	signal.throwIfAborted();
+	return new Promise((resolve, reject) => {
+		const timeout = setTimeout(() => {
+			signal.removeEventListener('abort', onAbort);
+			resolve();
+		}, milliseconds);
+		const onAbort = () => {
+			clearTimeout(timeout);
+			reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+		};
+		signal.addEventListener('abort', onAbort, { once: true });
+	});
+}

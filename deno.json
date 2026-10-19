@@ -8,15 +8,12 @@
 		"./connectors/lark"
 	],
 	"nodeModulesDir": "none",
-	"lint": {
-		"include": [
-			"scripts/"
-		],
-		"rules": {
-			"tags": [
-				"recommended"
-			]
-		}
+	"imports": {
+		"@std/encoding": "jsr:@std/encoding@^1.0.10",
+		"fast-png": "npm:fast-png@8.0.0"
+	},
+	"tasks": {
+		"catalog": "deno run --allow-read scripts/catalog.ts"
 	},
 	"fmt": {
 		"useTabs": true,
@@ -30,5 +27,15 @@
 			"pnpm-lock.yaml",
 			".changeset/*.md"
 		]
+	},
+	"lint": {
+		"include": [
+			"scripts/"
+		],
+		"rules": {
+			"tags": [
+				"recommended"
+			]
+		}
 	}
 }

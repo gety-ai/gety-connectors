@@ -3,6 +3,7 @@
   "specifiers": {
     "jsr:@luca/esbuild-deno-loader@~0.11.1": "0.11.1",
     "jsr:@std/bytes@^1.0.2": "1.0.6",
+    "jsr:@std/encoding@^1.0.10": "1.0.10",
     "jsr:@std/encoding@^1.0.5": "1.0.10",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@^1.0.6": "1.1.5",
@@ -10,6 +11,7 @@
     "npm:@linear/sdk@86.0.0": "86.0.0",
     "npm:@types/mdast@^4.0.4": "4.0.4",
     "npm:esbuild@~0.24.2": "0.24.2",
+    "npm:fast-png@8.0.0": "8.0.0",
     "npm:mdast-util-from-markdown@^2.0.3": "2.0.3",
     "npm:mdast-util-to-markdown@^2.1.2": "2.1.2"
   },
@@ -18,7 +20,7 @@
       "integrity": "dc020d16d75b591f679f6b9288b10f38bdb4f24345edb2f5732affa1d9885267",
       "dependencies": [
         "jsr:@std/bytes",
-        "jsr:@std/encoding",
+        "jsr:@std/encoding@^1.0.5",
         "jsr:@std/path"
       ]
     },
@@ -426,6 +428,13 @@
       "scripts": true,
       "bin": true
     },
+    "fast-png@8.0.0": {
+      "integrity": "sha512-gCysNasJ8KEMgfdYIKd/wTDo6ENK1PWT0RJO7O+0pgmuHPw2O6tA1WvdxFRJoLf9V8yFYpG0FA1YgI8X97OhJA==",
+      "dependencies": [
+        "fflate",
+        "iobuffer"
+      ]
+    },
     "fast-string-truncated-width@3.0.3": {
       "integrity": "sha512-0jjjIEL6+0jag3l2XWWizO64/aZVtpiGE3t0Zgqxv0DPuxiMjvB3M24fCyhZUO4KomJQPj3LTSUnDP3GpdwC0g=="
     },
@@ -450,6 +459,9 @@
         "picomatch"
       ]
     },
+    "fflate@0.8.3": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
+    },
     "graphql@16.14.1": {
       "integrity": "sha512-cQOsSMS/IrDz82PVyRDvf/Q1F/bRbBVjJlh+xYOkI1qw2bWRvWGiWc+m2O0d6l4Bt1fyY+8kzJ8JFWGJqNeDBg=="
     },
@@ -459,6 +471,9 @@
     },
     "import-meta-resolve@4.2.0": {
       "integrity": "sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg=="
+    },
+    "iobuffer@6.0.1": {
+      "integrity": "sha512-SZWYkWNfjIXIBYSDpXDYIgshqtbOPsi4lviawAEceR1Kqk+sHDlcQjWrzNQsii80AyBY0q5c8HCTNjqo74ul+Q=="
     },
     "jju@1.4.0": {
       "integrity": "sha512-8wb9Yw966OSxApiCt0K3yNJL8pnNeIv+OEq2YMidz4FKP6nonSRoOXc80iXY4JaN2FC11B9qsNmDsm+ZOfMROA=="
@@ -757,6 +772,10 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@std/encoding@^1.0.10",
+      "npm:fast-png@8.0.0"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:@changesets/cli@^3.0.3"

@@ -7,18 +7,7 @@
 		"./connectors/notion",
 		"./connectors/lark"
 	],
-	"fmt": {
-		"useTabs": true,
-		"indentWidth": 2,
-		"singleQuote": true,
-		"lineWidth": 80,
-		"exclude": [
-			"**/dist/",
-			"node_modules/",
-			"**/CHANGELOG.md",
-			".changeset/*.md"
-		]
-	},
+	"nodeModulesDir": "none",
 	"lint": {
 		"include": [
 			"scripts/"
@@ -28,5 +17,18 @@
 				"recommended"
 			]
 		}
+	},
+	"fmt": {
+		"useTabs": true,
+		"indentWidth": 2,
+		"singleQuote": true,
+		"lineWidth": 80,
+		"exclude": [
+			"**/dist/",
+			"node_modules/",
+			"**/CHANGELOG.md",
+			"pnpm-lock.yaml",
+			".changeset/*.md"
+		]
 	}
 }

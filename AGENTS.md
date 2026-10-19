@@ -33,8 +33,8 @@ deno task --recursive check     # type-check (also regenerates src/gen/manifest.
 deno task --recursive test
 deno task --recursive build     # connectors/*/dist/, needed before verify:packs
 deno fmt --check && deno lint
-deno task check:tools           # type-check tools/ and the vendored runner
-deno task test:tools
+deno task check:tools           # type-check tools/, scripts/ and the vendored runner
+deno task test:tools            # tests in tools/ and scripts/
 deno task sync:check            # versions, manifests, gety, catalog drift
 deno task sync-sdk:check        # vendor/gety-deno matches SOURCE.json
 deno task verify:packs          # pack every package and inspect the tarballs

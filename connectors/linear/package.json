@@ -27,7 +27,7 @@
 		"id": "linear",
 		"name": "Linear",
 		"version": "0.1.0",
-		"min_gety_app_version": "0.5.1",
+		"min_gety_app_version": "0.7.0",
 		"entry": "dist/main.js",
 		"icon": "assets/linear.webp",
 		"description": "Indexes Linear issues as searchable markdown documents.",
@@ -40,6 +40,11 @@
 		"schedule": {
 			"strategy": "interval",
 			"interval_seconds": 300
+		},
+		"permissions": {
+			"net": [
+				"api.linear.app"
+			]
 		},
 		"config": {
 			"fields": [

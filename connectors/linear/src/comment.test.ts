@@ -73,13 +73,13 @@ Deno.test('renderCommentsMarkdown renders separated threaded comments', () => {
 	assert.match(markdown, /\n---\n/);
 	assert.match(
 		markdown,
-		/@alice · 2026-06-03 00:00\n\nFirst \[image\]\(https:\/\/example\.com\/a\.png\)/,
+		/@alice · 2026-06-03 00:00 UTC\n\nFirst \[image\]\(https:\/\/example\.com\/a\.png\)/,
 	);
 	assert.match(
 		markdown,
-		/> @bob · 2026-06-03 00:01\n>\n> Reply body/,
+		/> @bob · 2026-06-03 00:01 UTC\n>\n> Reply body/,
 	);
-	assert.match(markdown, /@unknown · 2026-06-03 00:02/);
+	assert.match(markdown, /@unknown · 2026-06-03 00:02 UTC/);
 	assert.doesNotMatch(markdown, /> @alice · 2026-06-03 00:00/);
 	assert.doesNotMatch(markdown, /> @unknown · 2026-06-03 00:02/);
 	assert.doesNotMatch(markdown, /### Comment/);

@@ -1,17 +1,29 @@
 import { del, type DocUpdate, upsert } from '@gety-ai/connector-sdk';
-import type { LinearClient } from '@linear/sdk';
 import {
 	latestCommentUpdatedAt,
 	type LinearComment,
-	type LinearCommentConnection,
 	renderCommentsMarkdown,
 } from './comment.ts';
+import {
+	type Connection,
+	isEntityNotFound,
+	type LinearGraphQL,
+	requireConnection,
+	requireRecord,
+	UnexpectedResponseError,
+} from './graphql.ts';
 import { markdownImagesToLinks } from './markdown.ts';
 import { dateToIso, maxIsoDate } from './utils.ts';
 
-export type IssuesQueryVariables = NonNullable<
-	Parameters<LinearClient['issues']>[0]
->;
+export interface IssueFilter {
+	updatedAt: { gte: string };
+}
+
+export interface IssuePageVariables {
+	after?: string;
+	filter?: IssueFilter;
+	first: number;
+}
 
 export const DOC_TYPE = 'linear:issue';
 
@@ -32,15 +44,7 @@ export interface LinearIssue {
 	project?: LinearProject | null;
 	state?: LinearWorkflowState | null;
 	team?: LinearTeam | null;
-	comments?: LinearCommentConnection | null;
-}
-
-export interface LinearIssueConnection {
-	nodes: LinearIssue[];
-	pageInfo: {
-		endCursor?: string | null;
-		hasNextPage: boolean;
-	};
+	comments?: Connection<LinearComment> | null;
 }
 
 interface LinearUser {
@@ -75,14 +79,6 @@ interface BuildIssueUpdateOptions {
 
 interface IssueIncrementalOptions {
 	incrementalOverlapMs: number;
-}
-
-interface IssuePageResponse {
-	issues: LinearIssueConnection;
-}
-
-interface IssueResponse {
-	issue?: LinearIssue | null;
 }
 
 const ISSUE_FIELDS = `
@@ -217,38 +213,66 @@ const ISSUE_QUERY = `
 `;
 
 export async function fetchIssuePage(
-	client: LinearClient,
-	variables: Pick<IssuesQueryVariables, 'after' | 'filter' | 'first'>,
+	client: LinearGraphQL,
+	variables: IssuePageVariables,
 	includeComments: boolean,
 	commentFirst: number,
-): Promise<LinearIssueConnection> {
-	const response = await client.client.rawRequest<
-		IssuePageResponse,
-		Record<string, unknown>
-	>(ISSUE_PAGE_QUERY, {
+): Promise<Connection<LinearIssue>> {
+	const data = await client.request<{ issues?: unknown }>(ISSUE_PAGE_QUERY, {
 		...variables,
 		commentFirst,
 		includeComments,
 		sort: [{ updatedAt: { order: 'Ascending' } }],
 	});
-	return response.data?.issues ?? emptyIssueConnection();
+	const connection = requireConnection<LinearIssue>(data.issues, 'issues');
+	for (const issue of connection.nodes) {
+		requireIssue(issue, includeComments, 'issues.nodes');
+	}
+	return connection;
 }
 
+/**
+ * The issue `id`, or null when Linear reports that it does not exist (for
+ * example after a hard delete). Any other error is thrown.
+ */
 export async function fetchIssueById(
-	client: LinearClient,
+	client: LinearGraphQL,
 	id: string,
 	includeComments: boolean,
 	commentFirst: number,
 ): Promise<LinearIssue | null> {
-	const response = await client.client.rawRequest<
-		IssueResponse,
-		Record<string, unknown>
-	>(ISSUE_QUERY, {
-		commentFirst,
-		id,
-		includeComments,
-	});
-	return response.data?.issue ?? null;
+	let data: { issue?: unknown };
+	try {
+		data = await client.request(ISSUE_QUERY, {
+			commentFirst,
+			id,
+			includeComments,
+		});
+	} catch (error) {
+		if (isEntityNotFound(error, 'issue')) {
+			return null;
+		}
+		throw error;
+	}
+	return requireIssue(data.issue, includeComments, 'issue');
+}
+
+/** `value` checked as an issue, with its first comments page if requested. */
+function requireIssue(
+	value: unknown,
+	includeComments: boolean,
+	context: string,
+): LinearIssue {
+	const issue = requireRecord(value, context);
+	if (typeof issue.id !== 'string' || typeof issue.identifier !== 'string') {
+		throw new UnexpectedResponseError(
+			`${context}: expected an issue with a string id and identifier`,
+		);
+	}
+	if (includeComments) {
+		requireConnection(issue.comments, `${context}.comments`);
+	}
+	return issue as unknown as LinearIssue;
 }
 
 export function issueDocId(issue: LinearIssue): string {
@@ -383,13 +407,4 @@ function formatTeam(details: IssueDetails): string | null {
 		return `${details.teamName} (${details.teamKey})`;
 	}
 	return details.teamName ?? details.teamKey;
-}
-
-function emptyIssueConnection(): LinearIssueConnection {
-	return {
-		nodes: [],
-		pageInfo: {
-			hasNextPage: false,
-		},
-	};
 }

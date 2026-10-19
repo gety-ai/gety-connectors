@@ -5,6 +5,8 @@ This Gety custom connector indexes Linear issues as markdown documents.
 ## Current Scope
 
 - Authenticates with a Linear personal API key.
+- Requires Gety 0.7.0 or later and may only reach `api.linear.app` (manifest
+  `permissions`).
 - Indexes Linear issues with `doc_type: "linear:issue"`.
 - Stores each issue as markdown so Gety can render the source preview when the
   search result has `content_format: "markdown"`.
@@ -16,9 +18,15 @@ This Gety custom connector indexes Linear issues as markdown documents.
 - Re-upserts changed issues using `updatedAt` incremental polling.
 - Rebuilds affected issue documents when comments are created, edited, resolved,
   or archived.
-- Deletes archived or trashed Linear issues from Gety's index.
+- Deletes archived or trashed Linear issues from Gety's index, and issues that
+  Linear reports as not found when a changed comment points at them.
 - Runs every 5 minutes and processes issue sync page by page, up to 500 issues
   per poll. Comment delta sync runs only after issue pagination is caught up.
+  The poll's state is committed only when the whole poll succeeds.
+- Retries network errors, timeouts, rate limits, and server errors; requests
+  time out after 60 seconds and stop when Gety cancels the poll.
+- Polling cannot see issues or comments hard-deleted in Linear without being
+  archived first; run Rebuild index on the connector in Gety to drop them.
 
 See `docs/advanced-sync.md` for webhook and deeper incremental sync notes.
 
@@ -26,7 +34,9 @@ See `docs/advanced-sync.md` for webhook and deeper incremental sync notes.
 
 - `manifest.json` declares the connector metadata, config form, and
   `dist/main.js` runtime entry.
-- `src/index.ts` contains the connector source code.
+- `src/index.ts` contains the poll orchestration; `src/graphql.ts` is the Linear
+  GraphQL client, and `src/issue.ts` and `src/comment.ts` hold the queries and
+  markdown rendering.
 - `dist/main.js` is the build output loaded by Gety (`deno task build`; not
   committed).
 - `dist/main.js.map` is its source map, published with it to make debugging the
@@ -44,7 +54,9 @@ deno task build
 ```
 
 The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
-runtime through its import map. The Linear SDK is bundled into `dist/main.js`.
+runtime through its import map. The connector talks to Linear's GraphQL API with
+its own small client (`src/graphql.ts`) on the repository's shared HTTP helpers;
+those helpers and the markdown libraries are bundled into `dist/main.js`.
 
 `deno task verify` checks formatting and lint, runs type checking and tests,
 then builds; it does not rewrite files (`deno task fix` formats and applies safe
@@ -58,9 +70,12 @@ deno task test
 deno task verify
 ```
 
-Unit tests use Deno's built-in test runner and cover stable pure functions such
-as markdown rendering and incremental cursor transitions. They do not require
-network access or a Linear API key.
+Tests use Deno's built-in test runner. Unit tests cover markdown rendering,
+cursor transitions, and the GraphQL client's error and rate-limit handling.
+`src/poll.test.ts` runs whole polls against an in-memory fake of Linear's API
+(`src/fake_linear.ts`): rebuilds, the 500-issue cap, comment cursors, deletes,
+retries, cancellation, and malformed responses. No test needs network access or
+a Linear API key.
 
 ## Live Runner
 

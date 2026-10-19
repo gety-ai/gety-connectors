@@ -3,24 +3,24 @@ import {
 	type DocUpdate,
 	type PollResult,
 } from '@gety-ai/connector-sdk';
-import { LinearClient } from '@linear/sdk';
 import {
 	changedCommentIssues,
 	type CommentDeltaResult,
 	fetchIssueComments,
 } from './comment.ts';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+import { LinearGraphQL, nextPageCursor, retryReason } from './graphql.ts';
 import {
 	buildIssueDelete,
 	buildIssueUpdate,
 	fetchIssueById,
 	fetchIssuePage,
 	issueDateBoundary,
+	type IssueFilter,
 	issueIsRemoved,
-	type IssuesQueryVariables,
 	issueUpdatedAt,
 } from './issue.ts';
-import { hasValue, logInfo } from './log.ts';
+import { log } from './log.ts';
 import { maxIsoDate } from './utils.ts';
 
 export interface LinearState {
@@ -30,6 +30,10 @@ export interface LinearState {
 	issue_delta_boundary?: string;
 	issue_delta_max_updated_at?: string;
 	rebuild_issue_sync?: boolean;
+	// When the in-progress full rebuild fetched its first page, minus the clock
+	// skew allowance. The rebuild saw every comment older than this, so the
+	// comment cursor starts here once it completes.
+	rebuild_started_at?: string;
 	last_comment_updated_at?: string;
 	comment_delta_after?: string;
 	comment_delta_boundary?: string;
@@ -55,6 +59,10 @@ interface SyncOptions {
 
 	// Timestamp overlap used by incremental polling to avoid boundary misses.
 	incrementalOverlapMs: number;
+
+	// Allowance for this machine's clock running ahead of Linear's, subtracted
+	// from the local time a full rebuild starts at.
+	rebuildClockSkewMs: number;
 }
 
 const DEFAULT_SYNC_OPTIONS: SyncOptions = {
@@ -64,18 +72,29 @@ const DEFAULT_SYNC_OPTIONS: SyncOptions = {
 	maxCommentDeltasPerPoll: 50,
 	issueCommentPageSize: 50,
 	incrementalOverlapMs: 1000,
+	rebuildClockSkewMs: 10 * 60_000,
 };
 
 export const STATE_SCHEMA_VERSION = 2;
 
 export default class LinearConnector
 	extends Connector<ManifestConfig, LinearState> {
-	private client!: LinearClient;
+	private client!: LinearGraphQL;
 	private indexComments = true;
 	private readonly syncOptions = DEFAULT_SYNC_OPTIONS;
 
 	override onLoad(): void {
-		this.client = new LinearClient({ apiKey: this.config.api_key });
+		this.client = new LinearGraphQL({
+			apiKey: this.config.api_key,
+			signal: this.signal,
+			onRetry: ({ operation, attempt, delayMs, error }) =>
+				log.warn('request retrying', {
+					operation,
+					attempt: attempt + 1,
+					delay_ms: delayMs,
+					reason: retryReason(error),
+				}),
+		});
 		this.indexComments = this.config.index_comments ?? true;
 	}
 
@@ -86,18 +105,14 @@ export default class LinearConnector
 		let issuePages = 0;
 		let issueCount = 0;
 		let issueUpdates = 0;
-		logInfo('poll started', {
+		log.info('poll started', {
 			index_comments: this.indexComments,
 			rebuild_all_issues: rebuildAllIssues,
-			has_issue_cursor: hasValue(
-				previousState.issue_delta_after ??
-					previousState.last_issue_updated_at,
-			),
-			has_comment_cursor: hasValue(
-				previousState.comment_delta_after ??
-					previousState.comment_delta_boundary ??
-					previousState.last_comment_updated_at,
-			),
+			has_issue_cursor: (previousState.issue_delta_after ??
+				previousState.last_issue_updated_at) != null,
+			has_comment_cursor: (previousState.comment_delta_after ??
+				previousState.comment_delta_boundary ??
+				previousState.last_comment_updated_at) != null,
 		});
 
 		while (issueCount < this.syncOptions.maxIssuesPerPoll) {
@@ -108,21 +123,18 @@ export default class LinearConnector
 				shouldRebuildPage,
 				Math.min(this.syncOptions.issuePageSize, remainingIssues),
 			);
-			const shouldYieldIssuePage = shouldYieldIssueResult(
-				stateAfterIssues,
-				issueResult,
-				shouldRebuildPage,
-			);
 			stateAfterIssues = nextStateAfterIssuePage(
 				stateAfterIssues,
 				issueResult,
 				this.indexComments,
 			);
-			if (shouldYieldIssuePage) {
-				issuePages += 1;
-				issueCount += issueResult.issueCount;
-				issueUpdates += issueResult.updates.length;
-				yield { updates: issueResult.updates, state: stateAfterIssues };
+			issuePages += 1;
+			issueCount += issueResult.issueCount;
+			issueUpdates += issueResult.updates.length;
+			// Gety commits state only when the whole poll succeeds, so pages carry
+			// updates only; the final batch carries the state.
+			if (issueResult.updates.length > 0) {
+				yield { updates: issueResult.updates };
 			}
 			if (!issueResult.hitLimit || issueResult.issueCount === 0) {
 				break;
@@ -130,14 +142,16 @@ export default class LinearConnector
 		}
 
 		if (stateAfterIssues.issue_delta_after != null) {
-			logInfo('poll finished', {
+			log.info('poll finished', {
 				phase: 'issues',
 				issue_pages: issuePages,
 				issues: issueCount,
 				issue_updates: issueUpdates,
 				total_updates: issueUpdates,
 				hit_limit: true,
+				max_complexity: this.client.maxComplexity,
 			});
+			yield { updates: [], state: stateAfterIssues };
 			return;
 		}
 
@@ -150,7 +164,7 @@ export default class LinearConnector
 			)
 			: emptyCommentDelta(stateAfterIssues);
 		if (!this.indexComments) {
-			logInfo('comment sync skipped', {
+			log.info('comment sync skipped', {
 				reason: 'index_comments_disabled',
 			});
 		}
@@ -158,7 +172,7 @@ export default class LinearConnector
 		const rebuiltFromComments = this.indexComments
 			? await this.rebuildCommentIssues(commentDelta.issueIds)
 			: emptyCommentIssueRebuildResult();
-		logInfo('poll finished', {
+		log.info('poll finished', {
 			phase: 'comments',
 			issue_pages: issuePages,
 			issues: issueCount,
@@ -167,6 +181,7 @@ export default class LinearConnector
 			rebuilt_issues: rebuiltFromComments.issueCount,
 			total_updates: issueUpdates + rebuiltFromComments.updates.length,
 			hit_limit: commentDelta.hitLimit,
+			max_complexity: this.client.maxComplexity,
 		});
 
 		yield {
@@ -194,16 +209,31 @@ export default class LinearConnector
 			rebuildAllIssues,
 			this.syncOptions,
 		);
-		const after = previousState.issue_delta_after;
+		// A rebuild starts at the first page, with a fresh start time, unless it
+		// is already in progress under the current schema and comment setting.
+		// This ignores a cursor left by an incremental pass, and restarts a
+		// rebuild whose earlier pages were rendered under another setting.
+		const startingRebuild = rebuildAllIssues &&
+			(previousState.rebuild_issue_sync !== true ||
+				shouldRebuildAllIssuesForState(previousState, this.indexComments));
+		const after = startingRebuild ? undefined : previousState.issue_delta_after;
+		const rebuildStartedAt = !rebuildAllIssues
+			? undefined
+			: startingRebuild
+			? new Date(Date.now() - this.syncOptions.rebuildClockSkewMs)
+				.toISOString()
+			: previousState.rebuild_started_at;
 		const boundary = buildIssueBoundary(
 			previousState,
 			rebuildAllIssues,
 			this.syncOptions,
 		);
 		const updates: DocUpdate[] = [];
-		let maxUpdatedAt = previousState.issue_delta_max_updated_at;
+		let maxUpdatedAt = startingRebuild
+			? undefined
+			: previousState.issue_delta_max_updated_at;
 
-		logInfo('issue sync started', {
+		log.progress('issue sync started', {
 			mode: rebuildAllIssues ? 'rebuild' : 'incremental',
 			page_size: first,
 			resume_after: after != null,
@@ -216,10 +246,7 @@ export default class LinearConnector
 			this.indexComments,
 			this.syncOptions.issueCommentPageSize,
 		);
-		logInfo('issue page fetched', {
-			issues: connection.nodes.length,
-			has_next_page: connection.pageInfo.hasNextPage,
-		});
+		const nextAfter = nextPageCursor(connection, after, 'Linear issues');
 
 		const pageStartedAt = performance.now();
 		let extraCommentPageIssueCount = 0;
@@ -247,11 +274,8 @@ export default class LinearConnector
 			}));
 		}
 
-		const nextAfter = connection.pageInfo.hasNextPage
-			? connection.pageInfo.endCursor ?? undefined
-			: undefined;
 		const hitLimit = nextAfter != null;
-		logInfo('issue page processed', {
+		log.progress('issue page processed', {
 			issues: connection.nodes.length,
 			updates: updates.length,
 			page_ms: Math.round(performance.now() - pageStartedAt),
@@ -267,6 +291,7 @@ export default class LinearConnector
 			nextAfter,
 			hitLimit,
 			rebuildAllIssues,
+			rebuildStartedAt,
 		};
 	}
 
@@ -277,7 +302,7 @@ export default class LinearConnector
 		let issueCount = 0;
 
 		if (issueIds.size > 0) {
-			logInfo('comment issue rebuild started', {
+			log.info('comment issue rebuild started', {
 				affected_issues: issueIds.size,
 			});
 		}
@@ -305,9 +330,13 @@ export default class LinearConnector
 				renderComments: this.indexComments,
 			}));
 			issueCount += 1;
+			log.progress('comment issue rebuilt', {
+				issue: issue.identifier,
+				rebuilt_issues: issueCount,
+			});
 		}
 		if (issueIds.size > 0) {
-			logInfo('comment issue rebuild finished', {
+			log.info('comment issue rebuild finished', {
 				rebuilt_issues: issueCount,
 			});
 		}
@@ -327,6 +356,7 @@ export interface IssueStateResult {
 	nextAfter?: string;
 	hitLimit: boolean;
 	rebuildAllIssues: boolean;
+	rebuildStartedAt?: string;
 }
 
 interface CommentIssueRebuildResult {
@@ -347,20 +377,11 @@ export function shouldRebuildAllIssuesForState(
 	return indexComments || previousState.index_comments === true;
 }
 
-export function shouldYieldIssueResult(
-	previousState: Pick<LinearState, 'issue_delta_after'>,
-	result: Pick<IssueStateResult, 'hitLimit'> & { issueCount: number },
-	rebuildAllIssues: boolean,
-): boolean {
-	return rebuildAllIssues || previousState.issue_delta_after != null ||
-		result.issueCount > 0 || result.hitLimit;
-}
-
 export function buildIssueFilter(
 	state: LinearState,
 	rebuildAllIssues: boolean,
 	options: Pick<SyncOptions, 'incrementalOverlapMs'>,
-): IssuesQueryVariables['filter'] {
+): IssueFilter | undefined {
 	const boundary = buildIssueBoundary(state, rebuildAllIssues, options);
 	if (boundary == null) {
 		return undefined;
@@ -390,6 +411,15 @@ export function nextStateAfterIssuePage(
 	result: IssueStateResult,
 	indexComments: boolean,
 ): LinearState {
+	const rebuildInProgress = result.nextAfter != null && result.rebuildAllIssues;
+	// A finished rebuild fetched every issue with all its comments, so the
+	// comment delta only has to cover what changed after the rebuild started;
+	// without this it would rescan every comment from the epoch.
+	const commentsCaughtUpAt = result.rebuildAllIssues && !rebuildInProgress &&
+			indexComments
+		? result.rebuildStartedAt
+		: undefined;
+	const keepCommentDelta = indexComments && commentsCaughtUpAt == null;
 	return {
 		schema_version: STATE_SCHEMA_VERSION,
 		last_issue_updated_at: nextIssueUpdatedAt(state, result),
@@ -398,17 +428,18 @@ export function nextStateAfterIssuePage(
 		issue_delta_max_updated_at: result.nextAfter
 			? result.maxUpdatedAt
 			: undefined,
-		rebuild_issue_sync: result.nextAfter && result.rebuildAllIssues
-			? true
-			: undefined,
+		rebuild_issue_sync: rebuildInProgress ? true : undefined,
+		rebuild_started_at: rebuildInProgress ? result.rebuildStartedAt : undefined,
 		last_comment_updated_at: indexComments
-			? state.last_comment_updated_at
+			? maxIsoDate(state.last_comment_updated_at, commentsCaughtUpAt)
 			: undefined,
-		comment_delta_after: indexComments ? state.comment_delta_after : undefined,
-		comment_delta_boundary: indexComments
+		comment_delta_after: keepCommentDelta
+			? state.comment_delta_after
+			: undefined,
+		comment_delta_boundary: keepCommentDelta
 			? state.comment_delta_boundary
 			: undefined,
-		comment_delta_max_updated_at: indexComments
+		comment_delta_max_updated_at: keepCommentDelta
 			? state.comment_delta_max_updated_at
 			: undefined,
 		index_comments: indexComments,
@@ -440,6 +471,7 @@ export function nextStateAfterCommentSync(
 		issue_delta_boundary: state.issue_delta_boundary,
 		issue_delta_max_updated_at: state.issue_delta_max_updated_at,
 		rebuild_issue_sync: state.rebuild_issue_sync,
+		rebuild_started_at: state.rebuild_started_at,
 		last_comment_updated_at: indexComments
 			? nextCommentUpdatedAt(state, delta)
 			: undefined,

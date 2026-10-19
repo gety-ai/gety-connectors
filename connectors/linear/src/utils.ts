@@ -17,7 +17,8 @@ export function formatLinearTime(
 	if (iso == null) {
 		return null;
 	}
-	return iso.slice(0, 16).replace('T', ' ');
+	// Rendered in UTC; say so, since readers assume their local time.
+	return `${iso.slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 export function dateToTime(

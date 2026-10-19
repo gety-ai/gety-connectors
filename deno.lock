@@ -10,7 +10,6 @@
     "jsr:@std/streams@^1.0.17": "1.2.0",
     "jsr:@std/tar@~0.1.10": "0.1.10",
     "npm:@changesets/cli@^3.0.3": "3.0.3",
-    "npm:@linear/sdk@86.0.0": "86.0.0",
     "npm:@types/mdast@^4.0.4": "4.0.4",
     "npm:esbuild@~0.24.2": "0.24.2",
     "npm:fast-png@8.0.0": "8.0.0",
@@ -326,18 +325,6 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@graphql-typed-document-node/core@3.2.0_graphql@16.14.1": {
-      "integrity": "sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==",
-      "dependencies": [
-        "graphql"
-      ]
-    },
-    "@linear/sdk@86.0.0": {
-      "integrity": "sha512-Lr47874CGGPCDiPQoKYjcZDWyyu18N8zzEGvss86uzjZaeZrhNsuwKTARswG27VAJ3fPVJAvl/5dPl8QwndSlg==",
-      "dependencies": [
-        "@graphql-typed-document-node/core"
-      ]
-    },
     "@manypkg/find-root@3.1.0": {
       "integrity": "sha512-BcSqCyKhBVZ5YkSzOiheMCV41kqAFptW6xGqYSTjkVTl9XQpr+pqHhwgGCOHQtjDCv7Is6EFyA14Sm5GVbVABA==",
       "dependencies": [
@@ -472,9 +459,6 @@
     },
     "fflate@0.8.3": {
       "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
-    },
-    "graphql@16.14.1": {
-      "integrity": "sha512-cQOsSMS/IrDz82PVyRDvf/Q1F/bRbBVjJlh+xYOkI1qw2bWRvWGiWc+m2O0d6l4Bt1fyY+8kzJ8JFWGJqNeDBg=="
     },
     "human-id@4.2.2": {
       "integrity": "sha512-Z+8unD6em/MJwyrkWQ2M3wygRGI1+MztbutiNwk1DCuEPXOZRWGjtcMPZYP1exY9iNZMhd7ZOSMQSo9WYtiQRw==",
@@ -798,7 +782,6 @@
     "members": {
       "connectors/linear": {
         "dependencies": [
-          "npm:@linear/sdk@86.0.0",
           "npm:@types/mdast@^4.0.4",
           "npm:mdast-util-from-markdown@^2.0.3",
           "npm:mdast-util-to-markdown@^2.1.2"

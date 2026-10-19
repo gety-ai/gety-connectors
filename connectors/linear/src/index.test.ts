@@ -8,7 +8,6 @@ import {
 	nextStateAfterCommentSync,
 	nextStateAfterIssuePage,
 	shouldRebuildAllIssuesForState,
-	shouldYieldIssueResult,
 	STATE_SCHEMA_VERSION,
 } from './index.ts';
 
@@ -92,32 +91,6 @@ Deno.test('buildIssueFilter uses a stable in-progress boundary', () => {
 	);
 });
 
-Deno.test('shouldYieldIssueResult outputs pages that change sync state or docs', () => {
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 0 }, false),
-		false,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: true, issueCount: 0 }, false),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({ issue_delta_after: 'cursor' }, {
-			hitLimit: false,
-			issueCount: 0,
-		}, false),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 0 }, true),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 1 }, false),
-		true,
-	);
-});
-
 Deno.test('nextStateAfterIssuePage persists partial issue cursors', () => {
 	const partial = nextStateAfterIssuePage({}, {
 		boundary: '2026-06-03T00:00:00.000Z',
@@ -125,6 +98,7 @@ Deno.test('nextStateAfterIssuePage persists partial issue cursors', () => {
 		maxUpdatedAt: '2026-06-03T00:02:00.000Z',
 		nextAfter: 'issue-cursor',
 		rebuildAllIssues: true,
+		rebuildStartedAt: '2026-06-03T00:05:00.000Z',
 	}, true);
 
 	assert.deepEqual(partial, {
@@ -134,6 +108,7 @@ Deno.test('nextStateAfterIssuePage persists partial issue cursors', () => {
 		issue_delta_boundary: '2026-06-03T00:00:00.000Z',
 		issue_delta_max_updated_at: '2026-06-03T00:02:00.000Z',
 		rebuild_issue_sync: true,
+		rebuild_started_at: '2026-06-03T00:05:00.000Z',
 		last_comment_updated_at: undefined,
 		comment_delta_after: undefined,
 		comment_delta_boundary: undefined,

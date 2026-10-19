@@ -52,13 +52,13 @@ setting.
 ## Files
 
 - `manifest.json` declares the connector metadata, the required
-  `personal_access_token` config field, and uses `dist/main.js` as the Gety
-  runtime entry.
+  `personal_access_token` config field, the sandbox permission (network access
+  to `api.notion.com` only), and uses `dist/main.js` as the Gety runtime entry.
 - `src/index.ts` contains the connector: incremental poll loop, document
   mapping, and delete detection.
 - `src/notion/api.ts` is a minimal Notion API client (search + block children)
-  with pagination, proactive request throttling, rate-limit retries, and abort
-  support.
+  built on the shared `@gety-connectors/utils` HTTP, retry and pagination
+  helpers, with proactive request throttling.
 - `src/notion/markdown.ts` renders Notion block trees as Markdown.
 - `src/notion/properties.ts` renders database-page properties (status, tags,
   dates, people, …) as a Markdown list that is prepended to the content.
@@ -139,9 +139,12 @@ deno task runner -- --state dev/.runner/notion-state.json --out-dir dev/runs
 
 ## Install In Gety
 
+Requires Gety 0.7.0 or later.
+
 1. Open Gety's Custom Connectors settings page.
-2. Install from local folder and select this repository.
-3. Paste your Notion integration secret into **Personal Access Token**.
+2. Install `@gety-connectors/notion` from npm, or run `deno task build` and
+   install from the local `connectors/notion` folder.
+3. Paste your Notion token into **Personal Access Token**.
 4. Wait for the first poll to finish, then search for one of your Notion page
    titles.
 
@@ -162,12 +165,25 @@ and reinstalling the connector.
   URLs are time-limited, so they may expire in previews; the page link always
   works.
 - A poll enumerates every visible page (cheap search calls) but only fetches
-  block content for pages whose `last_edited_time` changed.
+  block content for pages whose `last_edited_time` changed. Notion rounds that
+  time down to the minute, so a page edited within about two minutes before the
+  poll is fetched again on the next poll.
+- Each fetched page is sent to Gety as soon as it is rendered. The sync state is
+  saved only when a poll finishes, so the poll after a failed or cancelled one
+  starts again from the last saved state.
 - Deletes are detected by diffing a full enumeration against the previous one.
-  Notion's search API is eventually consistent, so a page that briefly drops out
-  of search results may be deleted and re-indexed on the next poll.
+  Any response the connector cannot fully read fails the poll instead of
+  deleting anything. Notion's search API is eventually consistent, so a page
+  that briefly drops out of search results may be deleted and re-indexed on the
+  next poll.
+- A block the integration cannot read (for example a synced block whose original
+  lives on a page not shared with it) is left out; the rest of the page is
+  indexed.
 - Notion rate limits (~3 requests/second) are respected proactively (requests
-  are spaced ~350 ms apart) and defensively (`Retry-After` is honored on 429
-  responses); very large first syncs simply take a while.
-- The connector speaks Notion API version `2026-03-11` and understands both the
-  old `archived` and the new `is_archived` page flags.
+  are spaced ~350 ms apart). 429, 529 and 5xx responses, network errors and
+  requests that time out are retried with backoff, honoring `Retry-After` up to
+  five minutes; very large first syncs simply take a while.
+- A 401 means the token is invalid or expired (personal access tokens expire);
+  create a new one and update the setting.
+- The connector speaks Notion API version `2026-03-11` and skips pages flagged
+  `in_trash` (the field older API versions called `archived`).

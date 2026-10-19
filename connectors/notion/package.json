@@ -27,7 +27,12 @@
 		"id": "notion",
 		"name": "Notion",
 		"version": "0.1.0",
-		"min_gety_app_version": "0.5.1",
+		"min_gety_app_version": "0.7.0",
+		"permissions": {
+			"net": [
+				"api.notion.com"
+			]
+		},
 		"capabilities": [
 			"data-source"
 		],

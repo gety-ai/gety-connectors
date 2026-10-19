@@ -42,11 +42,11 @@ Deno.test('richTextToMarkdown renders annotations, links and equations', () => {
 	]);
 	assert.equal(
 		markdown,
-		'plain **bold** and `code` and [site](https://example.com) and $x^2$',
+		'plain **bold** and `code` and [site](<https://example.com/>) and $x^2$',
 	);
 });
 
-Deno.test('link targets escape parentheses', () => {
+Deno.test('link targets with parentheses stay inside the link', () => {
 	const markdown = richTextToMarkdown([
 		rt('wiki', {
 			href: 'https://en.wikipedia.org/wiki/Bracket_(disambiguation)',
@@ -54,8 +54,30 @@ Deno.test('link targets escape parentheses', () => {
 	]);
 	assert.equal(
 		markdown,
-		'[wiki](https://en.wikipedia.org/wiki/Bracket_%28disambiguation%29)',
+		'[wiki](<https://en.wikipedia.org/wiki/Bracket_(disambiguation)>)',
 	);
+});
+
+Deno.test('Notion page paths link to notion.so, other schemes stay text', () => {
+	const markdown = richTextToMarkdown([
+		rt('page', { href: '/abc123' }),
+		rt(' '),
+		rt('click', { href: 'javascript:alert(1)' }),
+	]);
+	assert.equal(markdown, '[page](<https://www.notion.so/abc123>) click');
+});
+
+Deno.test('non-http media and bookmark targets are not emitted as links', () => {
+	const markdown = blocksToMarkdown([
+		node('image', { type: 'external', external: { url: 'data:image/png,x' } }),
+		node('bookmark', { url: 'javascript:alert(1)' }),
+		node('file', {
+			type: 'external',
+			external: { url: 'file:///etc/passwd' },
+			name: 'passwd',
+		}),
+	]);
+	assert.equal(markdown, 'javascript:alert\\(1\\)\n\npasswd\n');
 });
 
 Deno.test('emphasis markers hug text despite surrounding spaces', () => {
@@ -164,13 +186,13 @@ Deno.test('media, bookmarks and child pages become links', () => {
 	assert.equal(
 		markdown,
 		[
-			'![diagram](https://img.example/x.png)',
+			'![diagram](<https://img.example/x.png>)',
 			'',
-			'[https://example.com](https://example.com)',
+			'[https://example.com](<https://example.com/>)',
 			'',
-			'[report.pdf](https://files.example/report.pdf)',
+			'[report.pdf](<https://files.example/report.pdf>)',
 			'',
-			'📄 [Sub page](https://www.notion.so/abc123)',
+			'📄 [Sub page](<https://www.notion.so/abc123>)',
 			'',
 		].join('\n'),
 	);

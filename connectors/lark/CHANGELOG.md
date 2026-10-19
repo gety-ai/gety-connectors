@@ -2,6 +2,5 @@
 
 ## 0.1.0
 
-### Minor Changes
-
-- Initial release on npm.
+- Initial version, developed in its own repository before moving to
+  gety-connectors; not published to npm.

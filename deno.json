@@ -15,7 +15,8 @@
 	"tasks": {
 		"sync": "deno run --allow-read --allow-write scripts/sync.ts",
 		"sync:check": "deno run --allow-read scripts/sync.ts --check",
-		"catalog": "deno run --allow-read scripts/catalog.ts"
+		"catalog": "deno run --allow-read scripts/catalog.ts",
+		"version-packages": "deno run --allow-read --allow-write --allow-run scripts/version.ts"
 	},
 	"fmt": {
 		"useTabs": true,

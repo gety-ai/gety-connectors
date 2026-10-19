@@ -6,7 +6,8 @@
 		"node": ">=22.14"
 	},
 	"scripts": {
-		"changeset": "changeset"
+		"changeset": "changeset",
+		"version-packages": "deno task version-packages"
 	},
 	"devDependencies": {
 		"@changesets/cli": "^3.0.3"

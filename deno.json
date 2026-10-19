@@ -6,7 +6,8 @@
 		"./connectors/chrome",
 		"./connectors/notion",
 		"./connectors/lark",
-		"./packages/utils"
+		"./packages/utils",
+		"./packages/testing"
 	],
 	"nodeModulesDir": "none",
 	"imports": {

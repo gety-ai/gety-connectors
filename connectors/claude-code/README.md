@@ -4,24 +4,23 @@ A Gety custom connector that indexes
 [Claude Code](https://claude.com/claude-code) chat sessions from the local
 Claude Code projects directory so they are searchable in Gety.
 
-Each Claude Code session is stored as a JSONL file under a per-platform projects
-directory. This connector turns indexable session `.jsonl` files into Gety
-documents containing the conversational text as markdown. Subagent/workflow logs
-under a `subagents/` path segment are skipped by default because they are
-implementation details of a parent session rather than user-level conversations;
-they can be included with the `include_subagents` checkbox.
+Each Claude Code session is stored as a JSONL file under `~/.claude/projects`.
+This connector turns indexable session `.jsonl` files into Gety documents
+containing the conversational text as markdown. Subagent/workflow logs under a
+`subagents/` path segment are skipped by default because they are implementation
+details of a parent session rather than user-level conversations; they can be
+included with the `include_subagents` checkbox.
 
 ## Data source
 
-The projects directory is auto-detected per platform:
+The connector reads `~/.claude/projects` (on Windows,
+`%USERPROFILE%\.claude\projects`), where `~` is the home directory Gety passes
+in. It is the only read permission the manifest requests. There is no connector
+setting for the folder path; the `include_subagents` checkbox defaults to false.
 
-- Linux/macOS: `~/.claude/projects`
-- Windows: `%USERPROFILE%\.claude\projects`
-
-`HOME` and `USERPROFILE` are read from the environment. There is no connector
-setting for the folder path; the required `include_subagents` checkbox defaults
-to false. For local development only, `PROJECTS_DIR` or
-`GETY_CONFIG_PROJECTS_DIR` can override the auto-detected path.
+A missing projects directory, or one the connector cannot read, fails the poll
+instead of counting as empty, so the index is never cleared because the
+directory could not be found.
 
 ## Document model
 
@@ -56,42 +55,34 @@ to false. For local development only, `PROJECTS_DIR` or
   `model`, `git_branch`, `message_count`, `user_message_count`,
   `assistant_message_count`, `file_size`, `parse_errors` (only when malformed
   lines are skipped), and `truncated` (only when the body was capped).
-- Rendered content is capped at ~3 MB; when this happens the body is cut at a
-  message boundary and `metadata.truncated: true` is set (no note is written
-  into the body).
+- Rendered content is capped at 8,000,000 UTF-8 bytes. When a session is longer,
+  the body keeps the whole conversation rounds that fit and
+  `metadata.truncated: true` is set (no note is written into the body).
 
 ## Incremental sync
 
-State stores a schema version, the `include_subagents` config snapshot, and a
-map from each relative file path to a fingerprint
-(`{ mtime, size, hash, docId }`). The fingerprint includes a SHA-256 hash of the
-file's raw content, so even same-size/same-mtime rewrites are detected. Old
-state entries that predate the hash/schema fields are treated as changed and
-re-indexed. Files are read and hashed one at a time and yielded immediately —
-the poll never builds every document up front.
+State stores a schema version and a map from each relative file path to a
+fingerprint (`{ mtime, size, docId }`). A file whose mtime and size match the
+previous poll is not opened. A state in the older bare-file-map shape makes
+every file re-index once.
 
 On each poll:
 
-- Changed and new files are read and emitted as upserts, one batch per file (the
-  real source boundary).
+- Changed and new files are streamed one at a time and emitted as upserts, one
+  batch per file (the real source boundary). These batches carry no state.
 - Files that disappeared or newly fall out of scope (for example, after toggling
-  `include_subagents` off) are emitted as `del(id)` in a single deletion batch —
-  but only when the scan was authoritative (see below).
-- Unchanged files are skipped (fingerprint match, including the content hash).
-- State is persisted with each yielded batch.
+  `include_subagents` off) are deleted in the final batch, together with the new
+  state. Gety commits the state only when the poll succeeds, so a failed or
+  cancelled poll starts over from the previous state.
 
 ### Deletion safety
 
-Deletions never fire on transient scan/read errors:
-
-- If scanning the root or any subdirectory hits a read/permission error (other
-  than the root directory truly not existing), no deletions are emitted for that
-  poll and prior state is preserved for unknown paths.
-- If a file appears in the scan but `readTextFile` fails, its previous doc and
-  state are left untouched and it is skipped for that poll.
+- A missing projects directory, or a read or permission error while scanning it,
+  fails the poll: nothing is deleted and the state is not committed.
+- If a file disappears between the scan and its read, it is skipped and that
+  poll deletes nothing; the next poll deletes it if it is really gone.
 - A deletion is only emitted when a previously indexed file is absent from a
-  successful, complete scan (or when the root directory itself no longer
-  exists).
+  successful, complete scan.
 
 ## Files
 
@@ -131,10 +122,10 @@ deno task verify
 
 Unit tests use Deno's built-in test runner and cover text extraction (skipping
 `tool_use`/`tool_result`/`thinking`), title choice, model name prettification,
-document building, and incremental poll behavior (index / skip unchanged /
-update on change / delete on removal, including nested JSONL files). Tests that
-touch the filesystem require env/read/write permissions, which the `test` task
-grants.
+document building and truncation, and incremental poll behavior (index / skip
+unchanged without reading / update on change / delete on removal, missing or
+unreadable directories, files vanishing mid-poll). Tests that touch the
+filesystem require read/write permissions, which the `test` task grants.
 
 ## Live Runner
 
@@ -157,9 +148,8 @@ Config environment variables are derived from manifest field IDs:
 - `include_subagents`: `GETY_CONFIG_INCLUDE_SUBAGENTS` or `INCLUDE_SUBAGENTS`;
   defaults to `false`.
 
-The folder path is auto-detected and is not shown as a connector setting. For
-local development only, `PROJECTS_DIR` or `GETY_CONFIG_PROJECTS_DIR` can
-override it.
+The folder path is not a connector setting; the runner passes your home
+directory, as Gety does.
 
 Runner output is written outside git:
 

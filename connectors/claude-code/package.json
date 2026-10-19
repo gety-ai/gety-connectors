@@ -27,7 +27,7 @@
 		"id": "claude-code",
 		"name": "Claude Code",
 		"version": "0.1.0",
-		"min_gety_app_version": "0.5.1",
+		"min_gety_app_version": "0.7.0",
 		"capabilities": [
 			"data-source"
 		],
@@ -40,6 +40,11 @@
 		"schedule": {
 			"strategy": "interval",
 			"interval_seconds": 3600
+		},
+		"permissions": {
+			"read": [
+				"~/.claude/projects"
+			]
 		},
 		"doc_link": {
 			"kind": "url",

@@ -3,4 +3,5 @@
 export interface ManifestConfig {
 	include_tool_calls: boolean;
 	include_archived_sessions: boolean;
+	include_subagents: boolean;
 }

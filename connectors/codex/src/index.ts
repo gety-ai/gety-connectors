@@ -1,12 +1,18 @@
 import { Connector, type PollResult } from '@gety-ai/connector-sdk';
+import { sameFingerprint } from '@gety-connectors/utils/fs';
+import { staleIds } from '@gety-connectors/utils/reconcile';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 import {
 	buildCodexSessionDelete,
 	buildCodexSessionUpdate,
-	type CodexSessionFile,
+	type CodexSession,
+	type CodexSessionGroup,
+	type CodexSessionRoot,
+	groupCodexSessionFiles,
 	isIndexableCodexSession,
 	listCodexSessionFiles,
-	parseCodexSessionFile,
+	parseCodexSessionFiles,
+	sessionGroupKey,
 } from './codex_log.ts';
 
 export interface CodexFileState {
@@ -20,8 +26,17 @@ export interface CodexState {
 	schema_version?: number;
 	include_tool_calls?: boolean;
 	include_archived_sessions?: boolean;
+	include_subagents?: boolean;
 	files?: Record<string, CodexFileState>;
+	/** Session ids with a document in the index. */
 	indexed_sessions?: string[];
+}
+
+/** The config values that decide which sessions are indexed and how. */
+export interface CodexOptions {
+	includeToolCalls: boolean;
+	includeArchivedSessions: boolean;
+	includeSubagents: boolean;
 }
 
 const STATE_SCHEMA_VERSION = 3;
@@ -31,146 +46,187 @@ export default class CodexConnector extends Connector<
 	CodexState
 > {
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		const includeToolCalls = this.config.include_tool_calls ?? false;
-		const includeArchivedSessions = this.config.include_archived_sessions ??
-			true;
-		const state = initialState(
-			this.lastState,
-			includeToolCalls,
-			includeArchivedSessions,
-		);
+		const options: CodexOptions = {
+			includeToolCalls: this.config.include_tool_calls ?? false,
+			includeArchivedSessions: this.config.include_archived_sessions ?? true,
+			includeSubagents: this.config.include_subagents ?? false,
+		};
+		const roots: CodexSessionRoot[] = [
+			{
+				path: this.expandHome('~/.codex/sessions'),
+				stateKey: 'sessions',
+				required: true,
+			},
+		];
+		if (options.includeArchivedSessions) {
+			// Codex creates it on the first archive; until then it is empty.
+			roots.push({
+				path: this.expandHome('~/.codex/archived_sessions'),
+				stateKey: 'archived_sessions',
+				required: false,
+			});
+		}
+
+		const state = initialState(this.lastState, options);
 		const previousFiles = state.files ?? {};
-		const previousIndexed = new Set(
-			state.indexed_sessions ?? indexedSessionIds(previousFiles),
-		);
+		const listing = await listCodexSessionFiles(roots, this.signal);
+		this.signal.throwIfAborted();
+
+		let complete = listing.complete;
+		const previousGroupSizes = new Map<string, number>();
+		for (const stateKey of Object.keys(previousFiles)) {
+			const key = sessionGroupKey(stateKey);
+			previousGroupSizes.set(key, (previousGroupSizes.get(key) ?? 0) + 1);
+		}
 		const currentFiles: Record<string, CodexFileState> = {};
 		const currentIndexed = new Set<string>();
-		const files = await listCodexSessionFiles({ includeArchivedSessions });
-
-		for (const file of files) {
+		for (const group of groupCodexSessionFiles(listing.files)) {
 			this.signal.throwIfAborted();
-			const previousFile = previousFiles[file.stateKey];
-
-			if (!fileNeedsParse(file, previousFile)) {
-				currentFiles[file.stateKey] = previousFile;
-				if (previousFile.indexed && previousFile.session_id != null) {
-					currentIndexed.add(previousFile.session_id);
+			if (isUnchangedGroup(group, previousFiles, previousGroupSizes)) {
+				for (const file of group.files) {
+					const previousFile = previousFiles[file.stateKey];
+					currentFiles[file.stateKey] = previousFile;
+					if (previousFile.indexed && previousFile.session_id != null) {
+						currentIndexed.add(previousFile.session_id);
+					}
 				}
 				continue;
 			}
-
-			const session = await parseCodexSessionFile(file, { includeToolCalls });
-			if (isIndexableCodexSession(session)) {
-				currentFiles[file.stateKey] = {
-					session_id: session.id,
-					mtime_ms: file.mtimeMs,
-					size: file.size,
-					indexed: true,
-				};
-				currentIndexed.add(session.id);
-				yield { updates: [buildCodexSessionUpdate(session)] };
+			if (
+				!listing.complete &&
+				group.files.filter((file) => previousFiles[file.stateKey] != null)
+						.length < (previousGroupSizes.get(group.key) ?? 0)
+			) {
+				// The listing missed a file of this session, which may still exist:
+				// rebuilding from the rest could drop its turns. Keep the session as
+				// the previous poll left it (see below) and let a complete poll decide.
 				continue;
 			}
 
-			currentFiles[file.stateKey] = {
-				mtime_ms: file.mtimeMs,
-				size: file.size,
-				indexed: false,
-			};
-		}
-
-		for (const sessionId of previousIndexed) {
-			if (!currentIndexed.has(sessionId)) {
-				yield { updates: [buildCodexSessionDelete({ id: sessionId })] };
+			let session: CodexSession;
+			try {
+				session = await parseCodexSessionFiles(group.files, {
+					includeToolCalls: options.includeToolCalls,
+					skipSubagents: !options.includeSubagents,
+				}, this.signal);
+			} catch (error) {
+				if (error instanceof Deno.errors.NotFound) {
+					// A file was removed since the walk: keep the session as the
+					// previous poll left it (see below) and let the next poll decide.
+					complete = false;
+					continue;
+				}
+				throw error;
+			}
+			const indexable = isIndexableCodexSession(
+				session,
+				options.includeSubagents,
+			);
+			for (const file of group.files) {
+				const fingerprint = { mtime_ms: file.mtimeMs, size: file.size };
+				currentFiles[file.stateKey] = indexable
+					? { session_id: session.id, ...fingerprint, indexed: true }
+					: { ...fingerprint, indexed: false };
+			}
+			if (indexable) {
+				currentIndexed.add(session.id);
+				yield { updates: [buildCodexSessionUpdate(session)] };
 			}
 		}
 
+		if (!complete) {
+			// Files this poll did not reach or did not rebuild keep their entries.
+			for (const [stateKey, previousFile] of Object.entries(previousFiles)) {
+				currentFiles[stateKey] ??= previousFile;
+			}
+		}
+		const { deleted, indexed } = reconcileSessions(
+			state.indexed_sessions ?? [],
+			currentIndexed,
+			complete,
+		);
 		yield {
-			updates: [],
-			state: nextStateAfterReconcile(
-				currentFiles,
-				includeToolCalls,
-				includeArchivedSessions,
-			),
+			updates: deleted.map((id) => buildCodexSessionDelete({ id })),
+			state: nextState(currentFiles, indexed, options),
 		};
 	}
 }
 
+/**
+ * The session's files are exactly the ones the previous poll saw, with the
+ * same fingerprints, so its document is current without reading them.
+ */
+function isUnchangedGroup(
+	group: CodexSessionGroup,
+	previousFiles: Readonly<Record<string, CodexFileState>>,
+	previousGroupSizes: ReadonlyMap<string, number>,
+): boolean {
+	return previousGroupSizes.get(group.key) === group.files.length &&
+		group.files.every((file) => {
+			const previousFile = previousFiles[file.stateKey];
+			return previousFile != null &&
+				sameFingerprint(
+					{ mtimeMs: previousFile.mtime_ms, size: previousFile.size },
+					file,
+				);
+		});
+}
+
+/**
+ * Sessions to delete and the sessions still indexed afterwards. Only a
+ * complete listing deletes; after a partial one, sessions it did not reach
+ * stay indexed (and known) until a complete poll decides.
+ */
+export function reconcileSessions(
+	known: readonly string[],
+	current: ReadonlySet<string>,
+	complete: boolean,
+): { deleted: string[]; indexed: string[] } {
+	const deleted = staleIds(known, { seen: current, complete });
+	const indexed = complete ? [...current] : [...current, ...known];
+	return { deleted, indexed };
+}
+
+/**
+ * `state` when it was written with the current schema and options. Otherwise
+ * file fingerprints are dropped so every file is parsed again, and the
+ * indexed sessions are kept so the ones no longer produced get deleted.
+ */
 export function initialState(
 	state: CodexState | null | undefined,
-	includeToolCalls: boolean,
-	includeArchivedSessions: boolean,
+	options: CodexOptions,
 ): CodexState {
 	if (
 		state?.schema_version !== STATE_SCHEMA_VERSION ||
-		state.include_tool_calls !== includeToolCalls ||
-		state.include_archived_sessions !== includeArchivedSessions
+		state.include_tool_calls !== options.includeToolCalls ||
+		state.include_archived_sessions !== options.includeArchivedSessions ||
+		state.include_subagents !== options.includeSubagents
 	) {
-		return nextBaseState(
-			{
-				indexed_sessions: state?.indexed_sessions ??
-					indexedSessionIds(state?.files ?? {}),
-			},
-			includeToolCalls,
-			includeArchivedSessions,
-		);
+		// Older states listed indexed sessions only through their files.
+		const indexed = state?.indexed_sessions ??
+			Object.values(state?.files ?? {}).flatMap((file) =>
+				file.indexed && file.session_id != null ? [file.session_id] : []
+			);
+		return nextState({}, indexed, options);
 	}
 	return state;
 }
 
-export function fileNeedsParse(
-	file: CodexSessionFile,
-	previousFile: CodexFileState | undefined,
-): boolean {
-	return previousFile == null ||
-		previousFile.mtime_ms !== file.mtimeMs ||
-		previousFile.size !== file.size;
-}
-
-export function nextStateAfterReconcile(
+export function nextState(
 	files: Record<string, CodexFileState>,
-	includeToolCalls: boolean,
-	includeArchivedSessions: boolean,
-): CodexState {
-	return nextBaseState(
-		{
-			files: sortFileState(files),
-			indexed_sessions: indexedSessionIds(files),
-		},
-		includeToolCalls,
-		includeArchivedSessions,
-	);
-}
-
-function nextBaseState(
-	state: CodexState,
-	includeToolCalls: boolean,
-	includeArchivedSessions: boolean,
+	indexedSessions: Iterable<string>,
+	options: CodexOptions,
 ): CodexState {
 	return {
-		...state,
 		schema_version: STATE_SCHEMA_VERSION,
-		include_tool_calls: includeToolCalls,
-		include_archived_sessions: includeArchivedSessions,
-		files: state.files ?? {},
-		indexed_sessions: [...new Set(state.indexed_sessions ?? [])].sort(),
+		include_tool_calls: options.includeToolCalls,
+		include_archived_sessions: options.includeArchivedSessions,
+		include_subagents: options.includeSubagents,
+		files: Object.fromEntries(
+			Object.entries(files).sort(([left], [right]) =>
+				left.localeCompare(right)
+			),
+		),
+		indexed_sessions: [...new Set(indexedSessions)].sort(),
 	};
-}
-
-function indexedSessionIds(files: Record<string, CodexFileState>): string[] {
-	const ids: string[] = [];
-	for (const file of Object.values(files)) {
-		if (file.indexed && file.session_id != null) {
-			ids.push(file.session_id);
-		}
-	}
-	return [...new Set(ids)].sort();
-}
-
-function sortFileState(
-	files: Record<string, CodexFileState>,
-): Record<string, CodexFileState> {
-	return Object.fromEntries(
-		Object.entries(files).sort(([left], [right]) => left.localeCompare(right)),
-	);
 }

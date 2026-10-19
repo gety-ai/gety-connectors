@@ -5,7 +5,17 @@ import {
 	type PollResult,
 	upsert,
 } from '@gety-ai/connector-sdk';
-import { basename, join, normalize, win32 } from 'node:path';
+import {
+	type FileEntry,
+	sameFingerprint,
+	walkFiles,
+} from '@gety-connectors/utils/fs';
+import { sha256Hex } from '@gety-connectors/utils/hash';
+import { isRecord } from '@gety-connectors/utils/json';
+import { readJsonl } from '@gety-connectors/utils/jsonl';
+import { staleIds } from '@gety-connectors/utils/reconcile';
+import { MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
+import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ManifestConfig } from './gen/manifest.d.ts';
 
@@ -13,29 +23,24 @@ import type { ManifestConfig } from './gen/manifest.d.ts';
 type JsonValue = Exclude<Doc['metadata'], undefined>;
 
 /**
- * Claude Code stores chat sessions as JSONL files under a per-platform
- * projects directory. Each `.jsonl` file becomes one Gety document.
- *
- * - Linux/macOS: ~/.claude/projects
- * - Windows:     %USERPROFILE%\.claude\projects
+ * Claude Code stores chat sessions as JSONL files under `~/.claude/projects`
+ * on every platform. Each `.jsonl` file becomes one Gety document.
  */
 
 const DOC_TYPE = 'claude_code:session';
 const ID_PREFIX = 'claude-code:';
 const STATE_SCHEMA_VERSION = 1;
-/** Soft cap for rendered markdown content (~3 MB). */
-const MAX_CONTENT_BYTES = 3 * 1024 * 1024;
+const encoder = new TextEncoder();
 
 type FileFingerprint = {
 	mtime: number;
 	size: number;
-	hash: string;
+	/** Empty when the file has no indexable conversation. */
 	docId: string;
 };
 
 type ClaudeCodeState = {
 	schema_version: typeof STATE_SCHEMA_VERSION;
-	include_subagents: boolean;
 	files: Record<string, FileFingerprint>;
 };
 
@@ -57,17 +62,16 @@ type Session = {
 	messageCount: number;
 	userMessageCount: number;
 	assistantMessageCount: number;
-};
-
-type EnvLike = {
-	get(name: string): string | undefined;
-};
-
-type ScannedFile = {
-	absPath: string;
-	relPath: string;
-	mtime: number;
-	size: number;
+	hasUserText: boolean;
+	hasAssistantText: boolean;
+	/** UTF-16 length of the texts in `messages`. */
+	storedChars: number;
+	/**
+	 * Texts beyond the content budget were dropped instead of stored. Every
+	 * UTF-16 unit takes at least one UTF-8 byte, so they could not have been
+	 * rendered anyway.
+	 */
+	textOverflow: boolean;
 };
 
 type NormalizedState = {
@@ -75,42 +79,13 @@ type NormalizedState = {
 	forceReindex: boolean;
 };
 
-type RuntimeConfig = ManifestConfig & {
-	/** Hidden development/back-compat override; not exposed as a connector setting. */
-	projects_dir?: string;
+export type PollOptions = {
+	/** The Claude Code projects directory. */
+	root: string;
+	/** Home directory, abbreviated to `~` in rendered project paths. */
+	homeDir: string;
+	includeSubagents: boolean;
 };
-
-export function defaultProjectsDir(
-	env: EnvLike = Deno.env,
-	os: typeof Deno.build.os = Deno.build.os,
-): string {
-	// On Windows prefer USERPROFILE; elsewhere prefer HOME. Fall back to the
-	// other variable so unusual environments still resolve a home directory.
-	const home = os === 'windows'
-		? env.get('USERPROFILE') ?? env.get('HOME')
-		: env.get('HOME') ?? env.get('USERPROFILE');
-	if (!home) {
-		throw new Error(
-			'Cannot determine home directory for Claude Code projects. Set HOME or USERPROFILE.',
-		);
-	}
-	return os === 'windows'
-		? win32.join(home, '.claude', 'projects')
-		: join(home, '.claude', 'projects');
-}
-
-function resolveRoot(config: RuntimeConfig, env: EnvLike = Deno.env): string {
-	const override = config.projects_dir ?? env.get('GETY_CONFIG_PROJECTS_DIR') ??
-		env.get('PROJECTS_DIR');
-	if (typeof override === 'string' && override.trim()) {
-		return normalize(override);
-	}
-	return defaultProjectsDir();
-}
-
-function includeSubagents(config: RuntimeConfig): boolean {
-	return config.include_subagents === true;
-}
 
 /**
  * Extract conversational text from a Claude Code message `content` field.
@@ -176,83 +151,85 @@ export function readableModel(model: string): string {
 	return out.length > 0 ? out.join(' ') : model;
 }
 
-function extractSession(records: unknown[]): Session {
-	const messages: SessionMessage[] = [];
-	let aiTitle: string | null = null;
-	let sessionId: string | null = null;
-	let project: string | null = null;
-	let model: string | null = null;
-	let gitBranch: string | null = null;
-	let firstMessageTs: string | null = null;
-	let lastMessageTs: string | null = null;
-	let messageCount = 0;
-	let userMessageCount = 0;
-	let assistantMessageCount = 0;
+function emptySession(): Session {
+	return {
+		messages: [],
+		aiTitle: null,
+		sessionId: null,
+		project: null,
+		model: null,
+		gitBranch: null,
+		firstMessageTs: null,
+		lastMessageTs: null,
+		messageCount: 0,
+		userMessageCount: 0,
+		assistantMessageCount: 0,
+		hasUserText: false,
+		hasAssistantText: false,
+		storedChars: 0,
+		textOverflow: false,
+	};
+}
 
-	for (const raw of records) {
-		if (!isRecord(raw)) continue;
-		const type = raw.type;
+function addRecord(session: Session, raw: Record<string, unknown>): void {
+	const type = raw.type;
 
-		if (type === 'ai-title') {
-			const candidate = raw.aiTitle ?? raw['ai-title'];
-			if (typeof candidate === 'string' && candidate.trim() && !aiTitle) {
-				aiTitle = candidate.trim();
-			}
-		}
-
-		if (typeof raw.sessionId === 'string' && !sessionId) {
-			sessionId = raw.sessionId;
-		}
-		if (typeof raw.cwd === 'string' && !project) {
-			project = raw.cwd;
-		}
-		if (typeof raw.gitBranch === 'string' && raw.gitBranch) {
-			gitBranch = raw.gitBranch;
-		}
-
-		if (type !== 'user' && type !== 'assistant') continue;
-
-		const message = raw.message;
-		if (!isRecord(message)) continue;
-		const role = message.role;
-		if (role !== 'user' && role !== 'assistant') continue;
-
-		if (typeof message.model === 'string' && message.model) {
-			model = message.model;
-		}
-
-		const ts = parseTimestamp(raw.timestamp);
-		if (ts) {
-			if (!firstMessageTs) firstMessageTs = ts;
-			lastMessageTs = ts;
-		}
-
-		messageCount += 1;
-		if (role === 'user') {
-			userMessageCount += 1;
-		} else {
-			assistantMessageCount += 1;
-		}
-
-		const text = normalizeMessageText(role, extractText(message.content));
-		if (text) {
-			messages.push({ role, text, timestamp: ts });
+	if (type === 'ai-title') {
+		const candidate = raw.aiTitle ?? raw['ai-title'];
+		if (
+			typeof candidate === 'string' && candidate.trim() && !session.aiTitle
+		) {
+			session.aiTitle = candidate.trim();
 		}
 	}
 
-	return {
-		messages,
-		aiTitle,
-		sessionId,
-		project,
-		model,
-		gitBranch,
-		firstMessageTs,
-		lastMessageTs,
-		messageCount,
-		userMessageCount,
-		assistantMessageCount,
-	};
+	if (typeof raw.sessionId === 'string' && !session.sessionId) {
+		session.sessionId = raw.sessionId;
+	}
+	if (typeof raw.cwd === 'string' && !session.project) {
+		session.project = raw.cwd;
+	}
+	if (typeof raw.gitBranch === 'string' && raw.gitBranch) {
+		session.gitBranch = raw.gitBranch;
+	}
+
+	if (type !== 'user' && type !== 'assistant') return;
+
+	const message = raw.message;
+	if (!isRecord(message)) return;
+	const role = message.role;
+	if (role !== 'user' && role !== 'assistant') return;
+
+	if (typeof message.model === 'string' && message.model) {
+		session.model = message.model;
+	}
+
+	const ts = parseTimestamp(raw.timestamp);
+	if (ts) {
+		if (!session.firstMessageTs) session.firstMessageTs = ts;
+		session.lastMessageTs = ts;
+	}
+
+	session.messageCount += 1;
+	if (role === 'user') {
+		session.userMessageCount += 1;
+	} else {
+		session.assistantMessageCount += 1;
+	}
+
+	const text = normalizeMessageText(role, extractText(message.content));
+	if (!text) return;
+	if (role === 'user') {
+		session.hasUserText = true;
+	} else {
+		session.hasAssistantText = true;
+	}
+	if (session.storedChars > MAX_CONTENT_BYTES) {
+		session.textOverflow = true;
+		return;
+	}
+	session.messages.push({ role, text, timestamp: ts });
+	session.storedChars += text.length;
 }
 
 function normalizeMessageText(
@@ -318,11 +295,6 @@ function isInjectedUserContext(
 	].some((prefix) => firstLine.startsWith(prefix));
 }
 
-function isIndexableSession(session: Session): boolean {
-	return session.messages.some((message) => message.role === 'user') &&
-		session.messages.some((message) => message.role === 'assistant');
-}
-
 function chooseTitle(session: Session, fileName: string): string {
 	if (session.aiTitle) return session.aiTitle;
 	for (const message of session.messages) {
@@ -357,10 +329,11 @@ function truncateTitle(text: string): string {
 function renderMarkdown(
 	session: Session,
 	title: string,
+	homeDir: string,
 ): { content: string; truncated: boolean } {
 	const infoLines: string[] = [];
 	if (session.project) {
-		infoLines.push(`- Project: \`${tildeHome(session.project)}\``);
+		infoLines.push(`- Project: \`${tildeHome(session.project, homeDir)}\``);
 	}
 	if (session.model) {
 		infoLines.push(`- Model: \`${readableModel(session.model)}\``);
@@ -377,15 +350,18 @@ function renderMarkdown(
 	// The markdown body follows the Codex connector shape: H1 title, session
 	// metadata, then round separators with user/assistant text blocks. Parse and
 	// truncation facts are recorded in metadata, never appended to the body.
-	let truncated = false;
-	const budget = MAX_CONTENT_BYTES;
+	// Whole rounds are kept while they fit in the UTF-8 budget.
+	let bytes = encoder.encode(body).length;
+	let truncated = session.textOverflow;
 	for (const round of renderConversationRounds(session.messages)) {
 		const block = `\n\n---\n\n${round}`;
-		if (body.length + block.length > budget) {
+		const blockBytes = encoder.encode(block).length;
+		if (bytes + blockBytes > MAX_CONTENT_BYTES) {
 			truncated = true;
 			break;
 		}
 		body += block;
+		bytes += blockBytes;
 	}
 
 	return { content: body, truncated };
@@ -416,9 +392,12 @@ function markdownHeadingText(text: string): string {
 	return text.replace(/\s+/g, ' ').trim() || 'Untitled Claude Code session';
 }
 
-function tildeHome(path: string): string {
-	const home = Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE');
-	if (home && path.startsWith(home)) {
+function tildeHome(path: string, homeDir: string): string {
+	const home = homeDir.replace(/[\\/]+$/, '');
+	if (
+		home && (path === home || path.startsWith(`${home}/`) ||
+			path.startsWith(`${home}\\`))
+	) {
 		return '~' + path.slice(home.length);
 	}
 	return path;
@@ -431,59 +410,47 @@ function parseTimestamp(value: unknown): string | null {
 	return date.toISOString();
 }
 
-function parseJsonl(text: string): {
-	records: unknown[];
-	parseErrors: number;
-} {
-	const records: unknown[] = [];
-	let parseErrors = 0;
-	for (const line of text.split('\n')) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		try {
-			records.push(JSON.parse(trimmed));
-		} catch {
-			parseErrors += 1;
-		}
-	}
-	return { records, parseErrors };
-}
-
-async function sha256Hex(text: string): Promise<string> {
-	const data = new TextEncoder().encode(text);
-	const buffer = await crypto.subtle.digest('SHA-256', data);
-	const bytes = new Uint8Array(buffer);
-	let out = '';
-	for (const byte of bytes) {
-		out += byte.toString(16).padStart(2, '0');
-	}
-	return out;
-}
-
 /**
- * Build a Gety document from already-parsed JSONL records. Pure aside from
- * the stable id hash, so it is straightforward to unit test.
+ * Build a Gety document from already-parsed JSONL records, or null when the
+ * session has no user and Claude Code text exchange.
  */
-export async function buildDocFromRecords(
+export function buildDocFromRecords(
 	records: unknown[],
-	options: {
-		relPath: string;
-		fileName: string;
-		fileSize: number;
-		fileMtime: number;
-		parseErrors?: number;
-		sourcePath?: string;
-	},
+	options: DocOptions,
 ): Promise<Doc | null> {
-	const session = extractSession(records);
-	if (!isIndexableSession(session)) {
+	const session = emptySession();
+	for (const record of records) {
+		if (isRecord(record)) addRecord(session, record);
+	}
+	return buildDoc(session, options);
+}
+
+type DocOptions = {
+	relPath: string;
+	fileName: string;
+	fileSize: number;
+	fileMtime: number;
+	parseErrors?: number;
+	sourcePath?: string;
+	homeDir?: string;
+};
+
+async function buildDoc(
+	session: Session,
+	options: DocOptions,
+): Promise<Doc | null> {
+	if (!session.hasUserText || !session.hasAssistantText) {
 		return null;
 	}
 
 	const parseErrors = options.parseErrors ?? 0;
 	const id = `${ID_PREFIX}${await sha256Hex(options.relPath)}`;
 	const title = chooseTitle(session, options.fileName);
-	const { content, truncated } = renderMarkdown(session, title);
+	const { content, truncated } = renderMarkdown(
+		session,
+		title,
+		options.homeDir ?? '',
+	);
 	const updatedAt = session.lastMessageTs ??
 		new Date(options.fileMtime).toISOString();
 
@@ -525,128 +492,28 @@ export async function buildDocFromRecords(
 }
 
 /**
- * Read a single JSONL file, hash its raw content, and build its document.
- *
- * Returns `null` only when the file could not be read (permission or transient
- * IO error). A read failure means "skip this file for this poll" — callers
- * must not treat it as a deletion. A file that reads successfully may still be
- * intentionally skipped when it has no indexable user+assistant exchange.
+ * Stream one JSONL file and build its document (null when it has no
+ * indexable exchange). File errors, including `NotFound`, propagate.
  */
 async function buildDocFromFile(
-	root: string,
-	relPath: string,
-	stat: { mtime: number; size: number },
-): Promise<
-	| { kind: 'doc'; doc: Doc; hash: string }
-	| { kind: 'skip'; hash: string }
-	| null
-> {
-	const absPath = join(root, relPath);
-	let text: string;
-	try {
-		text = await Deno.readTextFile(absPath);
-	} catch {
-		return null;
-	}
-	const hash = await sha256Hex(text);
-	const { records, parseErrors } = parseJsonl(text);
-	const doc = await buildDocFromRecords(records, {
-		relPath,
-		fileName: basename(relPath),
-		fileSize: stat.size,
-		fileMtime: stat.mtime,
-		parseErrors,
-		sourcePath: absPath,
-	});
-	return doc == null ? { kind: 'skip', hash } : { kind: 'doc', doc, hash };
-}
-
-type ScanResult = {
-	/** Files discovered so far. */
-	files: Map<string, ScannedFile>;
-	/**
-	 * True only when the entire tree was traversed without any read/stat error.
-	 * When false the scan is partial and deletions must be suppressed, because a
-	 * missing path may simply be one we failed to read rather than one removed.
-	 */
-	complete: boolean;
-	/** True when the root directory itself does not exist. */
-	rootMissing: boolean;
-};
-
-async function scanJsonl(
-	root: string,
+	file: FileEntry,
+	homeDir: string,
 	signal: AbortSignal,
-	includeSubagentFiles: boolean,
-): Promise<ScanResult> {
-	const files = new Map<string, ScannedFile>();
-	const result: ScanResult = { files, complete: true, rootMissing: false };
-
-	async function walk(dir: string, base: string): Promise<void> {
-		let iter: AsyncIterable<Deno.DirEntry>;
-		try {
-			iter = Deno.readDir(dir);
-		} catch (error) {
-			if (error instanceof Deno.errors.NotFound) {
-				// A missing subdirectory (raced deletion) is a real absence, but a
-				// missing root is handled specially by the caller.
-				if (base === '') {
-					result.rootMissing = true;
-				} else {
-					result.complete = false;
-				}
-				return;
-			}
-			// Permission or other IO error: the scan is partial.
-			result.complete = false;
-			return;
-		}
-
-		try {
-			for await (const entry of iter) {
-				if (signal.aborted) return;
-				const childAbs = join(dir, entry.name);
-				const childRel = base ? `${base}/${entry.name}` : entry.name;
-				if (entry.isDirectory) {
-					if (!includeSubagentFiles && isSubagentPath(childRel)) continue;
-					await walk(childAbs, childRel);
-				} else if (
-					entry.isFile && entry.name.endsWith('.jsonl') &&
-					(includeSubagentFiles || !isSubagentPath(childRel))
-				) {
-					let stat: Deno.FileInfo;
-					try {
-						stat = await Deno.stat(childAbs);
-					} catch {
-						// Could not stat a file we listed: treat the scan as partial so
-						// we do not risk deleting its prior doc.
-						result.complete = false;
-						continue;
-					}
-					files.set(childRel, {
-						absPath: childAbs,
-						relPath: childRel,
-						mtime: stat.mtime?.getTime() ?? 0,
-						size: stat.size ?? 0,
-					});
-				}
-			}
-		} catch (error) {
-			if (error instanceof Deno.errors.NotFound) {
-				if (base === '') {
-					result.rootMissing = true;
-				} else {
-					result.complete = false;
-				}
-				return;
-			}
-			// Error while iterating entries: the scan is partial.
-			result.complete = false;
-		}
+): Promise<Doc | null> {
+	const session = emptySession();
+	const records = readJsonl(file.absPath, { signal });
+	for await (const record of records) {
+		addRecord(session, record);
 	}
-
-	await walk(root, '');
-	return result;
+	return buildDoc(session, {
+		relPath: file.relPath,
+		fileName: basename(file.relPath),
+		fileSize: file.size,
+		fileMtime: file.mtimeMs,
+		parseErrors: records.parseErrors,
+		sourcePath: file.absPath,
+		homeDir,
+	});
 }
 
 function isSubagentPath(relPath: string): boolean {
@@ -690,129 +557,124 @@ function sanitizeFileMap(
 		files[relPath] = {
 			mtime,
 			size,
-			hash: typeof raw.hash === 'string' ? raw.hash : '',
 			docId: typeof raw.docId === 'string' ? raw.docId : '',
 		};
 	}
 	return files;
 }
 
-function makeState(
-	files: Record<string, FileFingerprint>,
-	includeSubagentFiles: boolean,
-): ClaudeCodeState {
-	return {
-		schema_version: STATE_SCHEMA_VERSION,
-		include_subagents: includeSubagentFiles,
-		files,
-	};
+/**
+ * Documents to delete, and the file entries to keep. A document is deleted
+ * when its file is gone from a complete scan, or was re-read and no longer
+ * has an indexable conversation. After a partial scan nothing is deleted:
+ * files it did not reach, and files whose document it would have deleted,
+ * keep their previous entries until a complete scan decides.
+ */
+export function reconcileFiles(
+	prior: Record<string, FileFingerprint>,
+	current: Record<string, FileFingerprint>,
+	complete: boolean,
+): { deletedDocIds: string[]; files: Record<string, FileFingerprint> } {
+	const files = { ...current };
+	const deletedDocIds: string[] = [];
+	for (const [relPath, fingerprint] of Object.entries(current)) {
+		const priorDocId = prior[relPath]?.docId;
+		if (fingerprint.docId || !priorDocId) continue;
+		if (complete) {
+			deletedDocIds.push(priorDocId);
+		} else {
+			files[relPath] = prior[relPath];
+		}
+	}
+	const stale = staleIds(Object.keys(prior), {
+		seen: new Set(Object.keys(current)),
+		complete,
+	});
+	for (const relPath of stale) {
+		if (prior[relPath].docId) deletedDocIds.push(prior[relPath].docId);
+	}
+	if (!complete) {
+		for (const [relPath, fingerprint] of Object.entries(prior)) {
+			files[relPath] ??= fingerprint;
+		}
+	}
+	return { deletedDocIds, files };
 }
 
 /**
- * Incremental poll: scan the projects directory, emit one upsert per changed
- * or new JSONL file (one document per file), and one batch of deletions for
- * files that disappeared from a complete scan. State maps relative path to a
- * fingerprint ({mtime, size, hash, docId}) and is persisted with each batch.
+ * Incremental poll: scan the projects directory and emit one upsert per new
+ * or changed JSONL file (one document per file). A file whose mtime and size
+ * match the previous poll is not read at all. Gety commits the state only
+ * when the poll succeeds, so it is yielded once, with the deletions, at the
+ * end.
  *
- * Safety rules for deletions:
- * - Deletions are only emitted when the scan completed with no read/stat error
- *   (aside from the root directory truly not existing). A partial scan keeps
- *   prior state for unknown paths so transient errors never wipe documents.
- * - A file present in the scan whose `readTextFile` fails is skipped: its prior
- *   doc and state are preserved untouched for this poll.
- *
- * Files are read and hashed one at a time and yielded immediately, so we never
- * build every document up front.
+ * - A missing projects directory, or a sandbox or permission error, fails the
+ *   poll: it must never look like "every session was deleted".
+ * - A file that disappears during the poll is skipped, and the poll deletes
+ *   nothing (see `reconcileFiles`); the next poll does.
+ * - On abort the poll stops without a state.
  */
 export async function* pollClaudeCode(
-	config: RuntimeConfig,
+	options: PollOptions,
 	lastState: unknown,
 	signal: AbortSignal,
 ): AsyncGenerator<PollResult, void, unknown> {
-	const includeSubagentFiles = includeSubagents(config);
-	const priorState = normalizeState(lastState);
-	const prior = priorState.files;
-	const working: Record<string, FileFingerprint> = { ...prior };
-	const root = resolveRoot(config);
-
-	const scan = await scanJsonl(root, signal, includeSubagentFiles);
+	const { files: prior, forceReindex } = normalizeState(lastState);
+	const accept = (relPath: string) =>
+		options.includeSubagents || !isSubagentPath(relPath);
+	const scan = await walkFiles(options.root, {
+		include: (relPath) => relPath.endsWith('.jsonl') && accept(relPath),
+		descend: accept,
+		signal,
+	});
 	if (signal.aborted) return;
+	if (scan.rootMissing) {
+		throw new Error(
+			`Claude Code projects directory not found: ${options.root}. Run Claude Code at least once to create it.`,
+		);
+	}
 
-	// Deletions are only safe when the scan is authoritative: either it fully
-	// succeeded, or the root genuinely does not exist (so every prior file is
-	// truly gone). Any partial scan (permission/IO error on a subtree or file)
-	// suppresses deletions and preserves prior state for unknown paths.
-	const scanAuthoritative = scan.complete || scan.rootMissing;
-
-	const current = scan.files;
-	if (scanAuthoritative) {
-		const deletedIds: string[] = [];
-		for (const [relPath, fingerprint] of Object.entries(prior)) {
-			if (!current.has(relPath)) {
-				if (fingerprint.docId) {
-					deletedIds.push(fingerprint.docId);
-				}
-				delete working[relPath];
-			}
+	let complete = scan.complete;
+	const current: Record<string, FileFingerprint> = {};
+	for (const file of scan.files) {
+		if (signal.aborted) return;
+		const prev = prior[file.relPath];
+		if (
+			!forceReindex && prev != null &&
+			sameFingerprint({ mtimeMs: prev.mtime, size: prev.size }, file)
+		) {
+			current[file.relPath] = prev;
+			continue;
 		}
-		if (deletedIds.length > 0) {
-			yield {
-				updates: deletedIds.map((id) => del(id)),
-				state: makeState({ ...working }, includeSubagentFiles),
-			};
+
+		let doc: Doc | null;
+		try {
+			doc = await buildDocFromFile(file, options.homeDir, signal);
+		} catch (error) {
+			if (signal.aborted) return;
+			if (error instanceof Deno.errors.NotFound) {
+				complete = false;
+				continue;
+			}
+			throw error;
+		}
+
+		current[file.relPath] = {
+			mtime: file.mtimeMs,
+			size: file.size,
+			docId: doc?.id ?? '',
+		};
+		if (doc != null) {
+			yield { updates: [upsert(doc)] };
 		}
 	}
 
-	// Changed / new files: one batch per file (real source boundary). Fingerprint
-	// includes a content hash so same-size/same-mtime rewrites are detected. Old
-	// state entries missing a hash are treated as changed.
-	for (const [relPath, { mtime, size }] of current) {
-		if (signal.aborted) break;
-		const prev = prior[relPath];
-		const cheapUnchanged = !priorState.forceReindex && prev != null &&
-			prev.mtime === mtime &&
-			prev.size === size &&
-			typeof prev.hash === 'string' && prev.hash.length > 0;
-
-		const built = await buildDocFromFile(root, relPath, { mtime, size });
-		if (built == null) {
-			// Read failed for a file that was present in the scan. Do not delete or
-			// replace its prior doc/state; skip it for this poll.
-			continue;
-		}
-
-		if (built.kind === 'skip') {
-			working[relPath] = {
-				mtime,
-				size,
-				hash: built.hash,
-				docId: '',
-			};
-			if (prev?.docId) {
-				yield {
-					updates: [del(prev.docId)],
-					state: makeState({ ...working }, includeSubagentFiles),
-				};
-			}
-			continue;
-		}
-
-		if (cheapUnchanged && prev.hash === built.hash) {
-			// Content is genuinely unchanged; keep prior fingerprint as-is.
-			continue;
-		}
-
-		working[relPath] = {
-			mtime,
-			size,
-			hash: built.hash,
-			docId: built.doc.id,
-		};
-		yield {
-			updates: [upsert(built.doc)],
-			state: makeState({ ...working }, includeSubagentFiles),
-		};
-	}
+	const { deletedDocIds, files } = reconcileFiles(prior, current, complete);
+	const state: ClaudeCodeState = {
+		schema_version: STATE_SCHEMA_VERSION,
+		files,
+	};
+	yield { updates: deletedDocIds.map((id) => del(id)), state };
 }
 
 export default class ClaudeCodeConnector extends Connector<
@@ -820,10 +682,14 @@ export default class ClaudeCodeConnector extends Connector<
 	ClaudeCodeState
 > {
 	async *poll(): AsyncGenerator<PollResult, void, unknown> {
-		yield* pollClaudeCode(this.config, this.lastState ?? null, this.signal);
+		yield* pollClaudeCode(
+			{
+				root: this.expandHome('~/.claude/projects'),
+				homeDir: this.homeDir,
+				includeSubagents: this.config.include_subagents === true,
+			},
+			this.lastState,
+			this.signal,
+		);
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

@@ -2,7 +2,7 @@
 	"id": "codex",
 	"name": "Codex",
 	"version": "0.1.0",
-	"min_gety_app_version": "0.5.1",
+	"min_gety_app_version": "0.7.0",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
 	"icon": "assets/codex-color.svg",
@@ -13,6 +13,9 @@
 	"schedule": {
 		"strategy": "interval",
 		"interval_seconds": 600
+	},
+	"permissions": {
+		"read": ["~/.codex/sessions", "~/.codex/archived_sessions"]
 	},
 	"config": {
 		"fields": [
@@ -29,6 +32,13 @@
 				"type": "checkbox",
 				"description": "Also index JSONL files under the local archived_sessions directory.",
 				"default_value": true
+			},
+			{
+				"id": "include_subagents",
+				"title": "Include subagent sessions",
+				"type": "checkbox",
+				"description": "Also index sessions that Codex spawned as subagents of another session.",
+				"default_value": false
 			}
 		]
 	},

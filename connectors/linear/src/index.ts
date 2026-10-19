@@ -114,21 +114,18 @@ export default class LinearConnector
 				shouldRebuildPage,
 				Math.min(this.syncOptions.issuePageSize, remainingIssues),
 			);
-			const shouldYieldIssuePage = shouldYieldIssueResult(
-				stateAfterIssues,
-				issueResult,
-				shouldRebuildPage,
-			);
 			stateAfterIssues = nextStateAfterIssuePage(
 				stateAfterIssues,
 				issueResult,
 				this.indexComments,
 			);
-			if (shouldYieldIssuePage) {
-				issuePages += 1;
-				issueCount += issueResult.issueCount;
-				issueUpdates += issueResult.updates.length;
-				yield { updates: issueResult.updates, state: stateAfterIssues };
+			issuePages += 1;
+			issueCount += issueResult.issueCount;
+			issueUpdates += issueResult.updates.length;
+			// Gety commits state only when the whole poll succeeds, so pages carry
+			// updates only; the final batch carries the state.
+			if (issueResult.updates.length > 0) {
+				yield { updates: issueResult.updates };
 			}
 			if (!issueResult.hitLimit || issueResult.issueCount === 0) {
 				break;
@@ -145,6 +142,7 @@ export default class LinearConnector
 				hit_limit: true,
 				max_complexity: this.client.maxComplexity,
 			});
+			yield { updates: [], state: stateAfterIssues };
 			return;
 		}
 
@@ -351,15 +349,6 @@ export function shouldRebuildAllIssuesForState(
 		return false;
 	}
 	return indexComments || previousState.index_comments === true;
-}
-
-export function shouldYieldIssueResult(
-	previousState: Pick<LinearState, 'issue_delta_after'>,
-	result: Pick<IssueStateResult, 'hitLimit'> & { issueCount: number },
-	rebuildAllIssues: boolean,
-): boolean {
-	return rebuildAllIssues || previousState.issue_delta_after != null ||
-		result.issueCount > 0 || result.hitLimit;
 }
 
 export function buildIssueFilter(

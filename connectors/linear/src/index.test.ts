@@ -8,7 +8,6 @@ import {
 	nextStateAfterCommentSync,
 	nextStateAfterIssuePage,
 	shouldRebuildAllIssuesForState,
-	shouldYieldIssueResult,
 	STATE_SCHEMA_VERSION,
 } from './index.ts';
 
@@ -89,32 +88,6 @@ Deno.test('buildIssueFilter uses a stable in-progress boundary', () => {
 			},
 		),
 		undefined,
-	);
-});
-
-Deno.test('shouldYieldIssueResult outputs pages that change sync state or docs', () => {
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 0 }, false),
-		false,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: true, issueCount: 0 }, false),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({ issue_delta_after: 'cursor' }, {
-			hitLimit: false,
-			issueCount: 0,
-		}, false),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 0 }, true),
-		true,
-	);
-	assert.equal(
-		shouldYieldIssueResult({}, { hitLimit: false, issueCount: 1 }, false),
-		true,
 	);
 });
 

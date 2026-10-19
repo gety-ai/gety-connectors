@@ -330,3 +330,46 @@ Deno.test('poll keeps an issue when fetching it fails for another reason', async
 	assert.deepEqual(run.updates, []);
 	assert.equal(run.committedState, undefined);
 });
+
+Deno.test('poll yields state only in its final batch and resumes past the cap', async () => {
+	const fake = new FakeLinear();
+	fake.issues = Array.from({ length: 501 }, (_, i) => issue(i));
+
+	const first = await poll(fake);
+
+	assert.equal(first.outcome, 'done', String(first.error));
+	assert.equal(first.updates.length, 500);
+	assert.ok(
+		first.batches.slice(0, -1).every((batch) => !Object.hasOwn(batch, 'state')),
+		'an intermediate batch carried state',
+	);
+	assert.ok(Object.hasOwn(first.batches.at(-1)!, 'state'));
+	assert.ok(!fake.operations().includes('GetyLinearCommentDelta'));
+	const capped = first.committedState as Record<string, unknown>;
+	assert.equal(typeof capped.issue_delta_after, 'string');
+
+	const second = await poll(fake, { lastState: first.committedState });
+
+	assert.equal(second.outcome, 'done', String(second.error));
+	assert.deepEqual(
+		second.updates.map((update) => update.kind === 'upsert' && update.doc.id),
+		['linear:issue:issue-500'],
+	);
+	const done = second.committedState as Record<string, unknown>;
+	assert.equal(done.issue_delta_after, undefined);
+	assert.equal(done.last_issue_updated_at, issue(500).updatedAt);
+});
+
+Deno.test('poll replays the same state to the same updates', async () => {
+	const fake = new FakeLinear();
+	fake.issues = [issue(11), issue(12)];
+	fake.comments = [changedComment('c1', 'issue-1', 20)];
+	fake.issues.push(issue(1));
+
+	const first = await poll(fake, { lastState: CAUGHT_UP });
+	const replay = await poll(fake, { lastState: CAUGHT_UP });
+
+	assert.equal(first.outcome, 'done', String(first.error));
+	assert.deepEqual(replay.updates, first.updates);
+	assert.deepEqual(replay.committedState, first.committedState);
+});

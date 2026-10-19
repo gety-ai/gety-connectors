@@ -1,5 +1,13 @@
-import { type LinearClient } from '@linear/sdk';
-import { logInfo } from './log.ts';
+import { paginate } from '@gety-connectors/utils/paginate';
+import {
+	type Connection,
+	type LinearGraphQL,
+	nextPageCursor,
+	requireConnection,
+	requireRecord,
+	UnexpectedResponseError,
+} from './graphql.ts';
+import { log } from './log.ts';
 import { markdownImagesToLinks } from './markdown.ts';
 import {
 	dateToIso,
@@ -46,18 +54,10 @@ interface LinearCommentBotActor {
 	subType?: string | null;
 }
 
-export interface LinearCommentConnection {
-	nodes: LinearComment[];
-	pageInfo: {
-		endCursor?: string | null;
-		hasNextPage: boolean;
-	};
-}
-
 interface IssueCommentSource {
 	id: string;
 	identifier: string;
-	comments?: LinearCommentConnection | null;
+	comments?: Connection<LinearComment> | null;
 }
 
 export interface CommentDeltaState {
@@ -76,21 +76,19 @@ export interface CommentDeltaResult {
 	hitLimit: boolean;
 }
 
+/** A node of the comment delta query. */
+interface ChangedComment {
+	id: string;
+	// Null for comments outside issues, such as on project updates.
+	issueId: string | null;
+	updatedAt: string;
+}
+
 export interface CommentSyncOptions {
 	commentDeltaPageSize: number;
 	maxCommentDeltasPerPoll: number;
 	issueCommentPageSize: number;
 	incrementalOverlapMs: number;
-}
-
-interface CommentDeltaResponse {
-	comments: LinearCommentConnection;
-}
-
-interface IssueCommentsResponse {
-	issue?: {
-		comments: LinearCommentConnection;
-	} | null;
 }
 
 const COMMENT_DELTA_QUERY = `
@@ -178,70 +176,78 @@ const ISSUE_COMMENTS_QUERY = `
 `;
 
 export async function changedCommentIssues(
-	client: LinearClient,
+	client: LinearGraphQL,
 	state: CommentDeltaState,
 	signal: AbortSignal,
 	options: CommentSyncOptions,
 ): Promise<CommentDeltaResult> {
 	const issueIds = new Set<string>();
 	const boundary = commentBoundary(state, options);
-	let after = state.comment_delta_after;
 	let maxUpdatedAt = state.comment_delta_max_updated_at;
 	let commentCount = 0;
-	let hasNextPage = true;
-	logInfo('comment delta started', {
+	let nextAfter: string | undefined;
+	log.info('comment delta started', {
 		boundary,
-		resume_after: after != null,
+		resume_after: state.comment_delta_after != null,
 		page_size: options.commentDeltaPageSize,
 		max_comments: options.maxCommentDeltasPerPoll,
 	});
 
-	while (hasNextPage && commentCount < options.maxCommentDeltasPerPoll) {
-		signal.throwIfAborted();
-
-		const first = Math.min(
-			options.commentDeltaPageSize,
-			options.maxCommentDeltasPerPoll - commentCount,
+	const pages = paginate<ChangedComment>(async (after) => {
+		const data = await client.request<{ comments?: unknown }>(
+			COMMENT_DELTA_QUERY,
+			{
+				after,
+				boundary,
+				first: Math.min(
+					options.commentDeltaPageSize,
+					options.maxCommentDeltasPerPoll - commentCount,
+				),
+			},
 		);
-		logInfo('fetching comment delta page', {
-			after: after == null ? 'no' : 'yes',
-			first,
-		});
-		const response = await client.client.rawRequest<
-			CommentDeltaResponse,
-			Record<string, unknown>
-		>(COMMENT_DELTA_QUERY, {
-			after,
-			boundary,
-			first,
-		});
-		const connection = response.data?.comments ?? emptyCommentConnection();
-
-		for (const comment of connection.nodes) {
-			if (comment.issueId != null) {
+		const connection = requireConnection<{ id: string }>(
+			data.comments,
+			'comments',
+		);
+		return {
+			items: connection.nodes.map((node, index) =>
+				requireChangedComment(node, `comments.nodes[${index}]`)
+			),
+			hasMore: connection.pageInfo.hasNextPage,
+			nextCursor: connection.pageInfo.endCursor,
+		};
+	}, {
+		signal,
+		context: 'Linear comment delta',
+		startCursor: state.comment_delta_after,
+	});
+	for await (const page of pages) {
+		for (const comment of page.items) {
+			if (comment.issueId !== null) {
 				issueIds.add(comment.issueId);
 			}
-			maxUpdatedAt = maxIsoDate(maxUpdatedAt, dateToIso(comment.updatedAt));
+			maxUpdatedAt = maxIsoDate(maxUpdatedAt, comment.updatedAt);
 		}
-
-		commentCount += connection.nodes.length;
-		after = connection.pageInfo.endCursor ?? undefined;
-		hasNextPage = connection.pageInfo.hasNextPage && after != null;
-		logInfo('comment delta page processed', {
-			comments: connection.nodes.length,
+		commentCount += page.items.length;
+		nextAfter = page.nextCursor;
+		log.progress('comment delta page processed', {
+			comments: page.items.length,
 			total_comments: commentCount,
 			affected_issues: issueIds.size,
-			has_next_page: hasNextPage,
+			has_next_page: nextAfter != null,
 		});
-
-		if (connection.nodes.length === 0) {
+		// An empty page that still has a next page resumes on the next poll.
+		if (
+			commentCount >= options.maxCommentDeltasPerPoll ||
+			page.items.length === 0
+		) {
 			break;
 		}
 	}
-	logInfo('comment delta finished', {
+	log.info('comment delta finished', {
 		comments: commentCount,
 		affected_issues: issueIds.size,
-		hit_limit: hasNextPage,
+		hit_limit: nextAfter != null,
 	});
 
 	return {
@@ -249,54 +255,85 @@ export async function changedCommentIssues(
 		commentCount,
 		maxUpdatedAt,
 		boundary,
-		nextAfter: hasNextPage ? after : undefined,
-		hitLimit: hasNextPage,
+		nextAfter,
+		hitLimit: nextAfter != null,
 	};
 }
 
+/**
+ * `value` checked as a comment delta node. The comment cursor advances past
+ * every node, so a node without a readable issue or time would drop a change
+ * silently; it fails the poll instead.
+ */
+function requireChangedComment(
+	value: unknown,
+	context: string,
+): ChangedComment {
+	const { id, issueId, updatedAt } = requireRecord(value, context);
+	if (
+		typeof id !== 'string' ||
+		(issueId !== null && typeof issueId !== 'string') ||
+		typeof updatedAt !== 'string' || Number.isNaN(Date.parse(updatedAt))
+	) {
+		throw new UnexpectedResponseError(
+			`${context}: expected id, issueId (string or null) and updatedAt`,
+		);
+	}
+	return { id, issueId, updatedAt };
+}
+
+/**
+ * Every comment of `issue`: the first page embedded in the issue, then the
+ * remaining pages. A truncated enumeration is an error, since the issue
+ * document would silently lose comments.
+ */
 export async function fetchIssueComments(
 	issue: IssueCommentSource,
-	client: LinearClient,
+	client: LinearGraphQL,
 	signal: AbortSignal,
 	options: CommentSyncOptions,
 ): Promise<LinearComment[]> {
-	const comments = [...(issue.comments?.nodes ?? [])];
-	let after = issue.comments?.pageInfo.endCursor ?? undefined;
-	let hasNextPage = issue.comments?.pageInfo.hasNextPage === true &&
-		after != null;
-	let pageCount = issue.comments == null ? 0 : 1;
+	const first = requireConnection<LinearComment>(
+		issue.comments,
+		`issue ${issue.identifier} comments`,
+	);
+	const comments = [...first.nodes];
+	const startCursor = nextPageCursor(
+		first,
+		undefined,
+		`issue ${issue.identifier} comments`,
+	);
+	if (startCursor === undefined) {
+		return comments;
+	}
 
-	while (hasNextPage) {
-		signal.throwIfAborted();
-
-		const response = await client.client.rawRequest<
-			IssueCommentsResponse,
-			Record<string, unknown>
-		>(ISSUE_COMMENTS_QUERY, {
-			after,
-			first: options.issueCommentPageSize,
-			issueId: issue.id,
+	const pages = paginate<LinearComment>(async (after) => {
+		const data = await client.request<{ issue?: unknown }>(
+			ISSUE_COMMENTS_QUERY,
+			{ after, first: options.issueCommentPageSize, issueId: issue.id },
+		);
+		const connection = requireConnection<LinearComment>(
+			requireRecord(data.issue, 'issue').comments,
+			'issue.comments',
+		);
+		return {
+			items: connection.nodes,
+			hasMore: connection.pageInfo.hasNextPage,
+			nextCursor: connection.pageInfo.endCursor,
+		};
+	}, {
+		signal,
+		context: `Linear issue ${issue.identifier} comments`,
+		startCursor,
+	});
+	for await (const page of pages) {
+		comments.push(...page.items);
+		log.progress('issue comments page processed', {
+			issue: issue.identifier,
+			page_comments: page.items.length,
+			total_comments: comments.length,
+			has_next_page: page.nextCursor != null,
 		});
-		const connection = response.data?.issue?.comments ??
-			emptyCommentConnection();
-
-		pageCount += 1;
-		comments.push(...connection.nodes);
-		after = connection.pageInfo.endCursor ?? undefined;
-		hasNextPage = connection.pageInfo.hasNextPage && after != null;
-		if (hasNextPage || pageCount > 1) {
-			logInfo('issue comments page processed', {
-				issue: issue.identifier,
-				pages: pageCount,
-				page_comments: connection.nodes.length,
-				total_comments: comments.length,
-				has_next_page: hasNextPage,
-			});
-		}
-
-		if (connection.nodes.length === 0) {
-			break;
-		}
 	}
 
 	return comments;
@@ -485,13 +522,4 @@ function sortComments(comments: LinearComment[]): void {
 		const bTime = dateToTime(b.createdAt) ?? Number.NEGATIVE_INFINITY;
 		return aTime - bTime;
 	});
-}
-
-function emptyCommentConnection(): LinearCommentConnection {
-	return {
-		nodes: [],
-		pageInfo: {
-			hasNextPage: false,
-		},
-	};
 }

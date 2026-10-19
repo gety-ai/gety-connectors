@@ -44,7 +44,9 @@ deno task build
 ```
 
 The build keeps `@gety-ai/connector-sdk` external. Gety supplies the real SDK at
-runtime through its import map. The Linear SDK is bundled into `dist/main.js`.
+runtime through its import map. The connector talks to Linear's GraphQL API with
+its own small client (`src/graphql.ts`) on the repository's shared HTTP helpers;
+those helpers and the markdown libraries are bundled into `dist/main.js`.
 
 `deno task verify` checks formatting and lint, runs type checking and tests,
 then builds; it does not rewrite files (`deno task fix` formats and applies safe

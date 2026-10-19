@@ -3,24 +3,23 @@ import {
 	type DocUpdate,
 	type PollResult,
 } from '@gety-ai/connector-sdk';
-import { LinearClient } from '@linear/sdk';
 import {
 	changedCommentIssues,
 	type CommentDeltaResult,
 	fetchIssueComments,
 } from './comment.ts';
 import type { ManifestConfig } from './gen/manifest.d.ts';
+import { LinearGraphQL, nextPageCursor, retryReason } from './graphql.ts';
 import {
-	buildIssueDelete,
 	buildIssueUpdate,
 	fetchIssueById,
 	fetchIssuePage,
 	issueDateBoundary,
+	type IssueFilter,
 	issueIsRemoved,
-	type IssuesQueryVariables,
 	issueUpdatedAt,
 } from './issue.ts';
-import { hasValue, logInfo } from './log.ts';
+import { log } from './log.ts';
 import { maxIsoDate } from './utils.ts';
 
 export interface LinearState {
@@ -70,12 +69,22 @@ export const STATE_SCHEMA_VERSION = 2;
 
 export default class LinearConnector
 	extends Connector<ManifestConfig, LinearState> {
-	private client!: LinearClient;
+	private client!: LinearGraphQL;
 	private indexComments = true;
 	private readonly syncOptions = DEFAULT_SYNC_OPTIONS;
 
 	override onLoad(): void {
-		this.client = new LinearClient({ apiKey: this.config.api_key });
+		this.client = new LinearGraphQL({
+			apiKey: this.config.api_key,
+			signal: this.signal,
+			onRetry: ({ operation, attempt, delayMs, error }) =>
+				log.warn('request retrying', {
+					operation,
+					attempt: attempt + 1,
+					delay_ms: delayMs,
+					reason: retryReason(error),
+				}),
+		});
 		this.indexComments = this.config.index_comments ?? true;
 	}
 
@@ -86,18 +95,14 @@ export default class LinearConnector
 		let issuePages = 0;
 		let issueCount = 0;
 		let issueUpdates = 0;
-		logInfo('poll started', {
+		log.info('poll started', {
 			index_comments: this.indexComments,
 			rebuild_all_issues: rebuildAllIssues,
-			has_issue_cursor: hasValue(
-				previousState.issue_delta_after ??
-					previousState.last_issue_updated_at,
-			),
-			has_comment_cursor: hasValue(
-				previousState.comment_delta_after ??
-					previousState.comment_delta_boundary ??
-					previousState.last_comment_updated_at,
-			),
+			has_issue_cursor: (previousState.issue_delta_after ??
+				previousState.last_issue_updated_at) != null,
+			has_comment_cursor: (previousState.comment_delta_after ??
+				previousState.comment_delta_boundary ??
+				previousState.last_comment_updated_at) != null,
 		});
 
 		while (issueCount < this.syncOptions.maxIssuesPerPoll) {
@@ -130,13 +135,14 @@ export default class LinearConnector
 		}
 
 		if (stateAfterIssues.issue_delta_after != null) {
-			logInfo('poll finished', {
+			log.info('poll finished', {
 				phase: 'issues',
 				issue_pages: issuePages,
 				issues: issueCount,
 				issue_updates: issueUpdates,
 				total_updates: issueUpdates,
 				hit_limit: true,
+				max_complexity: this.client.maxComplexity,
 			});
 			return;
 		}
@@ -150,7 +156,7 @@ export default class LinearConnector
 			)
 			: emptyCommentDelta(stateAfterIssues);
 		if (!this.indexComments) {
-			logInfo('comment sync skipped', {
+			log.info('comment sync skipped', {
 				reason: 'index_comments_disabled',
 			});
 		}
@@ -158,7 +164,7 @@ export default class LinearConnector
 		const rebuiltFromComments = this.indexComments
 			? await this.rebuildCommentIssues(commentDelta.issueIds)
 			: emptyCommentIssueRebuildResult();
-		logInfo('poll finished', {
+		log.info('poll finished', {
 			phase: 'comments',
 			issue_pages: issuePages,
 			issues: issueCount,
@@ -167,6 +173,7 @@ export default class LinearConnector
 			rebuilt_issues: rebuiltFromComments.issueCount,
 			total_updates: issueUpdates + rebuiltFromComments.updates.length,
 			hit_limit: commentDelta.hitLimit,
+			max_complexity: this.client.maxComplexity,
 		});
 
 		yield {
@@ -203,7 +210,7 @@ export default class LinearConnector
 		const updates: DocUpdate[] = [];
 		let maxUpdatedAt = previousState.issue_delta_max_updated_at;
 
-		logInfo('issue sync started', {
+		log.progress('issue sync started', {
 			mode: rebuildAllIssues ? 'rebuild' : 'incremental',
 			page_size: first,
 			resume_after: after != null,
@@ -216,10 +223,7 @@ export default class LinearConnector
 			this.indexComments,
 			this.syncOptions.issueCommentPageSize,
 		);
-		logInfo('issue page fetched', {
-			issues: connection.nodes.length,
-			has_next_page: connection.pageInfo.hasNextPage,
-		});
+		const nextAfter = nextPageCursor(connection, after, 'Linear issues');
 
 		const pageStartedAt = performance.now();
 		let extraCommentPageIssueCount = 0;
@@ -247,11 +251,8 @@ export default class LinearConnector
 			}));
 		}
 
-		const nextAfter = connection.pageInfo.hasNextPage
-			? connection.pageInfo.endCursor ?? undefined
-			: undefined;
 		const hitLimit = nextAfter != null;
-		logInfo('issue page processed', {
+		log.progress('issue page processed', {
 			issues: connection.nodes.length,
 			updates: updates.length,
 			page_ms: Math.round(performance.now() - pageStartedAt),
@@ -277,7 +278,7 @@ export default class LinearConnector
 		let issueCount = 0;
 
 		if (issueIds.size > 0) {
-			logInfo('comment issue rebuild started', {
+			log.info('comment issue rebuild started', {
 				affected_issues: issueIds.size,
 			});
 		}
@@ -290,11 +291,6 @@ export default class LinearConnector
 				this.indexComments,
 				this.syncOptions.issueCommentPageSize,
 			);
-			if (issue == null) {
-				updates.push(buildIssueDelete(issueId));
-				issueCount += 1;
-				continue;
-			}
 			const comments = issueIsRemoved(issue) ? [] : await fetchIssueComments(
 				issue,
 				this.client,
@@ -305,9 +301,13 @@ export default class LinearConnector
 				renderComments: this.indexComments,
 			}));
 			issueCount += 1;
+			log.progress('comment issue rebuilt', {
+				issue: issue.identifier,
+				rebuilt_issues: issueCount,
+			});
 		}
 		if (issueIds.size > 0) {
-			logInfo('comment issue rebuild finished', {
+			log.info('comment issue rebuild finished', {
 				rebuilt_issues: issueCount,
 			});
 		}
@@ -360,7 +360,7 @@ export function buildIssueFilter(
 	state: LinearState,
 	rebuildAllIssues: boolean,
 	options: Pick<SyncOptions, 'incrementalOverlapMs'>,
-): IssuesQueryVariables['filter'] {
+): IssueFilter | undefined {
 	const boundary = buildIssueBoundary(state, rebuildAllIssues, options);
 	if (boundary == null) {
 		return undefined;

@@ -1,0 +1,182 @@
+# Releases with changesets and npm trusted publishing (OIDC); no npm token.
+# npm trusted publishers are bound to this file name: keep it release.yml.
+#
+# On every push to main, select-mode decides what to do:
+# - version: pending changesets exist, so the version job opens or updates the
+#   "Version Packages" pull request (versions, CHANGELOG.md, manifest.json,
+#   package.json `gety` and the catalog, see scripts/version.ts).
+# - publish: some package version is not on npm yet (the version PR was
+#   merged), so the pack job builds and packs them and the publish job
+#   publishes the tarballs and pushes `<package>@<version>` tags.
+#
+# Only the publish job can mint an OIDC token, following
+# https://changesets.dev/guide/automating#trusted-publishing.
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  select-mode:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.select-mode.outputs.mode }}
+      publish-plan-artifact-id: ${{ steps.select-mode.outputs.publish-plan-artifact-id }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select Changesets mode
+        id: select-mode
+        uses: changesets/action/select-mode@v2
+
+  version:
+    if: needs.select-mode.outputs.mode == 'version'
+    needs: select-mode
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit version changes
+      pull-requests: write # open the Version Packages pull request
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Version packages
+        uses: changesets/action/version@v2
+        with:
+          script: pnpm version-packages
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+
+  pack:
+    if: needs.select-mode.outputs.mode == 'publish'
+    needs: select-mode
+    runs-on: ubuntu-latest
+    outputs:
+      pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check versions, manifests and catalog are in sync
+        run: deno task sync:check
+
+      - name: Build connectors
+        run: deno task --recursive build
+
+      - name: Verify package tarballs
+        run: deno task verify:packs
+
+      - name: Pack packages
+        id: pack
+        uses: changesets/action/pack@v2
+        with:
+          publish-plan-artifact-id: ${{ needs.select-mode.outputs.publish-plan-artifact-id }}
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push release tags
+      id-token: write # npm trusted publishing
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `changeset publish` runs `pnpm publish`, which pnpm 10 delegates to the
+      # npm CLI next to the Node.js binary; npm does the OIDC exchange and
+      # needs version 11.5.1 or later for trusted publishing.
+      - name: Check npm supports trusted publishing
+        run: |
+          npm_version="$(npm --version)"
+          echo "npm ${npm_version}"
+          if [ "$(printf '%s\n' 11.5.1 "${npm_version}" | sort -V | head -n 1)" != 11.5.1 ]; then
+            echo "::error::npm ${npm_version} cannot publish with trusted publishing; 11.5.1 or later is required"
+            exit 1
+          fi
+
+      # No GitHub Releases: Gety's "Install from GitHub" would treat them as
+      # connector releases without the required assets. Tags are still pushed.
+      - name: Publish packages
+        uses: changesets/action/publish@v2
+        with:
+          pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
+          create-github-releases: false

@@ -549,6 +549,48 @@ Deno.test('poll keeps a paginated session whose segment vanished before it was r
 	});
 });
 
+Deno.test('poll keeps a paginated session whose segment the listing missed', async () => {
+	await withHome(async (home) => {
+		const segment = (answers: string[]) => [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			...answers.flatMap((answer) => [
+				message('user', `Question for ${answer}`),
+				message('assistant', answer, 'final_answer'),
+			]),
+		];
+		await writeSession(home, SEGMENT_PATHS[0], segment(['Answer one.']));
+		await writeSession(home, SEGMENT_PATHS[1], segment(['Answer two.']));
+		const first = await poll(home, {}, null);
+		const firstFiles = (first.committedState as CodexState).files ?? {};
+
+		// The last segment grows while the listing loses track of the first.
+		await writeSession(
+			home,
+			SEGMENT_PATHS[1],
+			segment(['Answer two.', 'Answer three.']),
+		);
+		const missed = join(home, '.codex', SEGMENT_PATHS[0]);
+		const second = await withStatSpy((path) => {
+			if (path === missed) {
+				throw new Deno.errors.NotFound(`No such file: ${path}`);
+			}
+		}, () => poll(home, {}, first.committedState));
+		assert.equal(second.outcome, 'done');
+		assert.deepEqual(second.updates, []);
+		const secondState = second.committedState as CodexState;
+		assert.deepEqual(secondState.files, firstFiles);
+		assert.deepEqual(secondState.indexed_sessions, [PARENT_ID]);
+
+		// A complete poll rebuilds the session from both segments.
+		const third = await poll(home, {}, secondState);
+		const [update] = third.updates;
+		if (third.updates.length !== 1 || update.kind !== 'upsert') {
+			throw new Error('expected one upsert');
+		}
+		assert.match(update.doc.content ?? '', /Answer one\.[^]*Answer three\./);
+	});
+});
+
 Deno.test('nextState stores sorted file fingerprints, indexed sessions and options', () => {
 	assert.deepEqual(
 		nextState(
@@ -711,6 +753,24 @@ async function withOpenSpy<T>(
 		return await fn();
 	} finally {
 		deno.open = open;
+	}
+}
+
+/** Runs `fn` with `Deno.stat` reporting each path to `onStat` first. */
+async function withStatSpy<T>(
+	onStat: (path: string) => void,
+	fn: () => Promise<T>,
+): Promise<T> {
+	const deno = Deno as { stat: typeof Deno.stat };
+	const stat = deno.stat;
+	deno.stat = (path) => {
+		onStat(String(path));
+		return stat(path);
+	};
+	try {
+		return await fn();
+	} finally {
+		deno.stat = stat;
 	}
 }
 

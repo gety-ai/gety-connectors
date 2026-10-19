@@ -92,6 +92,16 @@ export default class CodexConnector extends Connector<
 				}
 				continue;
 			}
+			if (
+				!listing.complete &&
+				group.files.filter((file) => previousFiles[file.stateKey] != null)
+						.length < (previousGroupSizes.get(group.key) ?? 0)
+			) {
+				// The listing missed a file of this session, which may still exist:
+				// rebuilding from the rest could drop its turns. Keep the session as
+				// the previous poll left it (see below) and let a complete poll decide.
+				continue;
+			}
 
 			let session: CodexSession;
 			try {
@@ -101,15 +111,9 @@ export default class CodexConnector extends Connector<
 				}, this.signal);
 			} catch (error) {
 				if (error instanceof Deno.errors.NotFound) {
-					// A file was removed since the walk: keep what the previous poll
-					// knew about this session, and let the next poll decide.
+					// A file was removed since the walk: keep the session as the
+					// previous poll left it (see below) and let the next poll decide.
 					complete = false;
-					for (const file of group.files) {
-						const previousFile = previousFiles[file.stateKey];
-						if (previousFile != null) {
-							currentFiles[file.stateKey] = previousFile;
-						}
-					}
 					continue;
 				}
 				throw error;
@@ -130,6 +134,12 @@ export default class CodexConnector extends Connector<
 			}
 		}
 
+		if (!complete) {
+			// Files this poll did not reach or did not rebuild keep their entries.
+			for (const [stateKey, previousFile] of Object.entries(previousFiles)) {
+				currentFiles[stateKey] ??= previousFile;
+			}
+		}
 		const { deleted, indexed } = reconcileSessions(
 			state.indexed_sessions ?? [],
 			currentIndexed,

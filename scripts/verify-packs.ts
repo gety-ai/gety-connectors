@@ -1,22 +1,30 @@
-// Packs every publishable package with pnpm (as `changeset publish` does) and
-// checks each tarball against what Gety accepts from npm. Build the connectors
-// first (`deno task -r build`).
+// Packs every publishable package and checks each tarball against what Gety
+// accepts from npm. Build the connectors first (`deno task -r build`).
 //
-// Connector tarballs must contain, under package/: the manifest entry as a
-// self-contained bundle, the icon, CHANGELOG.md with an entry for the version,
-// and a package.json whose `gety` equals manifest.json and whose
-// `gety.version` equals `version`. The catalog tarball must carry a valid
-// `getyCatalog` and a package.json under the size limit.
+// Connector tarballs (packed with pnpm, as `changeset publish` does) must
+// contain, under package/: the manifest entry as a self-contained bundle, the
+// icon, CHANGELOG.md with an entry for the version, and a package.json whose
+// `gety` equals manifest.json and whose `gety.version` equals `version`.
+//
+// The catalog is published by the release workflow from a generated directory
+// with `npm publish`; it is built here with the connectors' package.json
+// versions in place of the registry's (scripts/catalog.ts) and packed with
+// npm. Its tarball must carry a valid `getyCatalog`, the README and the
+// LICENSE, and a package.json under the size limit.
 
 import { UntarStream } from '@std/tar/untar-stream';
 import {
 	type Catalog,
-	catalogPackagePath,
-	catalogSchemaVersion,
+	catalogPackage,
+	type CatalogTemplate,
+	catalogTemplatePath,
+	firstCatalogVersion,
+	generateCatalog,
 	maxCatalogPackageBytes,
+	type Release,
+	writeCatalogPackage,
 } from './catalog.ts';
 import {
-	catalogDir,
 	equalJson,
 	license,
 	listConnectors,
@@ -48,18 +56,33 @@ const workDir = await Deno.makeTempDir({ prefix: 'gety-connectors-pack-' });
 const errors: string[] = [];
 
 try {
-	for (const connector of await listConnectors()) {
-		const tarball = await pack(connector.dir, connector.packageName);
+	const connectors = await listConnectors();
+	const releases = new Map<string, Release>();
+	for (const connector of connectors) {
+		const tarball = await pack(connector.dir, connector.packageName, 'pnpm');
 		const manifest = await readJson<Manifest>(
 			new URL('manifest.json', connector.dir),
 		);
 		checkConnector(connector.packageName, tarball, manifest);
+		releases.set(connector.packageName, {
+			version: manifest.version,
+			publishedAt: new Date(0).toISOString(),
+		});
 	}
-	const catalogPackage = await readJson<PackageJson>(catalogPackagePath);
+	const template = await readJson<CatalogTemplate>(catalogTemplatePath);
+	const catalogDir = `${await Deno.makeTempDir({ dir: workDir })}/catalog`;
+	await writeCatalogPackage(
+		catalogDir,
+		catalogPackage(
+			template,
+			await generateCatalog(connectors, releases),
+			firstCatalogVersion,
+		),
+	);
 	checkCatalog(
-		catalogPackage.name,
-		await pack(catalogDir, catalogPackage.name),
-		(await listConnectors()).length,
+		template.name,
+		await pack(catalogDir, template.name, 'npm'),
+		connectors.length,
 	);
 } finally {
 	await Deno.remove(workDir, { recursive: true });
@@ -73,16 +96,20 @@ if (errors.length > 0) {
 }
 console.log('all package tarballs are valid');
 
-async function pack(dir: URL, name: string): Promise<Tarball> {
+async function pack(
+	dir: string | URL,
+	name: string,
+	tool: 'pnpm' | 'npm',
+): Promise<Tarball> {
 	const destination = await Deno.makeTempDir({ dir: workDir });
-	const result = await new Deno.Command('pnpm', {
+	const result = await new Deno.Command(tool, {
 		args: ['pack', '--pack-destination', destination],
 		cwd: dir,
 		stdout: 'piped',
 		stderr: 'inherit',
 	}).output();
 	if (!result.success) {
-		throw new Error(`${name}: pnpm pack failed`);
+		throw new Error(`${name}: ${tool} pack failed`);
 	}
 	const [entry] = await Array.fromAsync(Deno.readDir(destination));
 	const path = `${destination}/${entry.name}`;
@@ -162,16 +189,16 @@ function checkCatalog(name: string, tarball: Tarball, connectorCount: number) {
 		);
 	}
 	const catalog = pkg.getyCatalog;
-	if (catalog?.schemaVersion !== catalogSchemaVersion) {
-		errors.push(
-			`${name}: getyCatalog.schemaVersion must be ${catalogSchemaVersion}`,
-		);
+	if (!Array.isArray(catalog?.connectors)) {
+		errors.push(`${name}: getyCatalog.connectors is missing`);
 	} else if (catalog.connectors.length !== connectorCount) {
 		errors.push(
 			`${name}: getyCatalog lists ${catalog.connectors.length} connectors, expected ${connectorCount}`,
 		);
 	}
-	checkChangelog(name, tarball, pkg.version);
+	if (!tarball.files.has('README.md')) {
+		errors.push(`${name}: README.md is missing`);
+	}
 	checkLicense(name, tarball, pkg);
 	report(name, pkg.version, tarball, `package.json ${size} bytes`);
 }

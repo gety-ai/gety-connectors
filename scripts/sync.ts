@@ -9,13 +9,7 @@
 //   deno task sync:check   fail if anything is out of sync (CI)
 
 import {
-	type Catalog,
-	catalogPackagePath,
-	generateCatalog,
-} from './catalog.ts';
-import {
 	type Connector,
-	equalJson,
 	exists,
 	formatJson,
 	license,
@@ -24,7 +18,6 @@ import {
 	oneLine,
 	packageFiles,
 	type PackageJson,
-	pendingChangesets,
 	readJson,
 	repositoryUrl,
 	setManifestVersion,
@@ -118,18 +111,6 @@ async function syncConnector(
 	}
 }
 
-/**
- * Whether packages/catalog/package.json `getyCatalog` differs from what the
- * connectors generate. Only the version step writes the catalog.
- */
-export async function catalogDrift(): Promise<
-	{ drifted: boolean; generated: Catalog }
-> {
-	const generated = await generateCatalog();
-	const pkg = await readJson<{ getyCatalog?: Catalog }>(catalogPackagePath);
-	return { drifted: !equalJson(pkg.getyCatalog, generated), generated };
-}
-
 if (import.meta.main) {
 	const check = Deno.args.includes('--check');
 	const { outOfSync, errors } = await syncConnectors(!check);
@@ -142,17 +123,6 @@ if (import.meta.main) {
 	} else {
 		for (const file of outOfSync) {
 			console.log(`synced ${file}`);
-		}
-	}
-	if (check && (await catalogDrift()).drifted) {
-		if ((await pendingChangesets()).length === 0) {
-			errors.push(
-				'packages/catalog: connector names, descriptions or icons changed but no changeset is pending, so the catalog would never be republished; add a changeset for the changed connector',
-			);
-		} else {
-			console.log(
-				'packages/catalog: catalog will be regenerated and republished by the next version step',
-			);
 		}
 	}
 	if (errors.length > 0) {

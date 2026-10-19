@@ -138,9 +138,18 @@ upgrading pnpm.)
 npm can only configure a trusted publisher for a package that already exists, so
 the first version of every package is published by a maintainer. Use an npm
 account that owns the `@gety-connectors` org and has two-factor authentication
-enabled.
+enabled. The repository starts with one changeset per connector, which makes the
+first npm release 0.2.0 for every connector (0.1.0 was the pre-npm version from
+the connector's own repository). The catalog keeps its own version and is first
+published at 0.1.0.
 
-1. Build and verify from a clean checkout of `main`:
+1. Push `main`. The release workflow finds the pending changesets and opens the
+   "chore: version packages" pull request (connectors at 0.2.0). Check its
+   CHANGELOG.md, manifest.json and `package.json` changes.
+2. Disable the Release workflow (Actions → Release → Disable workflow), so that
+   merging the pull request does not try to publish packages npm does not know
+   yet, then merge it.
+3. Build and verify from a clean checkout of the merged `main`:
 
    ```sh
    pnpm install --frozen-lockfile
@@ -149,7 +158,7 @@ enabled.
    deno task verify:packs
    ```
 
-2. Publish every package at its current version (0.1.0) and push the tags:
+4. Publish every package at its current version and push the tags:
 
    ```sh
    npm login
@@ -158,9 +167,11 @@ enabled.
    ```
 
    If the one-time password expires partway through, run the command again with
-   a new one; packages already on npm are skipped.
+   a new one; packages already on npm are skipped. Publish with
+   `changeset
+   publish` (pnpm), not `npm publish`, so the LICENSE is packed.
 
-3. For each package (the six connectors and `@gety-connectors/catalog`),
+5. For each package (the six connectors and `@gety-connectors/catalog`),
    configure the trusted publisher and allow it to publish. `npm trust` needs
    npm 11.10 or later and `--allow-publish` needs 11.15 or later, hence
    `npx npm@11`:
@@ -179,12 +190,12 @@ enabled.
    GitHub Actions, organization `gety-ai`, repository `gety-connectors`,
    workflow `release.yml`, no environment) and enable "Allow npm publish".
 
-4. Within two days, validate the setup with a release from CI: merge a pull
+6. Enable the Release workflow again.
+7. Within two days, validate the setup with a release from CI: merge a pull
    request with a changeset for every package (for example a patch "Publish from
    CI with provenance"), then merge the "chore: version packages" pull request
    and check that the release workflow publishes all seven packages.
-
-5. On each package's Settings page, set Publishing access to "Require two-factor
+8. On each package's Settings page, set Publishing access to "Require two-factor
    authentication and disallow tokens", so only the trusted publisher (and
    maintainers with 2FA) can publish.
 

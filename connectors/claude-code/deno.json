@@ -5,7 +5,7 @@
 		"check": "deno task generate && deno check src/index.ts scripts/setup.ts src/gen/manifest.d.ts",
 		"generate": "deno run -A ../../tools/generate-manifest-config.ts",
 		"setup": "deno run -A scripts/setup.ts",
-		"test": "deno test --allow-env --allow-read --allow-write src",
+		"test": "deno test --allow-read --allow-write src",
 		"runner": "deno task build && deno run -A --env-file=.env ../../tools/dev-runner.ts",
 		"fix": "deno task fmt && deno task lint:fix",
 		"fmt": "deno fmt",

@@ -2,7 +2,7 @@
 "@gety-connectors/claude-code": minor
 ---
 
-First release on npm as `@gety-connectors/claude-code`. Changes from the local-folder 0.1.x:
+Changes from the version developed in the connector's former standalone repository, before it moved to gety-connectors:
 
 - Runs sandboxed: it can only read `~/.claude/projects`. Requires a Gety version newer than 0.6.3.
 - The development-only `PROJECTS_DIR` / `GETY_CONFIG_PROJECTS_DIR` overrides are gone, and `HOME` / `USERPROFILE` are no longer read; sessions are found under the home directory Gety passes in.

@@ -2,7 +2,7 @@
 "@gety-connectors/codex": minor
 ---
 
-First release on npm as `@gety-connectors/codex`. Changes from the local-folder 0.1.x:
+Changes from the version developed in the connector's former standalone repository, before it moved to gety-connectors:
 
 - The manifest id is now `codex` (was `codex_sessions`); uninstall the old connector first.
 - Runs sandboxed: it can only read `~/.codex/sessions` and `~/.codex/archived_sessions` (not `auth.json` or the rest of `~/.codex`). Requires a Gety version newer than 0.6.3.

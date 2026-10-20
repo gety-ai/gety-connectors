@@ -2,8 +2,8 @@
 "@gety-connectors/linear": minor
 ---
 
-First release on npm as `@gety-connectors/linear`. Compared with the 0.1.x
-local-folder connector:
+Changes from the version developed in the connector's former standalone
+repository, before it moved to gety-connectors:
 
 - Requires a Gety version newer than 0.6.3 and declares
   `net: ["api.linear.app"]`, so it runs sandboxed instead of with full access.

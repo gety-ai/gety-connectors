@@ -2,7 +2,8 @@
 "@gety-connectors/chrome": minor
 ---
 
-First release on npm as `@gety-connectors/chrome`. Requires Gety 0.7.0.
+First release on npm as `@gety-connectors/chrome`. Requires a Gety version
+newer than 0.6.3.
 
 - Runs sandboxed: reads only the Chrome Default profile directory, resolved
   from the home directory (`LOCALAPPDATA` is no longer read).

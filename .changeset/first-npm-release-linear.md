@@ -5,8 +5,8 @@
 First release on npm as `@gety-connectors/linear`. Compared with the 0.1.x
 local-folder connector:
 
-- Requires Gety 0.7.0 and declares `net: ["api.linear.app"]`, so it runs
-  sandboxed instead of with full access.
+- Requires a Gety version newer than 0.6.3 and declares
+  `net: ["api.linear.app"]`, so it runs sandboxed instead of with full access.
 - Talks to Linear through a small built-in GraphQL client instead of
   `@linear/sdk`; the bundle shrinks from 2.4 MB to under 300 KB.
 - Requests time out after 60 seconds, stop when Gety cancels the poll, and

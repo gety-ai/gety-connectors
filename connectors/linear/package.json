@@ -1,6 +1,6 @@
 {
 	"name": "@gety-connectors/linear",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Indexes Linear issues as searchable markdown documents.",
 	"license": "Apache-2.0",
 	"keywords": [
@@ -26,7 +26,7 @@
 	"gety": {
 		"id": "linear",
 		"name": "Linear",
-		"version": "0.1.0",
+		"version": "0.2.0",
 		"min_gety_app_version": "0.6.3",
 		"entry": "dist/main.js",
 		"icon": "assets/linear.webp",

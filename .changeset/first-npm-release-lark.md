@@ -2,9 +2,10 @@
 "@gety-connectors/lark": minor
 ---
 
-First release on npm as `@gety-connectors/lark`. The manifest id is now `lark`
-(was `feishu`), so existing installs re-index from scratch; it requires Gety
-0.7.0 or newer.
+The manifest id is now `lark` (was `feishu`), so existing installs re-index
+from scratch; it requires a Gety version newer than 0.6.3. Other changes from
+the version developed in the connector's former standalone repository, before
+it moved to gety-connectors:
 
 - Runs sandboxed: the manifest only grants running `lark-cli`, which must be on
   the `PATH` Gety starts with. The `lark_cli_path` setting is removed.

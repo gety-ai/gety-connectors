@@ -200,21 +200,20 @@ upgrading pnpm.)
 ### First publish (bootstrap)
 
 npm can only configure a trusted publisher for a package that already exists, so
-the first version of every package is published by a maintainer: the connectors
-first, then the catalog, which lists them at their npm versions. Use an npm
-account that owns the `@gety-connectors` org and has two-factor authentication
-enabled. The repository starts with one changeset per connector, which makes the
-first npm release 0.2.0 for every connector (0.1.0 was the pre-npm version from
-the connector's own repository). The catalog's first version is 0.1.0.
+a maintainer publishes the first version of every package: the connectors first,
+then the catalog, which lists them at their npm versions. Use an npm account
+that owns the `@gety-connectors` org and has two-factor authentication enabled.
+The first npm version of every connector is 0.1.0, published by hand from `main`
+only to create the package; it carries no provenance. The repository starts with
+one changeset per connector, so the version branch raises the connectors to
+0.2.0, the first release from CI with provenance.
 
-1. Push `main`. The release workflow finds the pending changesets and pushes the
-   version changes to `changeset-release/main` (connectors at 0.2.0). Open the
-   "chore: version packages" pull request from the job summary link and check
-   its CHANGELOG.md, manifest.json and `package.json` changes.
-2. Disable the Release workflow (Actions → Release → Disable workflow), so that
-   merging the pull request does not try to publish packages npm does not know
-   yet, then merge it.
-3. Build and verify from a clean checkout of the merged `main`:
+The Release workflow stays enabled throughout: while changesets are pending, a
+push to `main` only updates `changeset-release/main`, and the publish job skips
+versions already on npm.
+
+1. Build and verify from a clean checkout of `main` (changesets pending,
+   connectors at 0.1.0):
 
    ```sh
    pnpm install --frozen-lockfile
@@ -223,30 +222,31 @@ the connector's own repository). The catalog's first version is 0.1.0.
    deno task verify:packs
    ```
 
-4. Publish every connector at its current version and push the tags (the catalog
-   is `private`, so changesets skips it):
+2. Publish the six connectors at 0.1.0 (the catalog is `private`, so changesets
+   skips it) and push the `<package>@0.1.0` tags that `changeset publish`
+   creates, as the workflow does for its releases:
 
    ```sh
    npm login
    pnpm exec changeset publish --otp <one-time password>
-   git push origin --tags
+   git push origin $(git tag --points-at HEAD)
    ```
 
    If the one-time password expires partway through, run the command again with
    a new one; packages already on npm are skipped. Publish the connectors with
    `changeset publish` (pnpm), not `npm publish`, so the LICENSE is packed.
 
-5. Generate the catalog from the registry and publish it. The command waits
-   until the registry serves every connector at its `package.json` version (its
-   cache can lag a few minutes behind a publish) and fails if one is missing;
-   the directory must not exist yet, and it contains the LICENSE:
+3. Generate the catalog from the registry and publish it at 0.1.0. The command
+   waits until the registry serves every connector at its `package.json` version
+   (its cache can lag a few minutes behind a publish) and fails if one is
+   missing; the directory must not exist yet, and it contains the LICENSE:
 
    ```sh
    deno task catalog --out /tmp/gety-connectors-catalog
    npm publish /tmp/gety-connectors-catalog --otp <one-time password>
    ```
 
-6. For each package (the six connectors and `@gety-connectors/catalog`),
+4. For each package (the six connectors and `@gety-connectors/catalog`),
    configure the trusted publisher and allow it to publish. `npm trust` needs
    npm 11.10 or later and `--allow-publish` needs 11.15 or later, hence
    `npx npm@11`:
@@ -265,15 +265,22 @@ the connector's own repository). The catalog's first version is 0.1.0.
    GitHub Actions, organization `gety-ai`, repository `gety-connectors`,
    workflow `release.yml`, no environment) and enable "Allow npm publish".
 
-7. Enable the Release workflow again.
-8. Within two days, validate the setup with a release from CI: merge a pull
-   request with a changeset for every connector (for example a patch "Publish
-   from CI with provenance"), then merge the "chore: version packages" pull
-   request and check that the release workflow publishes the six connectors and,
-   because their versions changed, catalog 0.1.1.
-9. On each package's Settings page, set Publishing access to "Require two-factor
+5. Within two days of configuring the trusted publishers, merge
+   `changeset-release/main` (connectors at 0.2.0): npm expires a trusted
+   publisher that has not published within two days
+   ([configuration expiry](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry)).
+   GitHub Actions cannot open pull requests in this organization, so open the
+   "chore: version packages" pull request from the link in the summary of the
+   latest Release run on `main`, check its CHANGELOG.md, manifest.json and
+   `package.json` changes, and merge it. The release workflow publishes the six
+   connectors at 0.2.0 and, because their versions changed, catalog 0.1.1. Check
+   on npmjs.com that these versions show provenance.
+6. On each package's Settings page, set Publishing access to "Require two-factor
    authentication and disallow tokens", so only the trusted publisher (and
    maintainers with 2FA) can publish.
+7. Optionally, once 0.2.0 is live, deprecate the bootstrap versions with
+   `npm deprecate @gety-connectors/<short>@0.1.0 "<reason>"`; each call asks for
+   two-factor authentication on the npm website.
 
 ## Adding a connector
 
@@ -286,11 +293,11 @@ the connector's own repository). The catalog's first version is 0.1.0.
    with an entry for that version (copy an existing connector's files); run
    `deno task sync`.
 3. Publish the new package's first version by hand before the next release run
-   (bootstrap steps 3, 4 and 6, for that one package): the release workflow
+   (bootstrap steps 1, 2, 4 and 6, for that one package): the release workflow
    cannot publish a package npm does not know, and its catalog step fails while
    a connector in the repository is not on npm. The catalog lists the new
    connector from the next release on; no catalog changeset is needed. To list
-   it right away, run bootstrap step 5.
+   it right away, run bootstrap step 3.
 
 ## License
 

@@ -134,3 +134,30 @@ export function markdownLink(label: string, url: string | undefined): string {
 	// angle-bracket destination unbreakable regardless.
 	return `[${text}](<${href.replaceAll('<', '%3C').replaceAll('>', '%3E')}>)`;
 }
+
+/**
+ * A Markdown code span (CommonMark 0.31.2 §6.1) that shows `value`
+ * verbatim, so copying the span copies `value`. Backslash escapes do not work
+ * inside a span: the fence is one backtick longer than the longest backtick
+ * run in `value` instead, and a space pads each side when `value` starts or
+ * ends with a backtick, or starts and ends with a space without being all
+ * spaces (the parser strips one space from each side then). Line breaks, which
+ * a span shows as spaces and which could start a new block, become spaces.
+ * Returns `''` for an empty value, which no span can show.
+ */
+export function inlineCode(value: string): string {
+	const text = value.replace(/\r\n?|\n/g, ' ');
+	if (text === '') {
+		return '';
+	}
+	let longest = 0;
+	for (const run of text.match(/`+/g) ?? []) {
+		longest = Math.max(longest, run.length);
+	}
+	const fence = '`'.repeat(longest + 1);
+	const pad = text.startsWith('`') || text.endsWith('`') ||
+			(text.startsWith(' ') && text.endsWith(' ') && !/^ +$/.test(text))
+		? ' '
+		: '';
+	return `${fence}${pad}${text}${pad}${fence}`;
+}

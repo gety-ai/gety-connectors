@@ -50,8 +50,8 @@ export interface CodexSessionListing {
 export interface ParseCodexSessionOptions {
 	includeToolCalls: boolean;
 	/**
-	 * Stop reading once the session's own `session_meta` marks it as a
-	 * subagent session: its content is not needed when subagents are excluded.
+	 * Subagent sessions are not indexed: reading stops once the session's own
+	 * `session_meta` marks it as one.
 	 */
 	skipSubagents?: boolean;
 }
@@ -81,7 +81,10 @@ export interface CodexSession {
 }
 
 export function isIndexableCodexSession(
-	session: CodexSession,
+	session: Pick<
+		CodexSession,
+		'subagent' | 'userMessageCount' | 'codexMessageCount'
+	>,
 	includeSubagents: boolean,
 ): boolean {
 	return (includeSubagents || !session.subagent) &&
@@ -224,14 +227,16 @@ export function groupCodexSessionFiles(
 }
 
 /**
- * Streams the log files of one session, in order, into one session. Errors
- * opening any of them (e.g. `NotFound`) propagate.
+ * Streams the log files of one session, in order, into one session, or into
+ * null when the session is not indexed (see `isIndexableCodexSession`; with
+ * `skipSubagents`, subagent sessions are not): such a session is never
+ * rendered. Errors opening any of the files (e.g. `NotFound`) propagate.
  */
 export async function parseCodexSessionFiles(
 	files: readonly CodexSessionFile[],
 	options: ParseCodexSessionOptions,
 	signal: AbortSignal,
-): Promise<CodexSession> {
+): Promise<CodexSession | null> {
 	const accumulator = emptyAccumulator();
 	for (const file of files) {
 		const records = readJsonl(file.path, {
@@ -243,11 +248,13 @@ export async function parseCodexSessionFiles(
 		for await (const record of records) {
 			applyEvent(accumulator, record as LogEvent, options);
 			if (options.skipSubagents && accumulator.subagent) {
-				return sessionFromAccumulator(accumulator, files);
+				return null;
 			}
 		}
 	}
-	return sessionFromAccumulator(accumulator, files);
+	return isIndexableCodexSession(accumulator, !options.skipSubagents)
+		? sessionFromAccumulator(accumulator, files)
+		: null;
 }
 
 export function parseCodexSessionLines(

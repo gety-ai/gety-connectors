@@ -8,6 +8,7 @@ import {
 	buildCodexSessionUpdate,
 	type CodexSessionFile,
 	isIndexableCodexSession,
+	parseCodexSessionFiles,
 	parseCodexSessionLines,
 } from './codex_log.ts';
 import CodexConnector, {
@@ -278,6 +279,44 @@ Deno.test('isIndexableCodexSession rejects prompt-only sessions', () => {
 	assert.equal(session.userMessageCount, 1);
 	assert.equal(session.codexMessageCount, 0);
 	assert.equal(isIndexableCodexSession(session, false), false);
+});
+
+Deno.test('parseCodexSessionFiles returns null for sessions it does not index', async () => {
+	await withHome(async (home) => {
+		const parse = async (
+			lines: string[],
+			skipSubagents: boolean,
+		) => {
+			const stateKey = 'sessions/2026/06/03/session.jsonl';
+			await writeSession(home, stateKey, lines);
+			const path = join(home, '.codex', stateKey);
+			const { mtime, size } = await Deno.stat(path);
+			return parseCodexSessionFiles(
+				[{ path, stateKey, mtimeMs: mtime?.getTime() ?? 0, size }],
+				{ includeToolCalls: false, skipSubagents },
+				new AbortController().signal,
+			);
+		};
+		const subagent = [
+			jsonLine('session_meta', {
+				id: CHILD_ID,
+				thread_source: 'subagent',
+				source: { subagent: { thread_spawn: { parent_thread_id: PARENT_ID } } },
+			}),
+			...sessionLines(CHILD_ID).slice(1),
+		];
+
+		assert.equal((await parse(sessionLines(PARENT_ID), true))?.id, PARENT_ID);
+		assert.equal(
+			await parse([
+				jsonLine('session_meta', { id: PARENT_ID }),
+				message('user', 'whats 2+2?'),
+			], true),
+			null,
+		);
+		assert.equal(await parse(subagent, true), null);
+		assert.equal((await parse(subagent, false))?.id, CHILD_ID);
+	});
 });
 
 Deno.test('buildCodexSessionUpdate emits stable Gety metadata', () => {

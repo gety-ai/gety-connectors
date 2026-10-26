@@ -9,7 +9,6 @@ import {
 	type CodexSessionGroup,
 	type CodexSessionRoot,
 	groupCodexSessionFiles,
-	isIndexableCodexSession,
 	listCodexSessionFiles,
 	parseCodexSessionFiles,
 	sessionGroupKey,
@@ -103,7 +102,7 @@ export default class CodexConnector extends Connector<
 				continue;
 			}
 
-			let session: CodexSession;
+			let session: CodexSession | null;
 			try {
 				session = await parseCodexSessionFiles(group.files, {
 					includeToolCalls: options.includeToolCalls,
@@ -118,17 +117,13 @@ export default class CodexConnector extends Connector<
 				}
 				throw error;
 			}
-			const indexable = isIndexableCodexSession(
-				session,
-				options.includeSubagents,
-			);
 			for (const file of group.files) {
 				const fingerprint = { mtime_ms: file.mtimeMs, size: file.size };
-				currentFiles[file.stateKey] = indexable
+				currentFiles[file.stateKey] = session != null
 					? { session_id: session.id, ...fingerprint, indexed: true }
 					: { ...fingerprint, indexed: false };
 			}
-			if (indexable) {
+			if (session != null) {
 				currentIndexed.add(session.id);
 				yield { updates: [buildCodexSessionUpdate(session)] };
 			}

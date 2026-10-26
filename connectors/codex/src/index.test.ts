@@ -63,9 +63,15 @@ Deno.test('parseCodexSessionLines builds a clean session doc without tool output
 	assert.equal(session.codexMessageCount, 2);
 	assert.equal(session.toolCallCount, 0);
 	assert.match(session.content, /^# Codex connector design/);
-	assert.match(session.content, /## Session/);
-	assert.match(session.content, /- Workspace: `\/home\/example\/dev\/gety`/);
-	assert.match(session.content, /- Model: `gpt-5\.5`/);
+	assert.match(
+		session.content,
+		new RegExp(
+			'\n## Session\n\n' +
+				'- Session ID: `019e8abc-1234-7abc-8def-123456789abc`\n' +
+				'- Workspace: `/home/example/dev/gety`\n' +
+				'- Model: `gpt-5\\.5`\n',
+		),
+	);
 	assert.doesNotMatch(session.content, /- Started:/);
 	assert.doesNotMatch(session.content, /- Updated:/);
 	assert.doesNotMatch(session.content, /Cwd/);
@@ -103,9 +109,46 @@ Deno.test('parseCodexSessionLines includes tool call summaries when enabled', ()
 
 	assert.equal(session.toolCallCount, 2);
 	assert.match(session.content, /## Tool Calls/);
-	assert.match(session.content, /- exec_command: deno task verify/);
-	assert.match(session.content, /- apply_patch: src\/index\.ts/);
+	assert.match(session.content, /- exec_command: `deno task verify`/);
+	assert.match(session.content, /- apply_patch: `src\/index\.ts`/);
 	assert.doesNotMatch(session.content, /this output is still omitted/);
+});
+
+Deno.test('parseCodexSessionLines renders identifiers as copyable code spans', () => {
+	const session = parseCodexSessionLines(
+		[
+			jsonLine('turn_context', {
+				workspace_roots: ['/tmp/has`tick', '`edge'],
+				model: 'gpt``5',
+			}),
+			message('user', 'Run it.'),
+			functionCall('exec_command', { cmd: 'echo `date`\n  | tee log' }),
+			customToolCall(
+				'apply_patch',
+				'*** Begin Patch\n*** Add File: a`b.ts\n*** Delete File: c.ts\n',
+			),
+			message('assistant', 'Ran.', 'final_answer'),
+		],
+		file,
+		{ includeToolCalls: true },
+	);
+
+	// Without session_meta, the id comes from the file name.
+	assert.match(
+		session.content,
+		new RegExp(
+			'\n- Session ID: `019e8abc-1234-7abc-8def-123456789abc`\n' +
+				'- Workspace:\n' +
+				'  - ``/tmp/has`tick``\n' +
+				'  - `` `edge ``\n' +
+				'- Model: ```gpt``5```\n',
+		),
+	);
+	assert.match(
+		session.content,
+		/\n- exec_command: ``echo `date` \| tee log``\n/,
+	);
+	assert.match(session.content, /\n- apply_patch: ``a`b\.ts``, `c\.ts`$/);
 });
 
 Deno.test('parseCodexSessionLines uses only session, turn and item lines', () => {
@@ -774,7 +817,7 @@ Deno.test('nextState stores sorted file fingerprints, indexed sessions and optio
 			DEFAULT_OPTIONS,
 		),
 		{
-			schema_version: 3,
+			schema_version: 4,
 			include_tool_calls: false,
 			include_archived_sessions: true,
 			include_subagents: false,

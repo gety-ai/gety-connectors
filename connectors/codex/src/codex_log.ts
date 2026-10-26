@@ -6,7 +6,11 @@ import {
 	stringValue,
 } from '@gety-connectors/utils/json';
 import { LINE_PREFIX_BYTES, readJsonl } from '@gety-connectors/utils/jsonl';
-import { clampUtf8, MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
+import {
+	clampUtf8,
+	inlineCode,
+	MAX_CONTENT_BYTES,
+} from '@gety-connectors/utils/text';
 import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -118,6 +122,7 @@ interface ConversationRound {
 }
 
 interface SessionContentMeta {
+	id: string;
 	cwd?: string;
 	workspaceRoots: readonly string[];
 	model?: string;
@@ -305,6 +310,7 @@ function sessionFromAccumulator(
 		Math.max(...files.map((file) => file.mtimeMs)),
 	).toISOString();
 	const contentResult = renderSessionContent(title, accumulator.rounds, {
+		id,
 		cwd: accumulator.cwd,
 		workspaceRoots: accumulator.workspaceRoots,
 		model: accumulator.model,
@@ -783,7 +789,7 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 			? parseJsonObject(input)
 			: undefined;
 		const cmd = stringValue(args?.cmd);
-		return cmd == null ? name : `${name}: ${oneLine(cmd)}`;
+		return cmd == null ? name : `${name}: ${inlineCode(oneLine(cmd))}`;
 	}
 
 	if (name === 'apply_patch') {
@@ -791,7 +797,7 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 		const files = [
 			...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm),
 		]
-			.map((match) => match[1].trim())
+			.map((match) => inlineCode(match[1].trim()))
 			.slice(0, 3);
 		return files.length === 0 ? name : `${name}: ${files.join(', ')}`;
 	}
@@ -853,19 +859,24 @@ function renderSessionContent(
 function renderSessionMeta(meta: SessionContentMeta): string[] {
 	const lines: string[] = [];
 
+	// What `codex resume` takes, to search for and to copy.
+	if (meta.id !== '') {
+		lines.push(`- Session ID: ${inlineCode(meta.id)}`);
+	}
+
 	if (meta.workspaceRoots.length === 1) {
-		lines.push(`- Workspace: \`${meta.workspaceRoots[0]}\``);
+		lines.push(`- Workspace: ${inlineCode(meta.workspaceRoots[0])}`);
 	} else if (meta.workspaceRoots.length > 1) {
 		lines.push(
 			'- Workspace:',
-			...meta.workspaceRoots.map((root) => `  - \`${root}\``),
+			...meta.workspaceRoots.map((root) => `  - ${inlineCode(root)}`),
 		);
 	} else if (meta.cwd != null) {
-		lines.push(`- Directory: \`${meta.cwd}\``);
+		lines.push(`- Directory: ${inlineCode(meta.cwd)}`);
 	}
 
 	if (meta.model != null) {
-		lines.push(`- Model: \`${meta.model}\``);
+		lines.push(`- Model: ${inlineCode(meta.model)}`);
 	}
 
 	return lines;

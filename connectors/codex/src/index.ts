@@ -38,7 +38,8 @@ export interface CodexOptions {
 	includeSubagents: boolean;
 }
 
-const STATE_SCHEMA_VERSION = 3;
+/** A state of another version re-renders every session (see initialState). */
+const STATE_SCHEMA_VERSION = 4;
 
 export default class CodexConnector extends Connector<
 	ManifestConfig,

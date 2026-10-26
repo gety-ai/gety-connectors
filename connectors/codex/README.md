@@ -11,7 +11,10 @@ markdown documents.
   change to any of them rebuilds it from all of them.
 - Uses the session summary as the title when available, otherwise falls back to
   the first user prompt.
-- Adds a short session block with workspace roots and model when available.
+- Adds a short session block with the session id (what `codex resume` takes), so
+  searching for an id finds its session, and, when available, workspace roots
+  and model. Each value is a code span that copies exactly, and so are the
+  commands and file names in tool call summaries.
 - Indexes user messages and Codex final answers.
 - Skips prompt-only sessions that do not have a Codex final answer. This applies
   to the merged segments: if removing a segment leaves a session without a Codex

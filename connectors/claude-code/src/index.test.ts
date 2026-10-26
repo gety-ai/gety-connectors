@@ -14,7 +14,7 @@ type Update = PollResult['updates'][number];
 
 /** A state that has indexed one session, so a wrongful sweep would show. */
 const KNOWN_SESSION_STATE = {
-	schema_version: 1,
+	schema_version: 2,
 	files: {
 		'project/session.jsonl': {
 			mtime: 1,
@@ -194,10 +194,16 @@ Deno.test('buildDocFromRecords builds a markdown doc with only user/assistant te
 
 	const content = doc.content ?? '';
 	assert.match(content, /^# Plan a trip/);
-	assert.match(content, /## Session/);
-	assert.match(content, /- Project: `\/data\/projects\/myproject`/);
-	assert.match(content, /- Model: `Claude Opus 4.8`/);
-	assert.match(content, /- Git branch: `main`/);
+	assert.match(
+		content,
+		new RegExp(
+			'\n## Session\n\n' +
+				'- Session ID: `s1`\n' +
+				'- Project: `/data/projects/myproject`\n' +
+				'- Model: Claude Opus 4\\.8 \\(`claude-opus-4-8`\\)\n' +
+				'- Git branch: `main`\n',
+		),
+	);
 	assert.match(content, /## User/);
 	assert.match(content, /Where should I go\?/);
 	assert.match(content, /## Claude Code/);
@@ -348,8 +354,62 @@ Deno.test('buildDocFromRecords preserves slash-command arguments as user input',
 	);
 	assert.match(doc.content ?? '', /会不会影响 fix\/dev-494\/docx-ocr 分支/);
 	assert.match(doc.content ?? '', /## Claude Code\n\n我会 review 当前分支。/);
-	assert.doesNotMatch(doc.content ?? '', /command-name/);
-	assert.doesNotMatch(doc.content ?? '', /command-args/);
+	// The session id `s-command-args` is listed; the wrapper tags are not.
+	assert.doesNotMatch(doc.content ?? '', /<\/?command-name>/);
+	assert.doesNotMatch(doc.content ?? '', /<\/?command-args>/);
+});
+
+Deno.test('buildDocFromRecords renders identifiers as copyable code spans', async () => {
+	const records = (model: string) => [
+		{
+			type: 'user',
+			sessionId: 'id`1',
+			cwd: '/tmp/has`tick',
+			gitBranch: 'feat/`x`',
+			timestamp: '2026-03-03T00:00:00Z',
+			message: {
+				role: 'user',
+				content: '<command-name>/run`x`</command-name>\n' +
+					'<command-args>Go.</command-args>',
+			},
+		},
+		{
+			type: 'assistant',
+			sessionId: 'id`1',
+			timestamp: '2026-03-03T00:01:00Z',
+			message: { role: 'assistant', model, content: 'Done.' },
+		},
+	];
+	const render = async (model: string) => {
+		const doc = await buildDocFromRecords(records(model), {
+			relPath: 'p/s-spans.jsonl',
+			fileName: 's-spans.jsonl',
+			fileSize: 10,
+			fileMtime: 0,
+		});
+		assert.ok(doc);
+		return doc;
+	};
+
+	const doc = await render('claude-sonnet-4-5-20250929');
+	// A backslash does not escape a backtick inside a span: longer fences do.
+	assert.match(
+		doc.content ?? '',
+		new RegExp(
+			'\n## Session\n\n' +
+				'- Session ID: ``id`1``\n' +
+				'- Project: ``/tmp/has`tick``\n' +
+				'- Model: Claude Sonnet 4\\.5 \\(`claude-sonnet-4-5-20250929`\\)\n' +
+				'- Git branch: `` feat/`x` ``\n',
+		),
+	);
+	assert.match(doc.content ?? '', /## User\n\nCommand: `` \/run`x` ``\n\nGo\./);
+	assert.equal(doc.title, 'Go.');
+	// Without a readable name, or with an odd one, the id stands alone.
+	for (const model of ['<synthetic>', 'claude-*x*']) {
+		const content = (await render(model)).content ?? '';
+		assert.ok(content.includes(`\n- Model: \`${model}\`\n`), content);
+	}
 });
 
 Deno.test('buildDocFromRecords skips sessions without user text', async () => {
@@ -470,9 +530,9 @@ Deno.test('buildDocFromRecords renders Codex-style session and round sections', 
 	assert.ok(doc);
 	const content = doc.content ?? '';
 	assert.match(content, /^# First question/);
-	assert.match(content, /## Session/);
+	assert.match(content, /## Session\n\n- Session ID: `s6`\n/);
 	assert.match(content, /- Project: `\/tmp\/proj6`/);
-	assert.match(content, /- Model: `Claude Opus 4.8`/);
+	assert.match(content, /- Model: Claude Opus 4\.8 \(`claude-opus-4-8`\)/);
 	assert.match(content, /- Git branch: `feature`/);
 	assert.match(
 		content,
@@ -577,7 +637,7 @@ Deno.test('pollClaudeCode indexes, skips unchanged, updates on change, deletes o
 	const fourth = await collect(pollClaudeCode(config, stateAfterThird, signal));
 	assert.deepEqual(fourth, [{
 		updates: [{ kind: 'delete', id: docId }],
-		state: { schema_version: 1, files: {} },
+		state: { schema_version: 2, files: {} },
 	}]);
 
 	await Deno.remove(tmp, { recursive: true });
@@ -934,6 +994,38 @@ Deno.test('pollClaudeCode re-indexes every file once after a legacy state', asyn
 	await Deno.remove(tmp, { recursive: true });
 });
 
+Deno.test('pollClaudeCode re-indexes after an older schema and still deletes gone files', async () => {
+	const tmp = await Deno.makeTempDir();
+	const projectDir = `${tmp}/project`;
+	await Deno.mkdir(projectDir, { recursive: true });
+	const filePath = `${projectDir}/session.jsonl`;
+	await Deno.writeTextFile(filePath, jsonl(exchange('s', 'Prompt', 'Answer')));
+	const stat = await Deno.stat(filePath);
+	const config = { root: tmp, homeDir: '', includeSubagents: false };
+	const signal = new AbortController().signal;
+
+	// Unchanged file, but rendered by an older version; the other one is gone.
+	const olderState = {
+		schema_version: 1,
+		files: {
+			'project/session.jsonl': {
+				mtime: stat.mtime?.getTime() ?? 0,
+				size: stat.size ?? 0,
+				docId: 'claude-code:session',
+			},
+			'project/gone.jsonl': { mtime: 1, size: 1, docId: 'claude-code:gone' },
+		},
+	};
+	const results = await collect(pollClaudeCode(config, olderState, signal));
+	const updates = results.flatMap((result) => result.updates);
+	assert.deepEqual(updates.map((update) => update.kind), ['upsert', 'delete']);
+	assert.deepEqual(updates[1], { kind: 'delete', id: 'claude-code:gone' });
+	const state = results.at(-1)?.state as { schema_version: number };
+	assert.equal(state.schema_version, 2);
+
+	await Deno.remove(tmp, { recursive: true });
+});
+
 Deno.test('pollClaudeCode deletes missing files after a complete scan', async () => {
 	const tmp = await Deno.makeTempDir();
 	const projectDir = `${tmp}/project`;
@@ -1130,6 +1222,48 @@ Deno.test('pollClaudeCode keeps sessions whose file vanished before it was read'
 	await Deno.remove(tmp, { recursive: true });
 });
 
+Deno.test('pollClaudeCode re-renders files an incomplete schema upgrade missed', async () => {
+	const tmp = await Deno.makeTempDir();
+	await Deno.writeTextFile(`${tmp}/a.jsonl`, jsonl(exchange('a', 'A1', 'r')));
+	await Deno.writeTextFile(`${tmp}/b.jsonl`, jsonl(exchange('b', 'B1', 'r')));
+	const config = { root: tmp, homeDir: '', includeSubagents: false };
+	const signal = new AbortController().signal;
+	// Gety keeps the committed state when a poll yields none.
+	const committed = (results: PollResult[], previous: unknown) =>
+		results.findLast((result) => result.state !== undefined)?.state ??
+			previous;
+	const upserted = (results: PollResult[]) =>
+		results.flatMap((result) => result.updates).flatMap((update) =>
+			update.kind === 'upsert' ? [update.doc.content ?? ''] : []
+		).sort();
+	const first = await collect(pollClaudeCode(config, null, signal));
+	// The same files, indexed by the previous schema.
+	const older = { ...(committed(first, null) as object), schema_version: 1 };
+
+	// b.jsonl cannot be read during the upgrade poll.
+	const partial = await withFileReadSpy((path) => {
+		if (path.endsWith('b.jsonl')) throw new Deno.errors.NotFound(path);
+	}, () => collect(pollClaudeCode(config, older, signal)));
+	assert.equal(upserted(partial).length, 1);
+	assert.equal(partial.some((result) => result.state !== undefined), false);
+
+	// The next complete poll renders both files the current way.
+	const retry = await collect(
+		pollClaudeCode(config, committed(partial, older), signal),
+	);
+	const contents = upserted(retry);
+	assert.equal(contents.length, 2);
+	assert.match(contents[0], /- Session ID: `a`/);
+	assert.match(contents[1], /- Session ID: `b`/);
+
+	// After that the files are current.
+	const unchanged = await collect(
+		pollClaudeCode(config, committed(retry, older), signal),
+	);
+	assert.deepEqual(unchanged.flatMap((result) => result.updates), []);
+	await Deno.remove(tmp, { recursive: true });
+});
+
 Deno.test('pollClaudeCode deletes an emptied session only after a complete poll', async () => {
 	const tmp = await Deno.makeTempDir();
 	await Deno.writeTextFile(`${tmp}/a.jsonl`, jsonl(exchange('a', 'A1', 'r')));
@@ -1184,8 +1318,9 @@ Deno.test('pollClaudeCode deletes an emptied session only after a complete poll'
 });
 
 Deno.test('buildDocFromRecords keeps whole rounds within the UTF-8 byte budget', async () => {
-	// Title `q`, no session block: everything before the answer is fixed.
-	const prefix = '# q\n\n---\n\n## User\n\nq\n\n## Claude Code\n\n';
+	// Title `q` and session id `s`: everything before the answer is fixed.
+	const header = '# q\n\n## Session\n\n- Session ID: `s`';
+	const prefix = `${header}\n\n---\n\n## User\n\nq\n\n## Claude Code\n\n`;
 	const fits = MAX_CONTENT_BYTES - new TextEncoder().encode(prefix).length;
 	const options = {
 		relPath: 'p/s.jsonl',
@@ -1208,7 +1343,7 @@ Deno.test('buildDocFromRecords keeps whole rounds within the UTF-8 byte budget',
 		exchange('s', 'q', 'x'.repeat(fits + 1)),
 		options,
 	);
-	assert.equal(over?.content, '# q');
+	assert.equal(over?.content, header);
 	assert.equal(metadataOf(over).truncated, true);
 
 	// Three-byte characters: fewer UTF-16 units than the budget, more bytes.

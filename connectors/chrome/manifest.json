@@ -1,7 +1,7 @@
 {
 	"id": "chrome",
 	"name": "Google Chrome",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"min_gety_app_version": "0.6.5",
 	"entry": "dist/main.js",
 	"icon": "assets/chrome.svg",

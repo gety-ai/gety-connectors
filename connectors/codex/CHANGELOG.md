@@ -1,5 +1,34 @@
 # @gety-connectors/codex
 
+## 0.3.0
+
+### Minor Changes
+
+- 5e89cfd: Session documents now list the session id (what `codex resume` takes), so
+  searching for an id finds its session. The id, workspace roots, model, and the
+  commands and file names in tool call summaries are code spans that copy exactly,
+  even when they contain backticks. Existing sessions are re-indexed once in the
+  new format.
+- 261547f: The manifest id is restored to `codex_sessions` (0.1.x and 0.2.x used
+  `codex`), so a Codex connector installed from the old `gety-codex-connector`
+  repository is recognized as already installed instead of being installed a
+  second time and indexing every session again. If you installed 0.1.x or 0.2.x
+  of this package, remove that connector in Gety and install this version again:
+  Gety treats the `codex` id as a different connector.
+
+### Patch Changes
+
+- 2da5aa2: Requires Gety 0.6.5 or newer. Gety 0.6.3 and 0.6.4 cannot read the
+  `permissions` field this connector's manifest declares.
+- 8e42d41: A poll that finds no session changed no longer sends the whole connector state
+  back to Gety (about 4 MB for 26,000 session logs), so polls of an unchanged
+  Codex history finish sooner.
+- 5914195: Indexing session logs takes about half as long: tool output, reasoning and
+  event lines are recognized from their first bytes and skipped without being
+  decoded. The indexed documents are unchanged.
+- 1e3bfae: Listing the session logs takes less time on every poll: each file is stat'ed
+  directly instead of through a round trip to a worker thread.
+
 ## 0.2.0
 
 ### Minor Changes

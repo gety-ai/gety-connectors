@@ -1,5 +1,23 @@
 # @gety-connectors/claude-code
 
+## 0.3.0
+
+### Minor Changes
+
+- 92000e7: Session documents now list the session id (what `claude --resume` takes), so
+  searching for an id finds its session. The id, project, model, git branch, and
+  slash command names are code spans that copy exactly, even when they contain
+  backticks; the model keeps its readable name in front. Existing sessions are
+  re-indexed once in the new format, and files deleted meanwhile are still
+  removed.
+
+### Patch Changes
+
+- 2da5aa2: Requires Gety 0.6.5 or newer. Gety 0.6.3 and 0.6.4 cannot read the
+  `permissions` field this connector's manifest declares.
+- 1e3bfae: Listing the session files takes less time on every poll: each file is stat'ed
+  directly instead of through a round trip to a worker thread.
+
 ## 0.2.0
 
 ### Minor Changes

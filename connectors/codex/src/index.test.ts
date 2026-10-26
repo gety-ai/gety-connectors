@@ -756,21 +756,21 @@ async function withOpenSpy<T>(
 	}
 }
 
-/** Runs `fn` with `Deno.stat` reporting each path to `onStat` first. */
+/** Runs `fn` with `Deno.statSync` reporting each path to `onStat` first. */
 async function withStatSpy<T>(
 	onStat: (path: string) => void,
 	fn: () => Promise<T>,
 ): Promise<T> {
-	const deno = Deno as { stat: typeof Deno.stat };
-	const stat = deno.stat;
-	deno.stat = (path) => {
+	const deno = Deno as { statSync: typeof Deno.statSync };
+	const statSync = deno.statSync;
+	deno.statSync = (path) => {
 		onStat(String(path));
-		return stat(path);
+		return statSync(path);
 	};
 	try {
 		return await fn();
 	} finally {
-		deno.stat = stat;
+		deno.statSync = statSync;
 	}
 }
 

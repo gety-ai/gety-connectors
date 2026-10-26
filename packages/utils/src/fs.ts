@@ -32,7 +32,7 @@ export interface WalkResult {
 /** File system calls used by `walkFiles`; replaceable in tests. */
 export interface WalkFs {
 	readDir(path: string): AsyncIterable<Deno.DirEntry>;
-	stat(path: string): Promise<Deno.FileInfo>;
+	stat(path: string): Deno.FileInfo;
 }
 
 export interface WalkOptions {
@@ -41,13 +41,16 @@ export interface WalkOptions {
 	/** Directories to enter, by `relPath`; default: all. */
 	descend?: (relPath: string) => boolean;
 	signal: AbortSignal;
-	/** Test seam; defaults to `Deno.readDir`/`Deno.stat`. */
+	/** Test seam; defaults to `Deno.readDir`/`Deno.statSync`. */
 	fs?: WalkFs;
 }
 
 const denoFs: WalkFs = {
 	readDir: (path) => Deno.readDir(path),
-	stat: (path) => Deno.stat(path),
+	// `Deno.stat` makes a round trip through the blocking thread pool per file:
+	// over 25,800 files that took 184 ms, `Deno.statSync` 27 ms. A local stat
+	// blocks the event loop for microseconds.
+	stat: (path) => Deno.statSync(path),
 };
 
 /**
@@ -81,7 +84,7 @@ export async function walkFiles(
 						await walk(absPath, relPath);
 					}
 				} else if (entry.isFile && include(relPath)) {
-					const info = await statFile(absPath);
+					const info = statFile(absPath);
 					if (info !== undefined) {
 						files.push({
 							absPath,
@@ -103,9 +106,9 @@ export async function walkFiles(
 		}
 	};
 
-	const statFile = async (path: string): Promise<Deno.FileInfo | undefined> => {
+	const statFile = (path: string): Deno.FileInfo | undefined => {
 		try {
-			return await fs.stat(path);
+			return fs.stat(path);
 		} catch (error) {
 			if (!(error instanceof Deno.errors.NotFound)) {
 				throw error;

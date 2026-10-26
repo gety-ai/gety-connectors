@@ -27,7 +27,7 @@ function hookedFs(hooks: {
 		},
 		stat: (path) => {
 			hooks.stat?.(path);
-			return Deno.stat(path);
+			return Deno.statSync(path);
 		},
 	};
 }

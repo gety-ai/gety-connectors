@@ -332,11 +332,12 @@ async function catalogEntry(
 	if (!manifest.icon) {
 		throw new Error(`${connector.packageName}: manifest.json has no icon`);
 	}
+	const icon = new URL(manifest.icon, connector.dir);
 	return {
 		package: connector.packageName,
 		name: manifest.name,
 		description: oneLine(manifest.description),
-		icon: await iconDataUrl(new URL(manifest.icon, connector.dir)),
+		icon: iconDataUrl(icon.pathname, await Deno.readFile(icon)),
 	};
 }
 
@@ -346,30 +347,33 @@ const iconMimeTypes: Record<string, string> = {
 	webp: 'image/webp',
 };
 
-async function iconDataUrl(path: URL): Promise<string> {
-	const extension = path.pathname.split('.').pop()?.toLowerCase() ?? '';
+/**
+ * The catalog's `data:` URL for the icon file `file` (its path, which gives
+ * the type and names it in errors) with the content `bytes`.
+ */
+function iconDataUrl(file: string, bytes: Uint8Array): string {
+	const extension = file.split('.').pop()?.toLowerCase() ?? '';
 	const mimeType = iconMimeTypes[extension];
 	if (!mimeType) {
-		throw new Error(`${path.pathname}: icon must be SVG, PNG or WebP`);
+		throw new Error(`${file}: icon must be SVG, PNG or WebP`);
 	}
-	let bytes: Uint8Array = await Deno.readFile(path);
 	if (mimeType === 'image/png') {
 		const image = decode(bytes);
 		if (image.width > catalogIconSize || image.height > catalogIconSize) {
-			bytes = encode(downscale(path, image), { zlib: { level: 9 } });
+			bytes = encode(downscale(file, image), { zlib: { level: 9 } });
 		}
 	} else if (mimeType === 'image/webp') {
 		// There is no WebP encoder here to downscale with; authors pre-size them.
-		const { width, height } = webpDimensions(path, bytes);
+		const { width, height } = webpDimensions(file, bytes);
 		if (width > catalogIconSize || height > catalogIconSize) {
 			throw new Error(
-				`${path.pathname}: WebP icon is ${width}x${height}; WebP icons must be at most ${catalogIconSize}x${catalogIconSize} (larger PNGs are downscaled)`,
+				`${file}: WebP icon is ${width}x${height}; WebP icons must be at most ${catalogIconSize}x${catalogIconSize} (larger PNGs are downscaled)`,
 			);
 		}
 	}
 	if (bytes.length > maxIconBytes) {
 		throw new Error(
-			`${path.pathname}: icon is ${bytes.length} bytes in the catalog, more than ${maxIconBytes}; use an SVG or a smaller image`,
+			`${file}: icon is ${bytes.length} bytes in the catalog, more than ${maxIconBytes}; use an SVG or a smaller image`,
 		);
 	}
 	return `data:${mimeType};base64,${encodeBase64(bytes)}`;
@@ -381,7 +385,7 @@ async function iconDataUrl(path: URL): Promise<string> {
  * (https://developers.google.com/speed/webp/docs/riff_container).
  */
 export function webpDimensions(
-	path: URL,
+	file: string,
 	bytes: Uint8Array,
 ): { width: number; height: number } {
 	const ascii = (start: number, end: number) =>
@@ -411,7 +415,7 @@ export function webpDimensions(
 			height: uint24(28) & 0x3fff,
 		};
 	}
-	throw new Error(`${path.pathname}: not a WebP file with a readable size`);
+	throw new Error(`${file}: not a WebP file with a readable size`);
 }
 
 /**
@@ -420,11 +424,11 @@ export function webpDimensions(
  * output byte-identical on every machine, so an unchanged catalog compares
  * equal to the published one and is not republished.
  */
-function downscale(path: URL, source: DecodedPng): ImageData {
+function downscale(file: string, source: DecodedPng): ImageData {
 	const channels = source.channels;
 	if (source.depth !== 8 || (channels !== 3 && channels !== 4)) {
 		throw new Error(
-			`${path.pathname}: icons larger than ${catalogIconSize}px must be 8-bit RGB or RGBA PNGs`,
+			`${file}: icons larger than ${catalogIconSize}px must be 8-bit RGB or RGBA PNGs`,
 		);
 	}
 	const scale = catalogIconSize / Math.max(source.width, source.height);

@@ -300,7 +300,7 @@ function webpVp8x(width: number, height: number): Uint8Array {
 	]);
 }
 
-const webpPath = new URL('file:///icon.webp');
+const webpPath = 'icon.webp';
 
 Deno.test('webpDimensions reads VP8X, VP8L and VP8 headers', () => {
 	assert.deepEqual(webpDimensions(webpPath, webpVp8x(300, 200)), {

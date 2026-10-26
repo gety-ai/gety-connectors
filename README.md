@@ -21,7 +21,8 @@ A connector's directory name is its short name, and both its npm package name
 `packages/catalog` is `@gety-connectors/catalog`, the generated list of these
 connectors and of the community connectors registered in `community/` (name,
 description, icon, registered npm version) that Gety's connector gallery reads;
-see [its README](packages/catalog/README.md).
+see [its README](packages/catalog/README.md). To list your own connector there,
+see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `packages/utils` (`@gety-connectors/utils`) and `packages/testing`
 (`@gety-connectors/testing`) are workspace-only Deno packages, never published:

@@ -14,4 +14,6 @@ fields:
 ```
 
 `deno task community:check` checks every registration on each pull request, and
-the release workflow lists them in `@gety-connectors/catalog`.
+the release workflow lists them in `@gety-connectors/catalog`. How to register a
+connector, what the check verifies, and how to upgrade or remove a registration:
+[CONTRIBUTING.md](../CONTRIBUTING.md).

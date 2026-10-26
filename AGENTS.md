@@ -12,7 +12,8 @@ full picture (layout, release flow, bootstrap).
   only and `private`.
 - `community/`: one registration file `<manifest id>.json` per community
   connector listed in the catalog (`package`, exact `version`, `author.github`),
-  plus a README.md.
+  plus a README.md. `CONTRIBUTING.md` is the authors' guide to registering; keep
+  it in step with the checks in `scripts/catalog.ts`.
 - `packages/utils/` (`@gety-connectors/utils`) and `packages/testing/`
   (`@gety-connectors/testing`): private Deno workspace packages without a
   `package.json`; never published. Connectors import utils by subpath and bundle

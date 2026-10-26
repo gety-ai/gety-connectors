@@ -32,8 +32,11 @@ export interface SyncResult {
 
 export async function syncConnectors(write: boolean): Promise<SyncResult> {
 	const result: SyncResult = { outOfSync: [], errors: [] };
+	// Manifest id -> the connector that declares it. Gety identifies an
+	// installed connector by this id, so two connectors must never share one.
+	const manifestIds = new Map<string, string>();
 	for (const connector of await listConnectors()) {
-		await syncConnector(connector, write, result);
+		await syncConnector(connector, write, result, manifestIds);
 	}
 	return result;
 }
@@ -42,6 +45,7 @@ async function syncConnector(
 	connector: Connector,
 	write: boolean,
 	result: SyncResult,
+	manifestIds: Map<string, string>,
 ): Promise<void> {
 	const label = `connectors/${connector.short}`;
 	const manifestPath = new URL('manifest.json', connector.dir);
@@ -55,9 +59,12 @@ async function syncConnector(
 	const syncedManifestText = setManifestVersion(manifestText, pkg.version);
 	const manifest = JSON.parse(syncedManifestText) as Manifest;
 
-	if (manifest.id !== connector.short) {
+	const idOwner = manifestIds.get(manifest.id);
+	if (idOwner === undefined) {
+		manifestIds.set(manifest.id, label);
+	} else {
 		result.errors.push(
-			`${label}/manifest.json: id must be "${connector.short}", the directory and package short name`,
+			`${label}/manifest.json: id "${manifest.id}" is already used by ${idOwner}`,
 		);
 	}
 	if (pkg.name !== connector.packageName) {

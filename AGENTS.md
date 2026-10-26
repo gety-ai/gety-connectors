@@ -58,6 +58,12 @@ sandbox and state semantics (`-- --help` lists its options).
   `package.json` `version`; `deno task sync` derives the rest from
   `manifest.json`. After editing a `manifest.json`, run `deno task sync` and
   commit both files.
+- **Manifest ids**: Gety identifies an installed connector by its manifest `id`,
+  so never change a published one (a new id installs as a second connector and
+  re-indexes everything). Codex and Feishu keep the ids `codex_sessions` and
+  `feishu` of the standalone repositories they came from; the id need not match
+  the directory or package short name. `sync:check` only requires ids to be
+  unique.
 - **Changesets**: every change to what a package ships (source, manifest, icon,
   README content users see) needs a changeset in `.changeset/`
   (`pnpm changeset`, or write the file: front matter
@@ -89,8 +95,8 @@ sandbox and state semantics (`-- --help` lists its options).
   in their own `deno.json`; esbuild bundles them. Do not add npm dependencies to
   any `package.json` (the root one only holds `@changesets/cli`). After
   dependency changes, commit the updated root `deno.lock`.
-- **Adding a connector**: add it to `workspace` in `deno.json`, set its manifest
-  `id` to the directory name (`sync:check` enforces it), give it a
+- **Adding a connector**: add it to `workspace` in `deno.json`, give its
+  manifest a unique `id` (`sync:check` enforces uniqueness), give it a
   `package.json` and `CHANGELOG.md` like the others and run `deno task sync`.
   Its first npm publish is manual and must precede the next release run, whose
   catalog step fails while a connector is not on npm (README, "Adding a

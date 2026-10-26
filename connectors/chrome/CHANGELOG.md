@@ -1,5 +1,12 @@
 # @gety-connectors/chrome
 
+## 0.2.1
+
+### Patch Changes
+
+- 2da5aa2: Requires Gety 0.6.5 or newer. Gety 0.6.3 and 0.6.4 cannot read the
+  `permissions` field this connector's manifest declares.
+
 ## 0.2.0
 
 ### Minor Changes

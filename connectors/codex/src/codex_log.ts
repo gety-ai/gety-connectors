@@ -5,8 +5,12 @@ import {
 	parseJsonObject,
 	stringValue,
 } from '@gety-connectors/utils/json';
-import { readJsonl } from '@gety-connectors/utils/jsonl';
-import { clampUtf8, MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
+import { LINE_PREFIX_BYTES, readJsonl } from '@gety-connectors/utils/jsonl';
+import {
+	clampUtf8,
+	inlineCode,
+	MAX_CONTENT_BYTES,
+} from '@gety-connectors/utils/text';
 import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -50,8 +54,8 @@ export interface CodexSessionListing {
 export interface ParseCodexSessionOptions {
 	includeToolCalls: boolean;
 	/**
-	 * Stop reading once the session's own `session_meta` marks it as a
-	 * subagent session: its content is not needed when subagents are excluded.
+	 * Subagent sessions are not indexed: reading stops once the session's own
+	 * `session_meta` marks it as one.
 	 */
 	skipSubagents?: boolean;
 }
@@ -81,7 +85,10 @@ export interface CodexSession {
 }
 
 export function isIndexableCodexSession(
-	session: CodexSession,
+	session: Pick<
+		CodexSession,
+		'subagent' | 'userMessageCount' | 'codexMessageCount'
+	>,
 	includeSubagents: boolean,
 ): boolean {
 	return (includeSubagents || !session.subagent) &&
@@ -115,6 +122,7 @@ interface ConversationRound {
 }
 
 interface SessionContentMeta {
+	id: string;
 	cwd?: string;
 	workspaceRoots: readonly string[];
 	model?: string;
@@ -224,28 +232,34 @@ export function groupCodexSessionFiles(
 }
 
 /**
- * Streams the log files of one session, in order, into one session. Errors
- * opening any of them (e.g. `NotFound`) propagate.
+ * Streams the log files of one session, in order, into one session, or into
+ * null when the session is not indexed (see `isIndexableCodexSession`; with
+ * `skipSubagents`, subagent sessions are not): such a session is never
+ * rendered. Errors opening any of the files (e.g. `NotFound`) propagate.
  */
 export async function parseCodexSessionFiles(
 	files: readonly CodexSessionFile[],
 	options: ParseCodexSessionOptions,
 	signal: AbortSignal,
-): Promise<CodexSession> {
+): Promise<CodexSession | null> {
 	const accumulator = emptyAccumulator();
 	for (const file of files) {
 		const records = readJsonl(file.path, {
 			signal,
+			linePrefix: (bytes, start, end) =>
+				lineVerdict(bytes, start, end, options),
 			prefilter: (line) => shouldParseLine(line, options),
 		});
 		for await (const record of records) {
 			applyEvent(accumulator, record as LogEvent, options);
 			if (options.skipSubagents && accumulator.subagent) {
-				return sessionFromAccumulator(accumulator, files);
+				return null;
 			}
 		}
 	}
-	return sessionFromAccumulator(accumulator, files);
+	return isIndexableCodexSession(accumulator, !options.skipSubagents)
+		? sessionFromAccumulator(accumulator, files)
+		: null;
 }
 
 export function parseCodexSessionLines(
@@ -296,6 +310,7 @@ function sessionFromAccumulator(
 		Math.max(...files.map((file) => file.mtimeMs)),
 	).toISOString();
 	const contentResult = renderSessionContent(title, accumulator.rounds, {
+		id,
 		cwd: accumulator.cwd,
 		workspaceRoots: accumulator.workspaceRoots,
 		model: accumulator.model,
@@ -368,10 +383,177 @@ function parseRelevantLine(
 	line: string,
 	options: ParseCodexSessionOptions,
 ): LogEvent | null {
-	if (!shouldParseLine(line, options)) {
+	// The decision readJsonl makes in parseCodexSessionFiles.
+	const bytes = encoder.encode(line);
+	const verdict = lineVerdict(
+		bytes,
+		0,
+		Math.min(bytes.length, LINE_PREFIX_BYTES),
+		options,
+	);
+	if (
+		verdict === false ||
+		(verdict === undefined && !shouldParseLine(line, options))
+	) {
 		return null;
 	}
 	return (parseJsonObject(line) as LogEvent | undefined) ?? null;
+}
+
+const encoder = new TextEncoder();
+const QUOTE = 0x22;
+const BACKSLASH = 0x5c;
+const OPEN_BRACE = 0x7b;
+const CLOSE_BRACE = 0x7d;
+const OPEN_BRACKET = 0x5b;
+const CLOSE_BRACKET = 0x5d;
+/** After the opening quote of a `type` key, up to its string value. */
+const TYPE_KEY = encoder.encode('type":"');
+/** After a `response_item` value, up to the payload's own type value. */
+const PAYLOAD_TYPE = encoder.encode(',"payload":{"type":"');
+const SESSION_META = encoder.encode('session_meta');
+const TURN_CONTEXT = encoder.encode('turn_context');
+const RESPONSE_ITEM = encoder.encode('response_item');
+const MESSAGE = encoder.encode('message');
+const FUNCTION_CALL = encoder.encode('function_call');
+const CUSTOM_TOOL_CALL = encoder.encode('custom_tool_call');
+
+/**
+ * Whether `applyEvent` can use a log line, judged from its first bytes
+ * `bytes[start..end)` before it is decoded (see `LinePrefixFilter`). Codex
+ * writes every line as `{"timestamp":…,"type":"<kind>","payload":{"type":…`.
+ * `session_meta` and `turn_context` lines are used, and so are
+ * `response_item` lines whose payload is a message, or a tool call when tool
+ * calls are indexed; the payload is the item itself, so its own type decides.
+ * Every other line is rejected undecoded: most of a log is tool output,
+ * reasoning and events. A line in another shape (or with an escaped type)
+ * gets `undefined` and is left to `shouldParseLine`.
+ */
+function lineVerdict(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	options: ParseCodexSessionOptions,
+): boolean | undefined {
+	const kind = topLevelTypeValue(bytes, start, end);
+	const kindEnd = kind === -1 ? -1 : plainStringEnd(bytes, kind, end);
+	if (kindEnd === -1) {
+		return undefined;
+	}
+	if (
+		equalsAt(bytes, kind, kindEnd, SESSION_META) ||
+		equalsAt(bytes, kind, kindEnd, TURN_CONTEXT)
+	) {
+		return true;
+	}
+	if (!equalsAt(bytes, kind, kindEnd, RESPONSE_ITEM)) {
+		return false;
+	}
+	if (!startsWithAt(bytes, kindEnd + 1, end, PAYLOAD_TYPE)) {
+		return undefined;
+	}
+	const item = kindEnd + 1 + PAYLOAD_TYPE.length;
+	const itemEnd = plainStringEnd(bytes, item, end);
+	if (itemEnd === -1) {
+		return undefined;
+	}
+	return equalsAt(bytes, item, itemEnd, MESSAGE) ||
+		(options.includeToolCalls &&
+			(equalsAt(bytes, item, itemEnd, FUNCTION_CALL) ||
+				equalsAt(bytes, item, itemEnd, CUSTOM_TOOL_CALL)));
+}
+
+/**
+ * Index of the first byte of the top-level `type` key's string value in
+ * `bytes[start..end)`, or -1 when the bytes do not start an object or the
+ * key is not among them. Strings are skipped whole and nested objects and
+ * arrays are counted, so only a key of the line's own object matches.
+ */
+function topLevelTypeValue(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+): number {
+	if (bytes[start] !== OPEN_BRACE) {
+		return -1;
+	}
+	let depth = 0;
+	for (let i = start; i < end; i += 1) {
+		const byte = bytes[i];
+		if (byte === QUOTE) {
+			// `"type":"` cannot occur inside a string, where `"` is escaped.
+			if (depth === 1 && startsWithAt(bytes, i + 1, end, TYPE_KEY)) {
+				return i + 1 + TYPE_KEY.length;
+			}
+			i = closingQuote(bytes, i + 1, end);
+			if (i === -1) {
+				return -1;
+			}
+		} else if (byte === OPEN_BRACE || byte === OPEN_BRACKET) {
+			depth += 1;
+		} else if (byte === CLOSE_BRACE || byte === CLOSE_BRACKET) {
+			depth -= 1;
+		}
+	}
+	return -1;
+}
+
+/** Index of the `"` closing a string whose content starts at `from`, or -1. */
+function closingQuote(bytes: Uint8Array, from: number, end: number): number {
+	for (let i = from; i < end; i += 1) {
+		if (bytes[i] === BACKSLASH) {
+			i += 1;
+		} else if (bytes[i] === QUOTE) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/**
+ * Index of the `"` closing a string whose content starts at `from`, or -1
+ * when the string has an escape or does not end before `end`.
+ */
+function plainStringEnd(bytes: Uint8Array, from: number, end: number): number {
+	for (let i = from; i < end; i += 1) {
+		if (bytes[i] === QUOTE) {
+			return i;
+		}
+		if (bytes[i] === BACKSLASH) {
+			return -1;
+		}
+	}
+	return -1;
+}
+
+// Hand-written loops: a TypedArray#indexOf call per candidate position cost
+// more than it saved on real logs.
+function startsWithAt(
+	bytes: Uint8Array,
+	at: number,
+	end: number,
+	expected: Uint8Array,
+): boolean {
+	if (at + expected.length > end) {
+		return false;
+	}
+	for (let j = 0; j < expected.length; j += 1) {
+		if (bytes[at + j] !== expected[j]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** `bytes[from..to)` is exactly `expected`. */
+function equalsAt(
+	bytes: Uint8Array,
+	from: number,
+	to: number,
+	expected: Uint8Array,
+): boolean {
+	return to - from === expected.length &&
+		startsWithAt(bytes, from, to, expected);
 }
 
 function shouldParseLine(
@@ -607,7 +789,7 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 			? parseJsonObject(input)
 			: undefined;
 		const cmd = stringValue(args?.cmd);
-		return cmd == null ? name : `${name}: ${oneLine(cmd)}`;
+		return cmd == null ? name : `${name}: ${inlineCode(oneLine(cmd))}`;
 	}
 
 	if (name === 'apply_patch') {
@@ -615,7 +797,7 @@ function summarizeToolCall(item: ToolCallItem): string | null {
 		const files = [
 			...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm),
 		]
-			.map((match) => match[1].trim())
+			.map((match) => inlineCode(match[1].trim()))
 			.slice(0, 3);
 		return files.length === 0 ? name : `${name}: ${files.join(', ')}`;
 	}
@@ -677,19 +859,24 @@ function renderSessionContent(
 function renderSessionMeta(meta: SessionContentMeta): string[] {
 	const lines: string[] = [];
 
+	// What `codex resume` takes, to search for and to copy.
+	if (meta.id !== '') {
+		lines.push(`- Session ID: ${inlineCode(meta.id)}`);
+	}
+
 	if (meta.workspaceRoots.length === 1) {
-		lines.push(`- Workspace: \`${meta.workspaceRoots[0]}\``);
+		lines.push(`- Workspace: ${inlineCode(meta.workspaceRoots[0])}`);
 	} else if (meta.workspaceRoots.length > 1) {
 		lines.push(
 			'- Workspace:',
-			...meta.workspaceRoots.map((root) => `  - \`${root}\``),
+			...meta.workspaceRoots.map((root) => `  - ${inlineCode(root)}`),
 		);
 	} else if (meta.cwd != null) {
-		lines.push(`- Directory: \`${meta.cwd}\``);
+		lines.push(`- Directory: ${inlineCode(meta.cwd)}`);
 	}
 
 	if (meta.model != null) {
-		lines.push(`- Model: \`${meta.model}\``);
+		lines.push(`- Model: ${inlineCode(meta.model)}`);
 	}
 
 	return lines;

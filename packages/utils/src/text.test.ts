@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
 	clampUtf8,
 	httpUrl,
+	inlineCode,
 	markdownLink,
 	MAX_CONTENT_BYTES,
 	pipeCell,
@@ -173,4 +174,39 @@ Deno.test('markdownLink escapes the label and falls back to text', () => {
 	assert.equal(markdownLink('Plain', undefined), 'Plain');
 	assert.equal(markdownLink('', 'https://e.com'), '');
 	assert.equal(markdownLink('  ', 'https://e.com'), '');
+});
+
+Deno.test('inlineCode fences and pads a value so its span shows it verbatim', () => {
+	const cases: [value: string, markdown: string][] = [
+		[
+			'0199e182-0896-7a23-a4bd-75157134801b',
+			'`0199e182-0896-7a23-a4bd-75157134801b`',
+		],
+		['/home/example/dev/project', '`/home/example/dev/project`'],
+		['~/dev/website', '`~/dev/website`'],
+		['fix/dev-769/fallback', '`fix/dev-769/fallback`'],
+		['gpt-5.3-codex', '`gpt-5.3-codex`'],
+		['claude-opus-5-5', '`claude-opus-5-5`'],
+		['C:\\Users\\me\\proj', '`C:\\Users\\me\\proj`'],
+		// No backslash escapes in a span: a longer fence instead.
+		['/tmp/has`tick', '``/tmp/has`tick``'],
+		['double``run`x', '```double``run`x```'],
+		// An edge backtick would join the fence.
+		['`leading', '`` `leading ``'],
+		['trailing`', '`` trailing` ``'],
+		// One space is stripped from each side of ` a `, but not of `  `.
+		[' spaced both ', '`  spaced both  `'],
+		[' \t ', '`  \t  `'],
+		[' ', '` `'],
+		['   ', '`   `'],
+		[' lead', '` lead`'],
+		['feat/*_emph_*', '`feat/*_emph_*`'],
+		['<html>&amp;', '`<html>&amp;`'],
+		['a|b', '`a|b`'],
+		['line1\nline2\r\nline3\rend', '`line1 line2 line3 end`'],
+		['', ''],
+	];
+	for (const [value, markdown] of cases) {
+		assert.equal(inlineCode(value), markdown, JSON.stringify(value));
+	}
 });

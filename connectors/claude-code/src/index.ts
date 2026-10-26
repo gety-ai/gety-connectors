@@ -14,7 +14,7 @@ import { sha256Hex } from '@gety-connectors/utils/hash';
 import { isRecord } from '@gety-connectors/utils/json';
 import { readJsonl } from '@gety-connectors/utils/jsonl';
 import { staleIds } from '@gety-connectors/utils/reconcile';
-import { MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
+import { inlineCode, MAX_CONTENT_BYTES } from '@gety-connectors/utils/text';
 import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ManifestConfig } from './gen/manifest.d.ts';
@@ -29,7 +29,8 @@ type JsonValue = Exclude<Doc['metadata'], undefined>;
 
 const DOC_TYPE = 'claude_code:session';
 const ID_PREFIX = 'claude-code:';
-const STATE_SCHEMA_VERSION = 1;
+/** A state of another version re-renders every file (see normalizeState). */
+const STATE_SCHEMA_VERSION = 2;
 const encoder = new TextEncoder();
 
 type FileFingerprint = {
@@ -256,7 +257,7 @@ function formatCommandMessage(text: string): string | null {
 
 	const parts: string[] = [];
 	if (commandName) {
-		parts.push(`Command: \`${commandName.replaceAll('`', '\\`')}\``);
+		parts.push(`Command: ${inlineCode(commandName)}`);
 	}
 	if (commandArgs) {
 		parts.push(commandArgs);
@@ -332,14 +333,26 @@ function renderMarkdown(
 	homeDir: string,
 ): { content: string; truncated: boolean } {
 	const infoLines: string[] = [];
+	// What `claude --resume` takes, to search for and to copy.
+	if (session.sessionId) {
+		infoLines.push(`- Session ID: ${inlineCode(session.sessionId)}`);
+	}
 	if (session.project) {
-		infoLines.push(`- Project: \`${tildeHome(session.project, homeDir)}\``);
+		infoLines.push(
+			`- Project: ${inlineCode(tildeHome(session.project, homeDir))}`,
+		);
 	}
 	if (session.model) {
-		infoLines.push(`- Model: \`${readableModel(session.model)}\``);
+		// The readable name is plain text, so an odd one is left out.
+		const name = readableModel(session.model);
+		infoLines.push(
+			name !== session.model && /^[A-Za-z0-9. ]+$/.test(name)
+				? `- Model: ${name} (${inlineCode(session.model)})`
+				: `- Model: ${inlineCode(session.model)}`,
+		);
 	}
 	if (session.gitBranch) {
-		infoLines.push(`- Git branch: \`${session.gitBranch}\``);
+		infoLines.push(`- Git branch: ${inlineCode(session.gitBranch)}`);
 	}
 
 	let body = `# ${markdownHeadingText(title)}`;
@@ -526,12 +539,15 @@ function normalizeState(lastState: unknown): NormalizedState {
 	}
 
 	if (
-		lastState.schema_version === STATE_SCHEMA_VERSION &&
+		typeof lastState.schema_version === 'number' &&
 		isRecord(lastState.files)
 	) {
+		// A state of another version keeps its files for deletion
+		// reconciliation, but every current file is parsed and upserted once so
+		// its document is rendered the current way.
 		return {
 			files: sanitizeFileMap(lastState.files),
-			forceReindex: false,
+			forceReindex: lastState.schema_version !== STATE_SCHEMA_VERSION,
 		};
 	}
 
@@ -612,6 +628,8 @@ export function reconcileFiles(
  *   poll: it must never look like "every session was deleted".
  * - A file that disappears during the poll is skipped, and the poll deletes
  *   nothing (see `reconcileFiles`); the next poll does.
+ * - A poll that re-renders every file (see `normalizeState`) and does not
+ *   reach all of them yields no state, so the next poll does it again.
  * - On abort the poll stops without a state.
  */
 export async function* pollClaudeCode(
@@ -669,6 +687,14 @@ export async function* pollClaudeCode(
 		}
 	}
 
+	if (forceReindex && !complete) {
+		// The state would keep the previous fingerprints of files this poll
+		// missed, so their documents would never be rendered the current way.
+		// Without a state the next poll starts over from the previous one (the
+		// documents upserted so far are upserted again); after an incomplete
+		// scan there is nothing to delete.
+		return;
+	}
 	const { deletedDocIds, files } = reconcileFiles(prior, current, complete);
 	const state: ClaudeCodeState = {
 		schema_version: STATE_SCHEMA_VERSION,

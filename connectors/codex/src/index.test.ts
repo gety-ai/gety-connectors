@@ -8,6 +8,7 @@ import {
 	buildCodexSessionUpdate,
 	type CodexSessionFile,
 	isIndexableCodexSession,
+	parseCodexSessionFiles,
 	parseCodexSessionLines,
 } from './codex_log.ts';
 import CodexConnector, {
@@ -62,9 +63,15 @@ Deno.test('parseCodexSessionLines builds a clean session doc without tool output
 	assert.equal(session.codexMessageCount, 2);
 	assert.equal(session.toolCallCount, 0);
 	assert.match(session.content, /^# Codex connector design/);
-	assert.match(session.content, /## Session/);
-	assert.match(session.content, /- Workspace: `\/home\/example\/dev\/gety`/);
-	assert.match(session.content, /- Model: `gpt-5\.5`/);
+	assert.match(
+		session.content,
+		new RegExp(
+			'\n## Session\n\n' +
+				'- Session ID: `019e8abc-1234-7abc-8def-123456789abc`\n' +
+				'- Workspace: `/home/example/dev/gety`\n' +
+				'- Model: `gpt-5\\.5`\n',
+		),
+	);
 	assert.doesNotMatch(session.content, /- Started:/);
 	assert.doesNotMatch(session.content, /- Updated:/);
 	assert.doesNotMatch(session.content, /Cwd/);
@@ -102,9 +109,133 @@ Deno.test('parseCodexSessionLines includes tool call summaries when enabled', ()
 
 	assert.equal(session.toolCallCount, 2);
 	assert.match(session.content, /## Tool Calls/);
-	assert.match(session.content, /- exec_command: deno task verify/);
-	assert.match(session.content, /- apply_patch: src\/index\.ts/);
+	assert.match(session.content, /- exec_command: `deno task verify`/);
+	assert.match(session.content, /- apply_patch: `src\/index\.ts`/);
 	assert.doesNotMatch(session.content, /this output is still omitted/);
+});
+
+Deno.test('parseCodexSessionLines renders identifiers as copyable code spans', () => {
+	const session = parseCodexSessionLines(
+		[
+			jsonLine('turn_context', {
+				workspace_roots: ['/tmp/has`tick', '`edge'],
+				model: 'gpt``5',
+			}),
+			message('user', 'Run it.'),
+			functionCall('exec_command', { cmd: 'echo `date`\n  | tee log' }),
+			customToolCall(
+				'apply_patch',
+				'*** Begin Patch\n*** Add File: a`b.ts\n*** Delete File: c.ts\n',
+			),
+			message('assistant', 'Ran.', 'final_answer'),
+		],
+		file,
+		{ includeToolCalls: true },
+	);
+
+	// Without session_meta, the id comes from the file name.
+	assert.match(
+		session.content,
+		new RegExp(
+			'\n- Session ID: `019e8abc-1234-7abc-8def-123456789abc`\n' +
+				'- Workspace:\n' +
+				'  - ``/tmp/has`tick``\n' +
+				'  - `` `edge ``\n' +
+				'- Model: ```gpt``5```\n',
+		),
+	);
+	assert.match(
+		session.content,
+		/\n- exec_command: ``echo `date` \| tee log``\n/,
+	);
+	assert.match(session.content, /\n- apply_patch: ``a`b\.ts``, `c\.ts`$/);
+});
+
+Deno.test('parseCodexSessionLines uses only session, turn and item lines', () => {
+	const text = (role: string, value: string) => ({
+		type: 'message',
+		role,
+		content: [{
+			type: role === 'user' ? 'input_text' : 'output_text',
+			text: value,
+		}],
+	});
+	const session = parseCodexSessionLines(
+		[
+			loggedLine('session_meta', { id: PARENT_ID }),
+			loggedLine('turn_context', { model: 'gpt-5.5' }),
+			loggedLine('response_item', text('user', 'Real prompt.')),
+			// Events and compaction history repeat messages as nested records.
+			loggedLine('event_msg', {
+				type: 'item_completed',
+				item: text('user', 'Event copy.'),
+			}),
+			loggedLine('compacted', {
+				message: '',
+				replacement_history: [text('user', 'Compacted copy.')],
+			}),
+			loggedLine('response_item', {
+				type: 'reasoning',
+				summary: [{ type: 'summary_text', text: 'Thinking.' }],
+			}),
+			// Shapes Codex does not write are left to the text filter.
+			loggedLine('response_item', {
+				role: 'assistant',
+				type: 'message',
+				phase: 'final_answer',
+				content: [{ type: 'output_text', text: 'Payload type second.' }],
+			}),
+			JSON.stringify({
+				payload: text('user', 'Type key last.'),
+				type: 'response_item',
+			}),
+		],
+		file,
+		{ includeToolCalls: true },
+	);
+
+	assert.equal(session.id, PARENT_ID);
+	assert.equal(session.userMessageCount, 2);
+	assert.equal(session.codexMessageCount, 1);
+	assert.match(session.content, /gpt-5\.5/);
+	assert.match(session.content, /## User\n\nReal prompt\./);
+	assert.match(session.content, /## Codex\n\nPayload type second\./);
+	assert.match(session.content, /## User\n\nType key last\./);
+	assert.doesNotMatch(session.content, /Event copy|Compacted copy|Thinking/);
+});
+
+Deno.test('poll reads past long tool output without indexing it', async () => {
+	await withHome(async (home) => {
+		// Each output line spans several 64 KiB reads.
+		const output = '输出 output\n'.repeat(20_000);
+		await writeSession(home, 'sessions/2026/06/03/long.jsonl', [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', 'Run the build.'),
+			functionCall('exec_command', { cmd: 'deno task build' }),
+			functionCallOutput(output),
+			jsonLine('event_msg', {
+				type: 'exec_command_end',
+				aggregated_output: output,
+			}),
+			message('assistant', 'Built.', 'final_answer'),
+		]);
+
+		for (const includeToolCalls of [false, true]) {
+			const run = await poll(
+				home,
+				{ include_tool_calls: includeToolCalls },
+				null,
+			);
+			assert.equal(run.outcome, 'done');
+			const [update] = run.updates;
+			if (update?.kind !== 'upsert') throw new Error('expected an upsert');
+			const content = update.doc.content ?? '';
+			assert.match(content, /## User\n\nRun the build\./);
+			assert.match(content, /## Codex\n\nBuilt\./);
+			assert.doesNotMatch(content, /输出/);
+			assert.equal(content.includes('deno task build'), includeToolCalls);
+		}
+	});
 });
 
 Deno.test('parseCodexSessionLines falls back to the first prompt title', () => {
@@ -191,6 +322,44 @@ Deno.test('isIndexableCodexSession rejects prompt-only sessions', () => {
 	assert.equal(session.userMessageCount, 1);
 	assert.equal(session.codexMessageCount, 0);
 	assert.equal(isIndexableCodexSession(session, false), false);
+});
+
+Deno.test('parseCodexSessionFiles returns null for sessions it does not index', async () => {
+	await withHome(async (home) => {
+		const parse = async (
+			lines: string[],
+			skipSubagents: boolean,
+		) => {
+			const stateKey = 'sessions/2026/06/03/session.jsonl';
+			await writeSession(home, stateKey, lines);
+			const path = join(home, '.codex', stateKey);
+			const { mtime, size } = await Deno.stat(path);
+			return parseCodexSessionFiles(
+				[{ path, stateKey, mtimeMs: mtime?.getTime() ?? 0, size }],
+				{ includeToolCalls: false, skipSubagents },
+				new AbortController().signal,
+			);
+		};
+		const subagent = [
+			jsonLine('session_meta', {
+				id: CHILD_ID,
+				thread_source: 'subagent',
+				source: { subagent: { thread_spawn: { parent_thread_id: PARENT_ID } } },
+			}),
+			...sessionLines(CHILD_ID).slice(1),
+		];
+
+		assert.equal((await parse(sessionLines(PARENT_ID), true))?.id, PARENT_ID);
+		assert.equal(
+			await parse([
+				jsonLine('session_meta', { id: PARENT_ID }),
+				message('user', 'whats 2+2?'),
+			], true),
+			null,
+		);
+		assert.equal(await parse(subagent, true), null);
+		assert.equal((await parse(subagent, false))?.id, CHILD_ID);
+	});
 });
 
 Deno.test('buildCodexSessionUpdate emits stable Gety metadata', () => {
@@ -403,6 +572,51 @@ Deno.test('poll deletes removed sessions and does not open unchanged files', asy
 	});
 });
 
+Deno.test('poll sends no batch when nothing changed', async () => {
+	await withHome(async (home) => {
+		await writeSession(home, 'sessions/a.jsonl', sessionLines('session-a'));
+		const first = await poll(home, {}, null);
+		assert.equal(upserts(first).length, 1);
+
+		const second = await poll(home, {}, first.committedState);
+		assert.equal(second.outcome, 'done');
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
+
+		// A new log of a session that is not indexed changes only the state.
+		await writeSession(home, 'sessions/b.jsonl', [
+			message('user', 'Only a prompt.'),
+		]);
+		const third = await poll(home, {}, first.committedState);
+		assert.deepEqual(third.updates, []);
+		const thirdState = third.committedState as CodexState;
+		assert.deepEqual(Object.keys(thirdState.files ?? {}), [
+			'sessions/a.jsonl',
+			'sessions/b.jsonl',
+		]);
+
+		// So does removing it again.
+		await Deno.remove(join(home, '.codex/sessions/b.jsonl'));
+		const fourth = await poll(home, {}, thirdState);
+		assert.deepEqual(fourth.updates, []);
+		const fourthState = fourth.committedState as CodexState;
+		assert.deepEqual(Object.keys(fourthState.files ?? {}), [
+			'sessions/a.jsonl',
+		]);
+
+		// And a changed option, with the same documents.
+		const fifth = await poll(
+			home,
+			{ include_archived_sessions: false },
+			fourthState,
+		);
+		assert.equal(
+			(fifth.committedState as CodexState).include_archived_sessions,
+			false,
+		);
+	});
+});
+
 Deno.test('poll keeps sessions whose file vanished before it was read', async () => {
 	await withHome(async (home) => {
 		await writeSession(home, 'sessions/a.jsonl', sessionLines('session-a'));
@@ -535,14 +749,12 @@ Deno.test('poll keeps a paginated session whose segment vanished before it was r
 			}
 		}, () => poll(home, {}, first.committedState));
 		assert.equal(second.outcome, 'done');
-		assert.deepEqual(second.updates, []);
-		assert.deepEqual(
-			(second.committedState as CodexState).indexed_sessions,
-			[PARENT_ID],
-		);
+		// The session stays as the first poll left it: there is nothing to send.
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
 
 		await Deno.remove(vanished);
-		const third = await poll(home, {}, second.committedState);
+		const third = await poll(home, {}, first.committedState);
 		assert.deepEqual(upserts(third), [
 			{ id: `codex:session:${PARENT_ID}`, title: `Prompt 1 for ${PARENT_ID}` },
 		]);
@@ -561,7 +773,6 @@ Deno.test('poll keeps a paginated session whose segment the listing missed', asy
 		await writeSession(home, SEGMENT_PATHS[0], segment(['Answer one.']));
 		await writeSession(home, SEGMENT_PATHS[1], segment(['Answer two.']));
 		const first = await poll(home, {}, null);
-		const firstFiles = (first.committedState as CodexState).files ?? {};
 
 		// The last segment grows while the listing loses track of the first.
 		await writeSession(
@@ -576,13 +787,12 @@ Deno.test('poll keeps a paginated session whose segment the listing missed', asy
 			}
 		}, () => poll(home, {}, first.committedState));
 		assert.equal(second.outcome, 'done');
-		assert.deepEqual(second.updates, []);
-		const secondState = second.committedState as CodexState;
-		assert.deepEqual(secondState.files, firstFiles);
-		assert.deepEqual(secondState.indexed_sessions, [PARENT_ID]);
+		// The session stays as the first poll left it: there is nothing to send.
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
 
 		// A complete poll rebuilds the session from both segments.
-		const third = await poll(home, {}, secondState);
+		const third = await poll(home, {}, first.committedState);
 		const [update] = third.updates;
 		if (third.updates.length !== 1 || update.kind !== 'upsert') {
 			throw new Error('expected one upsert');
@@ -607,7 +817,7 @@ Deno.test('nextState stores sorted file fingerprints, indexed sessions and optio
 			DEFAULT_OPTIONS,
 		),
 		{
-			schema_version: 3,
+			schema_version: 4,
 			include_tool_calls: false,
 			include_archived_sessions: true,
 			include_subagents: false,
@@ -756,26 +966,35 @@ async function withOpenSpy<T>(
 	}
 }
 
-/** Runs `fn` with `Deno.stat` reporting each path to `onStat` first. */
+/** Runs `fn` with `Deno.statSync` reporting each path to `onStat` first. */
 async function withStatSpy<T>(
 	onStat: (path: string) => void,
 	fn: () => Promise<T>,
 ): Promise<T> {
-	const deno = Deno as { stat: typeof Deno.stat };
-	const stat = deno.stat;
-	deno.stat = (path) => {
+	const deno = Deno as { statSync: typeof Deno.statSync };
+	const statSync = deno.statSync;
+	deno.statSync = (path) => {
 		onStat(String(path));
-		return stat(path);
+		return statSync(path);
 	};
 	try {
 		return await fn();
 	} finally {
-		deno.stat = stat;
+		deno.statSync = statSync;
 	}
 }
 
 function jsonLine(type: string, payload: Record<string, unknown>): string {
 	return JSON.stringify({ type, payload });
+}
+
+/** A log line as Codex writes it: timestamp first, then type and payload. */
+function loggedLine(type: string, payload: Record<string, unknown>): string {
+	return JSON.stringify({
+		timestamp: '2026-06-03T10:00:00.000Z',
+		type,
+		payload,
+	});
 }
 
 function message(

@@ -11,14 +11,18 @@ markdown documents.
   change to any of them rebuilds it from all of them.
 - Uses the session summary as the title when available, otherwise falls back to
   the first user prompt.
-- Adds a short session block with workspace roots and model when available.
+- Adds a short session block with the session id (what `codex resume` takes), so
+  searching for an id finds its session, and, when available, workspace roots
+  and model. Each value is a code span that copies exactly, and so are the
+  commands and file names in tool call summaries.
 - Indexes user messages and Codex final answers.
 - Skips prompt-only sessions that do not have a Codex final answer. This applies
   to the merged segments: if removing a segment leaves a session without a Codex
   final answer, its document is deleted like any other prompt-only one.
 - Renders Codex as `Codex`, not `Assistant`.
 - Separates conversation rounds with `---`.
-- Never indexes tool outputs.
+- Never indexes tool outputs. Their log lines, like reasoning and event lines,
+  are recognized from their first bytes and skipped without being decoded.
 - Can include brief tool call summaries through a config checkbox. This is off
   by default.
 - Can include archived sessions through a config checkbox. This is on by
@@ -32,7 +36,8 @@ markdown documents.
   mtime or size changed.
 - Tracks lightweight file fingerprints in connector state so changed files,
   removed files, and config changes can update only the affected session docs.
-  Gety commits the state only when a poll succeeds.
+  Gety commits the state only when a poll succeeds. A poll that finds nothing
+  changed sends no state at all, and Gety keeps the committed one.
 - Limits each document's content to 8,000,000 UTF-8 bytes; longer sessions are
   cut there and marked with `content_truncated` in the metadata.
 

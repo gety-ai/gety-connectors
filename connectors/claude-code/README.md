@@ -43,9 +43,11 @@ directory could not be found.
   `## Session`, a `---` separator, then `## User` / `## Claude Code` sections
   grouped by conversation round. Parse-error and truncation facts are recorded
   in metadata and are never appended to the body.
-- The `## Session` section includes only Project, Model, and Git branch (when
-  available). Model identifiers are prettified (e.g. `claude-opus-4-8` ->
-  `Claude Opus 4.8`).
+- The `## Session` section includes only Session ID (what `claude --resume`
+  takes, so searching for an id finds its session), Project, Model, and Git
+  branch (when available). Each value is a code span that copies exactly. A
+  model identifier is also prettified in front of it (e.g.
+  ``Claude Opus 4.8 (`claude-opus-4-8`)``).
 - `metadata.url` is a stable `file://` URL for the source JSONL file. The
   manifest declares `doc_link: { "kind": "url", "field": "url" }` so Gety can
   open the local source file.
@@ -63,8 +65,11 @@ directory could not be found.
 
 State stores a schema version and a map from each relative file path to a
 fingerprint (`{ mtime, size, docId }`). A file whose mtime and size match the
-previous poll is not opened. A state in the older bare-file-map shape makes
-every file re-index once.
+previous poll is not opened. A state of an older schema version, or in the older
+bare-file-map shape, makes every file re-index once; the files it lists still
+count for deleting the documents of files that are gone. Such a poll commits the
+new state only after a complete scan, so a file it missed is re-indexed by the
+next poll as well.
 
 On each poll:
 

@@ -9,7 +9,6 @@ import {
 	type CodexSessionGroup,
 	type CodexSessionRoot,
 	groupCodexSessionFiles,
-	isIndexableCodexSession,
 	listCodexSessionFiles,
 	parseCodexSessionFiles,
 	sessionGroupKey,
@@ -39,7 +38,8 @@ export interface CodexOptions {
 	includeSubagents: boolean;
 }
 
-const STATE_SCHEMA_VERSION = 3;
+/** A state of another version re-renders every session (see initialState). */
+const STATE_SCHEMA_VERSION = 4;
 
 export default class CodexConnector extends Connector<
 	ManifestConfig,
@@ -80,6 +80,7 @@ export default class CodexConnector extends Connector<
 		}
 		const currentFiles: Record<string, CodexFileState> = {};
 		const currentIndexed = new Set<string>();
+		let reparsed = false;
 		for (const group of groupCodexSessionFiles(listing.files)) {
 			this.signal.throwIfAborted();
 			if (isUnchangedGroup(group, previousFiles, previousGroupSizes)) {
@@ -103,7 +104,7 @@ export default class CodexConnector extends Connector<
 				continue;
 			}
 
-			let session: CodexSession;
+			let session: CodexSession | null;
 			try {
 				session = await parseCodexSessionFiles(group.files, {
 					includeToolCalls: options.includeToolCalls,
@@ -118,17 +119,14 @@ export default class CodexConnector extends Connector<
 				}
 				throw error;
 			}
-			const indexable = isIndexableCodexSession(
-				session,
-				options.includeSubagents,
-			);
+			reparsed = true;
 			for (const file of group.files) {
 				const fingerprint = { mtime_ms: file.mtimeMs, size: file.size };
-				currentFiles[file.stateKey] = indexable
+				currentFiles[file.stateKey] = session != null
 					? { session_id: session.id, ...fingerprint, indexed: true }
 					: { ...fingerprint, indexed: false };
 			}
-			if (indexable) {
+			if (session != null) {
 				currentIndexed.add(session.id);
 				yield { updates: [buildCodexSessionUpdate(session)] };
 			}
@@ -140,11 +138,24 @@ export default class CodexConnector extends Connector<
 				currentFiles[stateKey] ??= previousFile;
 			}
 		}
+		const known = state.indexed_sessions ?? [];
 		const { deleted, indexed } = reconcileSessions(
-			state.indexed_sessions ?? [],
+			known,
 			currentIndexed,
 			complete,
 		);
+		const indexedSet = new Set(indexed);
+		if (
+			// initialState returns the committed state itself when it applies.
+			state === this.lastState && !reparsed && deleted.length === 0 &&
+			Object.keys(currentFiles).length === Object.keys(previousFiles).length &&
+			indexedSet.size === known.length &&
+			known.every((id) => indexedSet.has(id))
+		) {
+			// The state would be the committed one again: a poll without batches
+			// leaves it as it is, without sending it back to Gety to store.
+			return;
+		}
 		yield {
 			updates: deleted.map((id) => buildCodexSessionDelete({ id })),
 			state: nextState(currentFiles, indexed, options),

@@ -25,7 +25,8 @@
 		"sync-sdk:check": "deno run --allow-read tools/sync-sdk.ts --check",
 		"check:tools": "deno check tools/ scripts/ vendor/gety-deno/host/runner.ts",
 		"test:tools": "deno test --allow-read --allow-write --allow-run tools/ scripts/",
-		"catalog": "deno run --allow-read --allow-write --allow-net scripts/catalog.ts",
+		"catalog": "deno run --allow-read --allow-write --allow-net --allow-env=GITHUB_TOKEN scripts/catalog.ts",
+		"community:check": "deno run --allow-read --allow-net --allow-env=GITHUB_TOKEN scripts/community.ts",
 		"verify:packs": "deno run --allow-read --allow-write --allow-run scripts/verify-packs.ts",
 		"version-packages": "deno run --allow-read --allow-write --allow-run scripts/version.ts"
 	},

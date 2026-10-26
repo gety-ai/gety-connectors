@@ -1,7 +1,7 @@
 {
 	"name": "@gety-connectors/catalog",
 	"private": true,
-	"description": "Catalog of the official Gety connectors.",
+	"description": "Catalog of the featured Gety connectors, official and community.",
 	"license": "Apache-2.0",
 	"keywords": [
 		"gety"

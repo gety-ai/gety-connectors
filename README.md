@@ -19,8 +19,9 @@ A connector's directory name is its short name, and both its npm package name
 `deno task sync:check` enforces this.
 
 `packages/catalog` is `@gety-connectors/catalog`, the generated list of these
-connectors (name, description, icon, latest npm version) that Gety's connector
-gallery reads; see [its README](packages/catalog/README.md).
+connectors and of the community connectors registered in `community/` (name,
+description, icon, registered npm version) that Gety's connector gallery reads;
+see [its README](packages/catalog/README.md).
 
 `packages/utils` (`@gety-connectors/utils`) and `packages/testing`
 (`@gety-connectors/testing`) are workspace-only Deno packages, never published:
@@ -40,6 +41,7 @@ Each connector directory keeps the git history of the repository it came from.
 connectors/<short>/   one connector: manifest.json, src/, package.json (npm
                       metadata), CHANGELOG.md
 packages/catalog/     @gety-connectors/catalog
+community/            community connector registrations for the catalog
 packages/utils/       shared runtime modules bundled into connectors (not published)
 packages/testing/     test helpers for connectors (not published)
 tools/                connector tooling shared by every connector (build,
@@ -76,6 +78,7 @@ deno task --recursive build     # writes connectors/*/dist/
 deno fmt --check && deno lint
 deno task check:tools && deno task test:tools
 deno task sync-sdk:check        # vendor/gety-deno is unmodified
+deno task community:check       # community/ registrations (npm, GitHub)
 ```
 
 Inside a connector directory the connector's own tasks work as before
@@ -152,11 +155,15 @@ Releases are driven by [changesets](https://changesets.dev) and
    connector releases without the assets it requires.
 4. The same publish job then generates the catalog (`scripts/catalog.ts`): the
    connectors' names, descriptions and icons at the merged commit, with each
-   connector's `latest` version and publish time read from the registry. Every
-   connector must be on npm at its `package.json` version; the step waits a few
-   minutes for the registry's cache to catch up and then fails, naming the
-   connectors it could not find. When the generated `getyCatalog` differs from
-   the published one, the job publishes it with `npm publish` as the published
+   connector's `latest` version and publish time read from the registry, and one
+   entry per community registration in `community/`, read from the registered
+   version on npm and the author's GitHub user (the job passes its
+   `GITHUB_TOKEN` for the GitHub API). Every connector must be on npm at its
+   `package.json` version; the step waits a few minutes for the registry's cache
+   to catch up and then fails, naming the connectors it could not find. A
+   community registration that no longer passes `deno task community:check`
+   fails the step too. When the generated `getyCatalog` differs from the
+   published one, the job publishes it with `npm publish` as the published
    catalog version plus a patch; otherwise it publishes nothing. The catalog is
    not managed by changesets (its `package.json` is `private` and has no
    version): a change to a connector's name, description or icon ships with that

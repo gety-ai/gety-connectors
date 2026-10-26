@@ -219,11 +219,15 @@ jobs:
           create-github-releases: false
 
       # Lists every connector at its npm `latest` and publish time, so it runs
-      # after the connectors are published. It fails when a connector at this
-      # commit is not on npm at its package.json version (after waiting out
-      # the registry's cache), and writes the package directory only when the
-      # catalog differs from the published one.
+      # after the connectors are published, and every community registration
+      # at its registered version with the author's GitHub id. It fails when a
+      # connector at this commit is not on npm at its package.json version
+      # (after waiting out the registry's cache) or a registration is invalid,
+      # and writes the package directory only when the catalog differs from
+      # the published one.
       - name: Generate the catalog
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: deno task catalog --out "${RUNNER_TEMP}/catalog"
 
       # `npm publish`, not pnpm: the directory is outside the workspace and

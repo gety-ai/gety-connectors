@@ -58,6 +58,13 @@ jobs:
       - name: Test tools
         run: deno task test:tools
 
+      # Reads npm and the GitHub API; the token lifts GitHub's anonymous rate
+      # limit and needs no permission.
+      - name: Check community registrations
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: deno task community:check
+
       - name: Type-check connectors
         run: deno task --recursive check
 

@@ -1,8 +1,8 @@
 {
-	"id": "codex",
+	"id": "codex_sessions",
 	"name": "Codex",
 	"version": "0.2.0",
-	"min_gety_app_version": "0.6.3",
+	"min_gety_app_version": "0.6.5",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
 	"icon": "assets/codex-color.svg",

@@ -139,7 +139,7 @@ deno task runner -- --state dev/.runner/notion-state.json --out-dir dev/runs
 
 ## Install In Gety
 
-Requires a Gety version newer than 0.6.3.
+Requires Gety 0.6.5 or newer.
 
 1. Open Gety's Custom Connectors settings page.
 2. Install `@gety-connectors/notion` from npm, or run `deno task build` and

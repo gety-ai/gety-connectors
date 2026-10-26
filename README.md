@@ -5,18 +5,21 @@ TypeScript program run by Gety's Deno host, published to npm as its own package,
 and installable with "Install from npm" in Gety or
 `gety connector install --npm <package>`.
 
-| Connector     | Directory                | npm package                    |
-| ------------- | ------------------------ | ------------------------------ |
-| Linear        | `connectors/linear`      | `@gety-connectors/linear`      |
-| Codex         | `connectors/codex`       | `@gety-connectors/codex`       |
-| Claude Code   | `connectors/claude-code` | `@gety-connectors/claude-code` |
-| Google Chrome | `connectors/chrome`      | `@gety-connectors/chrome`      |
-| Notion        | `connectors/notion`      | `@gety-connectors/notion`      |
-| Feishu        | `connectors/lark`        | `@gety-connectors/lark`        |
+| Connector     | Directory                | npm package                    | Manifest id      |
+| ------------- | ------------------------ | ------------------------------ | ---------------- |
+| Linear        | `connectors/linear`      | `@gety-connectors/linear`      | `linear`         |
+| Codex         | `connectors/codex`       | `@gety-connectors/codex`       | `codex_sessions` |
+| Claude Code   | `connectors/claude-code` | `@gety-connectors/claude-code` | `claude-code`    |
+| Google Chrome | `connectors/chrome`      | `@gety-connectors/chrome`      | `chrome`         |
+| Notion        | `connectors/notion`      | `@gety-connectors/notion`      | `notion`         |
+| Feishu        | `connectors/lark`        | `@gety-connectors/lark`        | `feishu`         |
 
-A connector's directory name is its short name, and both its npm package name
-(`@gety-connectors/<short>`) and its manifest `id` use it;
-`deno task sync:check` enforces this.
+A connector's directory name is its short name, and its npm package name is
+`@gety-connectors/<short>`. The manifest `id` is independent of both: Gety uses
+it as the installed connector's identity, so a connector that moved here from a
+standalone repository keeps the id it had there (`codex_sessions`, `feishu`),
+and an id is never changed once published. `deno task sync:check` enforces that
+ids are unique across connectors.
 
 `packages/catalog` is `@gety-connectors/catalog`, the generated list of these
 connectors (name, description, icon, latest npm version) that Gety's connector
@@ -285,8 +288,8 @@ versions already on npm.
 ## Adding a connector
 
 1. Create `connectors/<short>/` with the connector (same layout and tasks as the
-   existing ones; manifest `id` set to `<short>`) and add it to `workspace` in
-   `deno.json`.
+   existing ones; a manifest `id` that no other connector uses, normally
+   `<short>`) and add it to `workspace` in `deno.json`.
 2. Add `package.json` with `name` `@gety-connectors/<short>`, `version` equal to
    the manifest's, `license` `Apache-2.0`, `repository` (`directory`:
    `connectors/<short>`), `publishConfig.access: public`, and a `CHANGELOG.md`

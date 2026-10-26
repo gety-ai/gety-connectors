@@ -2,7 +2,7 @@
 	"id": "linear",
 	"name": "Linear",
 	"version": "0.2.0",
-	"min_gety_app_version": "0.6.3",
+	"min_gety_app_version": "0.6.5",
 	"entry": "dist/main.js",
 	"icon": "assets/linear.webp",
 	"description": "Indexes Linear issues as searchable markdown documents.",

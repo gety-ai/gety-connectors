@@ -107,6 +107,93 @@ Deno.test('parseCodexSessionLines includes tool call summaries when enabled', ()
 	assert.doesNotMatch(session.content, /this output is still omitted/);
 });
 
+Deno.test('parseCodexSessionLines uses only session, turn and item lines', () => {
+	const text = (role: string, value: string) => ({
+		type: 'message',
+		role,
+		content: [{
+			type: role === 'user' ? 'input_text' : 'output_text',
+			text: value,
+		}],
+	});
+	const session = parseCodexSessionLines(
+		[
+			loggedLine('session_meta', { id: PARENT_ID }),
+			loggedLine('turn_context', { model: 'gpt-5.5' }),
+			loggedLine('response_item', text('user', 'Real prompt.')),
+			// Events and compaction history repeat messages as nested records.
+			loggedLine('event_msg', {
+				type: 'item_completed',
+				item: text('user', 'Event copy.'),
+			}),
+			loggedLine('compacted', {
+				message: '',
+				replacement_history: [text('user', 'Compacted copy.')],
+			}),
+			loggedLine('response_item', {
+				type: 'reasoning',
+				summary: [{ type: 'summary_text', text: 'Thinking.' }],
+			}),
+			// Shapes Codex does not write are left to the text filter.
+			loggedLine('response_item', {
+				role: 'assistant',
+				type: 'message',
+				phase: 'final_answer',
+				content: [{ type: 'output_text', text: 'Payload type second.' }],
+			}),
+			JSON.stringify({
+				payload: text('user', 'Type key last.'),
+				type: 'response_item',
+			}),
+		],
+		file,
+		{ includeToolCalls: true },
+	);
+
+	assert.equal(session.id, PARENT_ID);
+	assert.equal(session.userMessageCount, 2);
+	assert.equal(session.codexMessageCount, 1);
+	assert.match(session.content, /gpt-5\.5/);
+	assert.match(session.content, /## User\n\nReal prompt\./);
+	assert.match(session.content, /## Codex\n\nPayload type second\./);
+	assert.match(session.content, /## User\n\nType key last\./);
+	assert.doesNotMatch(session.content, /Event copy|Compacted copy|Thinking/);
+});
+
+Deno.test('poll reads past long tool output without indexing it', async () => {
+	await withHome(async (home) => {
+		// Each output line spans several 64 KiB reads.
+		const output = '输出 output\n'.repeat(20_000);
+		await writeSession(home, 'sessions/2026/06/03/long.jsonl', [
+			jsonLine('session_meta', { id: PARENT_ID }),
+			message('user', 'Run the build.'),
+			functionCall('exec_command', { cmd: 'deno task build' }),
+			functionCallOutput(output),
+			jsonLine('event_msg', {
+				type: 'exec_command_end',
+				aggregated_output: output,
+			}),
+			message('assistant', 'Built.', 'final_answer'),
+		]);
+
+		for (const includeToolCalls of [false, true]) {
+			const run = await poll(
+				home,
+				{ include_tool_calls: includeToolCalls },
+				null,
+			);
+			assert.equal(run.outcome, 'done');
+			const [update] = run.updates;
+			if (update?.kind !== 'upsert') throw new Error('expected an upsert');
+			const content = update.doc.content ?? '';
+			assert.match(content, /## User\n\nRun the build\./);
+			assert.match(content, /## Codex\n\nBuilt\./);
+			assert.doesNotMatch(content, /输出/);
+			assert.equal(content.includes('deno task build'), includeToolCalls);
+		}
+	});
+});
+
 Deno.test('parseCodexSessionLines falls back to the first prompt title', () => {
 	const session = parseCodexSessionLines(
 		[
@@ -776,6 +863,15 @@ async function withStatSpy<T>(
 
 function jsonLine(type: string, payload: Record<string, unknown>): string {
 	return JSON.stringify({ type, payload });
+}
+
+/** A log line as Codex writes it: timestamp first, then type and payload. */
+function loggedLine(type: string, payload: Record<string, unknown>): string {
+	return JSON.stringify({
+		timestamp: '2026-06-03T10:00:00.000Z',
+		type,
+		payload,
+	});
 }
 
 function message(

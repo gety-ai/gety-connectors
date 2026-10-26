@@ -18,7 +18,8 @@ markdown documents.
   final answer, its document is deleted like any other prompt-only one.
 - Renders Codex as `Codex`, not `Assistant`.
 - Separates conversation rounds with `---`.
-- Never indexes tool outputs.
+- Never indexes tool outputs. Their log lines, like reasoning and event lines,
+  are recognized from their first bytes and skipped without being decoded.
 - Can include brief tool call summaries through a config checkbox. This is off
   by default.
 - Can include archived sessions through a config checkbox. This is on by

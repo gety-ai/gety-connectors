@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { readJsonl, readLines } from './jsonl.ts';
+import {
+	LINE_PREFIX_BYTES,
+	type LinePrefixFilter,
+	readJsonl,
+	readLines,
+} from './jsonl.ts';
 
 const never = new AbortController().signal;
 
@@ -188,6 +193,205 @@ Deno.test('readJsonl propagates aborts and NotFound', async () => {
 			for await (
 				const _ of readJsonl(join(Deno.cwd(), 'missing.jsonl'), {
 					signal: never,
+				})
+			) {
+				// unreachable
+			}
+		})(),
+		Deno.errors.NotFound,
+	);
+});
+
+const utf8 = new TextEncoder();
+
+/** UTF-8 strings and raw byte runs, concatenated. */
+function bytesOf(...parts: (string | number[])[]): Uint8Array {
+	const chunks = parts.map((part) =>
+		typeof part === 'string' ? utf8.encode(part) : Uint8Array.from(part)
+	);
+	const out = new Uint8Array(chunks.reduce((n, chunk) => n + chunk.length, 0));
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return out;
+}
+
+/** The lines `prefilter` sees, the records and the counters of a read. */
+async function readAll(
+	path: string,
+	options: { chunkSize?: number; linePrefix?: LinePrefixFilter },
+) {
+	const lines: string[] = [];
+	const reader = readJsonl(path, {
+		signal: never,
+		...options,
+		prefilter: (line) => lines.push(line) > 0,
+	});
+	const records: Record<string, unknown>[] = [];
+	for await (const record of reader) {
+		records.push(record);
+	}
+	const { parseErrors, skipped } = reader;
+	return { lines, records, parseErrors, skipped };
+}
+
+Deno.test('readJsonl with linePrefix decodes lines as readLines does', async () => {
+	// `{"pad":"` + 246 + `"}`: exactly a prefix long.
+	const exact = `{"pad":"${'x'.repeat(LINE_PREFIX_BYTES - 10)}"}`;
+	const content = bytesOf(
+		[0xef, 0xbb, 0xbf],
+		'{"a":1}\r\n',
+		'\n',
+		'  \r\n',
+		'\ufeff{"bom":"later"}\n',
+		'{"text":"中文😀é"}\n',
+		[0x7b, 0xff, 0x7d, 0x0a],
+		'{"cut":"',
+		[0xe4, 0xb8],
+		'\n',
+		`${exact}\r\n`,
+		`${exact}y\n`,
+		`${JSON.stringify({ text: '字'.repeat(2_000) })}\n`,
+		'{"last":true}\r',
+	);
+	await withFile(content, async (path) => {
+		const expected = await readAll(path, {});
+		assert.equal(expected.records.length, 5);
+		assert.equal(expected.parseErrors, 4);
+		for (
+			const chunkSize of [1, 2, 3, 7, 255, 256, 257, 1024, 64 * 1024]
+		) {
+			assert.deepEqual(
+				await readAll(path, { chunkSize, linePrefix: () => undefined }),
+				expected,
+				`chunk ${chunkSize}`,
+			);
+		}
+	});
+});
+
+Deno.test('readJsonl linePrefix sees the first bytes of each line', async () => {
+	const lines = [
+		'{"a":1}',
+		'x'.repeat(256),
+		// With the CR of its CRLF, as long as a prefix.
+		'w'.repeat(255),
+		'y'.repeat(300),
+		'z'.repeat(255),
+	];
+	const content = `${lines[0]}\r\n\n${lines[1]}\r\n${lines[2]}\r\n${
+		lines[3]
+	}\n${lines[4]}\r`;
+	const decoder = new TextDecoder();
+	await withFile(content, async (path) => {
+		for (const chunkSize of [1, 5, 256, 257, 64 * 1024]) {
+			const prefixes: string[] = [];
+			const reader = readJsonl(path, {
+				signal: never,
+				chunkSize,
+				linePrefix: (bytes, start, end) => {
+					prefixes.push(decoder.decode(bytes.subarray(start, end)));
+					return false;
+				},
+			});
+			for await (const _ of reader) {
+				// every line is skipped
+			}
+			assert.deepEqual(
+				prefixes,
+				lines.map((line) => line.slice(0, LINE_PREFIX_BYTES)),
+				`chunk ${chunkSize}`,
+			);
+			assert.equal(reader.skipped, lines.length);
+		}
+	});
+});
+
+Deno.test('readJsonl linePrefix parses, skips undecoded, or defers to prefilter', async () => {
+	const content = [
+		'{"verdict":"parse","n":1}',
+		`{"verdict":"skip","pad":"${'字'.repeat(400_000)}"}`,
+		'{"verdict":"defer","keep":true}',
+		'{"verdict":"defer","keep":false}',
+		'{"verdict":"skip"}',
+	].join('\n');
+	// The byte after `{"verdict":"`.
+	const verdicts: Record<string, boolean | undefined> = {
+		p: true,
+		s: false,
+		d: undefined,
+	};
+	const decode = TextDecoder.prototype.decode;
+	let decodedBytes = 0;
+	TextDecoder.prototype.decode = function (input, options) {
+		decodedBytes += (input as ArrayBufferView | undefined)?.byteLength ?? 0;
+		return decode.call(this, input, options);
+	};
+	try {
+		await withFile(content, async (path) => {
+			const filtered: string[] = [];
+			const reader = readJsonl(path, {
+				signal: never,
+				chunkSize: 1024,
+				linePrefix: (bytes, start) =>
+					verdicts[String.fromCharCode(bytes[start + 12])],
+				prefilter: (line) => {
+					filtered.push(line);
+					return line.includes('"keep":true');
+				},
+			});
+			const records: Record<string, unknown>[] = [];
+			for await (const record of reader) {
+				records.push(record);
+			}
+			assert.deepEqual(records, [
+				{ verdict: 'parse', n: 1 },
+				{ verdict: 'defer', keep: true },
+			]);
+			assert.deepEqual(filtered, [
+				'{"verdict":"defer","keep":true}',
+				'{"verdict":"defer","keep":false}',
+			]);
+			assert.equal(reader.skipped, 3);
+			assert.equal(reader.parseErrors, 0);
+		});
+	} finally {
+		TextDecoder.prototype.decode = decode;
+	}
+	// Only the three short lines that were not skipped from their prefix.
+	assert.equal(decodedBytes, 25 + 31 + 32);
+});
+
+Deno.test('readJsonl with linePrefix stops with the abort reason between chunks', async () => {
+	await withFile('{"a":1}\n{"a":2}\n{"a":3}\n', async (path) => {
+		const controller = new AbortController();
+		const reason = new Error('cancelled');
+		const seen: Record<string, unknown>[] = [];
+		await assert.rejects(
+			(async () => {
+				for await (
+					const record of readJsonl(path, {
+						signal: controller.signal,
+						chunkSize: 2,
+						linePrefix: () => true,
+					})
+				) {
+					seen.push(record);
+					controller.abort(reason);
+				}
+			})(),
+			(error) => error === reason,
+		);
+		assert.deepEqual(seen, [{ a: 1 }]);
+	});
+	await assert.rejects(
+		(async () => {
+			for await (
+				const _ of readJsonl(join(Deno.cwd(), 'missing.jsonl'), {
+					signal: never,
+					linePrefix: () => true,
 				})
 			) {
 				// unreachable

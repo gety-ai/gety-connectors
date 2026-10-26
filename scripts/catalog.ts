@@ -4,7 +4,8 @@
 // `<registry>/@gety-connectors%2Fcatalog/latest` document. The whole
 // package.json must therefore stay small.
 //
-// The release workflow runs this after publishing the connectors. Official
+// The release workflow runs this after publishing the connectors, and on every
+// push to main with nothing to version or publish (the catalog job). Official
 // entries: names, descriptions and icons come from the connector manifests at
 // the checked-out commit; each connector's `version` is its registry
 // `dist-tags.latest` and `publishedAt` the registry's publish time of that

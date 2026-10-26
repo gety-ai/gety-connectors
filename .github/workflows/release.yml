@@ -15,8 +15,14 @@
 #   @gety-connectors/catalog from the registry and publishes it when it
 #   changed. The catalog is `private` in the workspace, so changesets neither
 #   versions nor packs it.
+# - none: nothing to version or publish (for example a merged community
+#   registration), so the catalog job generates the catalog the same way and
+#   publishes it when it changed. A push in version mode leaves the catalog to
+#   the release that follows: its manifests may carry name, description or
+#   icon changes that are not released yet.
 #
-# Only the publish job can mint an OIDC token, following
+# The catalog steps of both jobs are .github/actions/publish-catalog. Only the
+# publish and catalog jobs can mint an OIDC token, following
 # https://changesets.dev/guide/automating#trusted-publishing. A publish job
 # that failed can be re-run: changesets skips the packages already on npm.
 
@@ -218,24 +224,43 @@ jobs:
           pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
           create-github-releases: false
 
-      # Lists every connector at its npm `latest` and publish time, so it runs
-      # after the connectors are published, and every community registration
-      # at its registered version with the author's GitHub id. It fails when a
-      # connector at this commit is not on npm at its package.json version
-      # (after waiting out the registry's cache) or a registration is invalid,
-      # and writes the package directory only when the catalog differs from
-      # the published one.
-      - name: Generate the catalog
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: deno task catalog --out "${RUNNER_TEMP}/catalog"
+      - name: Generate and publish the catalog
+        uses: ./.github/actions/publish-catalog
 
-      # `npm publish`, not pnpm: the directory is outside the workspace and
-      # already contains the LICENSE.
-      - name: Publish the catalog
+  catalog:
+    if: needs.select-mode.outputs.mode != 'version' && needs.select-mode.outputs.mode != 'publish'
+    needs: select-mode
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.8.1
+
+      # The catalog's `npm publish` does the OIDC exchange, which needs npm
+      # 11.5.1 or later.
+      - name: Check npm supports trusted publishing
         run: |
-          if [ -d "${RUNNER_TEMP}/catalog" ]; then
-            npm publish "${RUNNER_TEMP}/catalog"
-          else
-            echo 'The published catalog is up to date.'
+          npm_version="$(npm --version)"
+          echo "npm ${npm_version}"
+          if [ "$(printf '%s\n' 11.5.1 "${npm_version}" | sort -V | head -n 1)" != 11.5.1 ]; then
+            echo "::error::npm ${npm_version} cannot publish with trusted publishing; 11.5.1 or later is required"
+            exit 1
           fi
+
+      - name: Generate and publish the catalog
+        uses: ./.github/actions/publish-catalog

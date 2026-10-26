@@ -71,12 +71,14 @@ sandbox and state semantics (`-- --help` lists its options).
 - **Catalog**: never add `version` or `getyCatalog` to
   `packages/catalog/package.json`, never remove its `private`, and never write a
   changeset for `@gety-connectors/catalog`. After the connectors are published,
-  the release workflow builds it (`scripts/catalog.ts`): official entries from
-  the manifests' `name`, `description` and icon and each connector's npm
-  `latest` version and publish time; community entries from the registered
-  version's npm `gety`, tarball icon and publish time and the author's GitHub
-  id. It publishes the catalog with a patch bump when it changed. Raster icons
-  are PNG (downscaled to 128 px) or WebP at most 128 px.
+  and on pushes to `main` with nothing to version or publish, the release
+  workflow builds it (`scripts/catalog.ts`, run by
+  `.github/actions/publish-catalog`): official entries from the manifests'
+  `name`, `description` and icon and each connector's npm `latest` version and
+  publish time; community entries from the registered version's npm `gety`,
+  tarball icon and publish time and the author's GitHub id. It publishes the
+  catalog with a patch bump when it changed. Raster icons are PNG (downscaled to
+  128 px) or WebP at most 128 px.
 - **Community registrations**: a `community/<id>.json` holds exactly `package`,
   `version` and `author.github`; `scripts/catalog.ts` rejects any other field.
   Name, description and icon come from the registered version on npm, never from

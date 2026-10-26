@@ -55,15 +55,17 @@ downloading the tarball:
   use a new field name (for example `getyCatalog2`) instead of changing
   `getyCatalog`.
 
-The package is generated after every release that publishes connectors: the
-release workflow reads each official connector's `latest` version and publish
-time and each community connector's registered version from the registry,
-combines them with the official manifests at the released commit and the
-community registrations, and publishes a new patch version of the catalog when
-the result differs from the published `getyCatalog`. A connector's new name,
-description or icon therefore reaches the catalog with that connector's next
-release. The catalog has no CHANGELOG; each connector's own CHANGELOG.md
-describes its releases.
+The package is generated after every release that publishes connectors, and on
+every push to `main` with nothing to version or publish (such as a merged
+community registration): the release workflow reads each official connector's
+`latest` version and publish time and each community connector's registered
+version from the registry, combines them with the official manifests at that
+commit and the community registrations, and publishes a new patch version of the
+catalog when the result differs from the published `getyCatalog`. An official
+connector's new name, description or icon therefore reaches the catalog with
+that connector's next release, a community connector's with the merged
+registration of its new version. The catalog has no CHANGELOG; each connector's
+own CHANGELOG.md describes its releases.
 
 `packages/catalog/package.json` in the repository holds the package metadata
 only. It is `private` so that changesets neither versions nor publishes it;

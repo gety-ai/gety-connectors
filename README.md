@@ -168,18 +168,26 @@ Releases are driven by [changesets](https://changesets.dev) and
    not managed by changesets (its `package.json` is `private` and has no
    version): a change to a connector's name, description or icon ships with that
    connector's release, and no catalog changeset is needed.
+5. A push to `main` with nothing to version or publish (no pending changesets,
+   every package version on npm), such as a merged community registration, runs
+   the catalog job instead: the same catalog steps
+   (`.github/actions/publish-catalog`), publishing the catalog when it changed.
+   A push with pending changesets leaves the catalog to the release that
+   follows, because the manifests may carry unreleased names, descriptions or
+   icons; a community registration merged then is listed after that release.
 
 If the publish job fails partway (a package or the catalog), re-run the failed
 job: changesets skips the packages already on npm, and the catalog is generated
-again. A run without anything to publish does not regenerate the catalog;
-`deno task catalog` (without `--out`) prints what it would publish.
+again; re-run a failed catalog job the same way. `deno task catalog` (without
+`--out`) prints what would be published.
 
-Only the publish job can mint an OIDC token (`id-token: write`); the version job
-has `contents: write` to push its branch and `pull-requests: read` to find the
-open pull request. The organization does not allow GitHub Actions to create pull
-requests, so the workflow never opens one itself. Pushes made with the
-workflow's `GITHUB_TOKEN` do not trigger `verify.yml` on that pull request; the
-publish path re-runs the sync check and tarball verification before packing.
+Only the publish and catalog jobs can mint an OIDC token (`id-token: write`);
+the version job has `contents: write` to push its branch and
+`pull-requests: read` to find the open pull request. The organization does not
+allow GitHub Actions to create pull requests, so the workflow never opens one
+itself. Pushes made with the workflow's `GITHUB_TOKEN` do not trigger
+`verify.yml` on that pull request; the publish path re-runs the sync check and
+tarball verification before packing.
 
 npm only installs `latest` or an exact version in Gety, and npm never lets a
 version be republished, so fix a bad release by publishing a new version.

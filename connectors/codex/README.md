@@ -33,7 +33,8 @@ markdown documents.
   mtime or size changed.
 - Tracks lightweight file fingerprints in connector state so changed files,
   removed files, and config changes can update only the affected session docs.
-  Gety commits the state only when a poll succeeds.
+  Gety commits the state only when a poll succeeds. A poll that finds nothing
+  changed sends no state at all, and Gety keeps the committed one.
 - Limits each document's content to 8,000,000 UTF-8 bytes; longer sessions are
   cut there and marked with `content_truncated` in the metadata.
 

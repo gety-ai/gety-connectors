@@ -79,6 +79,7 @@ export default class CodexConnector extends Connector<
 		}
 		const currentFiles: Record<string, CodexFileState> = {};
 		const currentIndexed = new Set<string>();
+		let reparsed = false;
 		for (const group of groupCodexSessionFiles(listing.files)) {
 			this.signal.throwIfAborted();
 			if (isUnchangedGroup(group, previousFiles, previousGroupSizes)) {
@@ -117,6 +118,7 @@ export default class CodexConnector extends Connector<
 				}
 				throw error;
 			}
+			reparsed = true;
 			for (const file of group.files) {
 				const fingerprint = { mtime_ms: file.mtimeMs, size: file.size };
 				currentFiles[file.stateKey] = session != null
@@ -135,11 +137,24 @@ export default class CodexConnector extends Connector<
 				currentFiles[stateKey] ??= previousFile;
 			}
 		}
+		const known = state.indexed_sessions ?? [];
 		const { deleted, indexed } = reconcileSessions(
-			state.indexed_sessions ?? [],
+			known,
 			currentIndexed,
 			complete,
 		);
+		const indexedSet = new Set(indexed);
+		if (
+			// initialState returns the committed state itself when it applies.
+			state === this.lastState && !reparsed && deleted.length === 0 &&
+			Object.keys(currentFiles).length === Object.keys(previousFiles).length &&
+			indexedSet.size === known.length &&
+			known.every((id) => indexedSet.has(id))
+		) {
+			// The state would be the committed one again: a poll without batches
+			// leaves it as it is, without sending it back to Gety to store.
+			return;
+		}
 		yield {
 			updates: deleted.map((id) => buildCodexSessionDelete({ id })),
 			state: nextState(currentFiles, indexed, options),

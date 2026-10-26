@@ -529,6 +529,51 @@ Deno.test('poll deletes removed sessions and does not open unchanged files', asy
 	});
 });
 
+Deno.test('poll sends no batch when nothing changed', async () => {
+	await withHome(async (home) => {
+		await writeSession(home, 'sessions/a.jsonl', sessionLines('session-a'));
+		const first = await poll(home, {}, null);
+		assert.equal(upserts(first).length, 1);
+
+		const second = await poll(home, {}, first.committedState);
+		assert.equal(second.outcome, 'done');
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
+
+		// A new log of a session that is not indexed changes only the state.
+		await writeSession(home, 'sessions/b.jsonl', [
+			message('user', 'Only a prompt.'),
+		]);
+		const third = await poll(home, {}, first.committedState);
+		assert.deepEqual(third.updates, []);
+		const thirdState = third.committedState as CodexState;
+		assert.deepEqual(Object.keys(thirdState.files ?? {}), [
+			'sessions/a.jsonl',
+			'sessions/b.jsonl',
+		]);
+
+		// So does removing it again.
+		await Deno.remove(join(home, '.codex/sessions/b.jsonl'));
+		const fourth = await poll(home, {}, thirdState);
+		assert.deepEqual(fourth.updates, []);
+		const fourthState = fourth.committedState as CodexState;
+		assert.deepEqual(Object.keys(fourthState.files ?? {}), [
+			'sessions/a.jsonl',
+		]);
+
+		// And a changed option, with the same documents.
+		const fifth = await poll(
+			home,
+			{ include_archived_sessions: false },
+			fourthState,
+		);
+		assert.equal(
+			(fifth.committedState as CodexState).include_archived_sessions,
+			false,
+		);
+	});
+});
+
 Deno.test('poll keeps sessions whose file vanished before it was read', async () => {
 	await withHome(async (home) => {
 		await writeSession(home, 'sessions/a.jsonl', sessionLines('session-a'));
@@ -661,14 +706,12 @@ Deno.test('poll keeps a paginated session whose segment vanished before it was r
 			}
 		}, () => poll(home, {}, first.committedState));
 		assert.equal(second.outcome, 'done');
-		assert.deepEqual(second.updates, []);
-		assert.deepEqual(
-			(second.committedState as CodexState).indexed_sessions,
-			[PARENT_ID],
-		);
+		// The session stays as the first poll left it: there is nothing to send.
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
 
 		await Deno.remove(vanished);
-		const third = await poll(home, {}, second.committedState);
+		const third = await poll(home, {}, first.committedState);
 		assert.deepEqual(upserts(third), [
 			{ id: `codex:session:${PARENT_ID}`, title: `Prompt 1 for ${PARENT_ID}` },
 		]);
@@ -687,7 +730,6 @@ Deno.test('poll keeps a paginated session whose segment the listing missed', asy
 		await writeSession(home, SEGMENT_PATHS[0], segment(['Answer one.']));
 		await writeSession(home, SEGMENT_PATHS[1], segment(['Answer two.']));
 		const first = await poll(home, {}, null);
-		const firstFiles = (first.committedState as CodexState).files ?? {};
 
 		// The last segment grows while the listing loses track of the first.
 		await writeSession(
@@ -702,13 +744,12 @@ Deno.test('poll keeps a paginated session whose segment the listing missed', asy
 			}
 		}, () => poll(home, {}, first.committedState));
 		assert.equal(second.outcome, 'done');
-		assert.deepEqual(second.updates, []);
-		const secondState = second.committedState as CodexState;
-		assert.deepEqual(secondState.files, firstFiles);
-		assert.deepEqual(secondState.indexed_sessions, [PARENT_ID]);
+		// The session stays as the first poll left it: there is nothing to send.
+		assert.deepEqual(second.batches, []);
+		assert.equal(second.committedState, undefined);
 
 		// A complete poll rebuilds the session from both segments.
-		const third = await poll(home, {}, secondState);
+		const third = await poll(home, {}, first.committedState);
 		const [update] = third.updates;
 		if (third.updates.length !== 1 || update.kind !== 'upsert') {
 			throw new Error('expected one upsert');

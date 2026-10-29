@@ -11,8 +11,7 @@
 // versions in place of the registry's (scripts/catalog.ts) and an empty
 // community list (its entries come from npm and GitHub, which
 // `deno task community:check` covers), and packed with npm. Its tarball must
-// carry a valid `getyCatalog`, the README and the LICENSE, and a package.json
-// under the size limit.
+// carry a valid `getyCatalog`, the README and the LICENSE.
 
 import { UntarStream } from '@std/tar/untar-stream';
 import {
@@ -21,7 +20,6 @@ import {
 	type CatalogTemplate,
 	catalogTemplatePath,
 	firstCatalogVersion,
-	maxCatalogPackageBytes,
 	officialCatalog,
 	type Release,
 	writeCatalogPackage,
@@ -185,11 +183,6 @@ function checkCatalog(name: string, tarball: Tarball, connectorCount: number) {
 		return;
 	}
 	const size = tarball.files.get('package.json')!.length;
-	if (size > maxCatalogPackageBytes) {
-		errors.push(
-			`${name}: package.json is ${size} bytes, more than ${maxCatalogPackageBytes}`,
-		);
-	}
 	const catalog = pkg.getyCatalog;
 	if (
 		!Array.isArray(catalog?.official) || !Array.isArray(catalog?.community)

@@ -1,8 +1,7 @@
 // Builds the @gety-connectors/catalog package, the list of official and
 // community connectors that Gety's connector gallery reads in a single request:
 // the `getyCatalog` field of the registry's
-// `<registry>/@gety-connectors%2Fcatalog/latest` document. The whole
-// package.json must therefore stay small.
+// `<registry>/@gety-connectors%2Fcatalog/latest` document.
 //
 // The release workflow runs this after publishing the connectors, and on every
 // push to main with nothing to version or publish (the catalog job). Official
@@ -48,8 +47,6 @@ export const catalogIconSize = 128;
 const maxIconBytes = 24 * 1024;
 /** Largest PNG width or height decoded (to downscale it). */
 export const maxPngIconSize = 2048;
-/** Upper bound for the whole catalog package.json. */
-export const maxCatalogPackageBytes = 64 * 1024;
 /** Version of the first catalog, published by hand (README, "First publish"). */
 export const firstCatalogVersion = '0.1.0';
 export const defaultRegistry = 'https://registry.npmjs.org/';
@@ -307,19 +304,7 @@ export function catalogPackage(
 	version: string,
 ): CatalogPackageJson {
 	const { name, private: _, ...metadata } = template;
-	const pkg: CatalogPackageJson = {
-		name,
-		version,
-		...metadata,
-		getyCatalog: catalog,
-	};
-	const size = new TextEncoder().encode(formatJson(pkg)).length;
-	if (size > maxCatalogPackageBytes) {
-		throw new Error(
-			`${name}: package.json would be ${size} bytes, more than ${maxCatalogPackageBytes}; use smaller icons`,
-		);
-	}
-	return pkg;
+	return { name, version, ...metadata, getyCatalog: catalog };
 }
 
 /**

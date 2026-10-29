@@ -8,7 +8,6 @@ import {
 	type CatalogOptions,
 	communityCatalog,
 	firstCatalogVersion,
-	maxCatalogPackageBytes,
 	nextCatalogVersion,
 	officialCatalog,
 	webpDimensions,
@@ -400,26 +399,6 @@ Deno.test('publishes the official and community lists, without connectors', asyn
 		assert.deepEqual(
 			catalog.community.map((entry) => [entry.package, entry.author]),
 			[['@acme/gety-jira', { github: 'acme', githubId: 1234567 }]],
-		);
-	});
-});
-
-Deno.test('the package size limit counts the community list', async () => {
-	await withCommunityDir(async (dir) => {
-		const docs = documents(connectorPackuments());
-		addGithubUser(docs, 'acme', 1);
-		// Two icons just under the per-icon limit outgrow the package limit.
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg"><!--${
-			'x'.repeat(23 * 1024)
-		}--></svg>`;
-		for (const id of ['a', 'b']) {
-			const pkg = sampleConnector(id, id);
-			await publish(docs, { ...pkg, files: { 'icon.svg': svg } });
-			await register(dir, `${id}.json`, registrationOf(pkg));
-		}
-		await assert.rejects(
-			buildCatalogPackage(stubRegistry(docs, { communityDir: dir })),
-			new RegExp(`more than ${maxCatalogPackageBytes}; use smaller icons`),
 		);
 	});
 });

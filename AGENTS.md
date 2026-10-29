@@ -10,6 +10,10 @@ full picture (layout, release flow, bootstrap).
 - `packages/catalog/`: `@gety-connectors/catalog`, generated and published by
   the release workflow after the connectors; `package.json` there is metadata
   only and `private`.
+- `community/`: one registration file `<manifest id>.json` per community
+  connector listed in the catalog (`package`, exact `version`, `author.github`),
+  plus a README.md. `CONTRIBUTING.md` is the authors' guide to registering; keep
+  it in step with the checks in `scripts/catalog.ts`.
 - `packages/utils/` (`@gety-connectors/utils`) and `packages/testing/`
   (`@gety-connectors/testing`): private Deno workspace packages without a
   `package.json`; never published. Connectors import utils by subpath and bundle
@@ -39,6 +43,7 @@ deno task test:tools            # tests in tools/ and scripts/
 deno task sync:check            # versions, manifests, gety
 deno task sync-sdk:check        # vendor/gety-deno matches SOURCE.json
 deno task verify:packs          # pack every package and inspect the tarballs
+deno task community:check       # community/ registrations (npm, GitHub)
 ```
 
 `deno task <name>` inside `connectors/<short>/` runs that connector's tasks
@@ -73,10 +78,18 @@ sandbox and state semantics (`-- --help` lists its options).
 - **Catalog**: never add `version` or `getyCatalog` to
   `packages/catalog/package.json`, never remove its `private`, and never write a
   changeset for `@gety-connectors/catalog`. After the connectors are published,
-  the release workflow builds it (`scripts/catalog.ts`) from the manifests'
+  and on pushes to `main` with nothing to version or publish, the release
+  workflow builds it (`scripts/catalog.ts`, run by
+  `.github/actions/publish-catalog`): official entries from the manifests'
   `name`, `description` and icon and each connector's npm `latest` version and
-  publish time, and publishes it with a patch bump when it changed. Raster icons
-  are PNG (downscaled to 128 px) or WebP at most 128 px.
+  publish time; community entries from the registered version's npm `gety`,
+  tarball icon and publish time and the author's GitHub id. It publishes the
+  catalog with a patch bump when it changed. Raster icons are PNG (downscaled to
+  128 px) or WebP at most 128 px.
+- **Community registrations**: a `community/<id>.json` holds exactly `package`,
+  `version` and `author.github`; `scripts/catalog.ts` rejects any other field.
+  Name, description and icon come from the registered version on npm, never from
+  the registration. `deno task community:check` must pass.
 - **Shared packages**: utils is not versioned; its code ships inside each
   connector bundle. A change to `packages/utils` needs a changeset listing every
   connector that imports the changed module. Do not add a `package.json` to

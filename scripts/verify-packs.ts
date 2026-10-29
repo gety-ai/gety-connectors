@@ -8,9 +8,10 @@
 //
 // The catalog is published by the release workflow from a generated directory
 // with `npm publish`; it is built here with the connectors' package.json
-// versions in place of the registry's (scripts/catalog.ts) and packed with
-// npm. Its tarball must carry a valid `getyCatalog`, the README and the
-// LICENSE, and a package.json under the size limit.
+// versions in place of the registry's (scripts/catalog.ts) and an empty
+// community list (its entries come from npm and GitHub, which
+// `deno task community:check` covers), and packed with npm. Its tarball must
+// carry a valid `getyCatalog`, the README and the LICENSE.
 
 import { UntarStream } from '@std/tar/untar-stream';
 import {
@@ -19,8 +20,7 @@ import {
 	type CatalogTemplate,
 	catalogTemplatePath,
 	firstCatalogVersion,
-	generateCatalog,
-	maxCatalogPackageBytes,
+	officialCatalog,
 	type Release,
 	writeCatalogPackage,
 } from './catalog.ts';
@@ -75,7 +75,7 @@ try {
 		catalogDir,
 		catalogPackage(
 			template,
-			await generateCatalog(connectors, releases),
+			{ official: await officialCatalog(connectors, releases), community: [] },
 			firstCatalogVersion,
 		),
 	);
@@ -183,17 +183,14 @@ function checkCatalog(name: string, tarball: Tarball, connectorCount: number) {
 		return;
 	}
 	const size = tarball.files.get('package.json')!.length;
-	if (size > maxCatalogPackageBytes) {
-		errors.push(
-			`${name}: package.json is ${size} bytes, more than ${maxCatalogPackageBytes}`,
-		);
-	}
 	const catalog = pkg.getyCatalog;
-	if (!Array.isArray(catalog?.connectors)) {
-		errors.push(`${name}: getyCatalog.connectors is missing`);
-	} else if (catalog.connectors.length !== connectorCount) {
+	if (
+		!Array.isArray(catalog?.official) || !Array.isArray(catalog?.community)
+	) {
+		errors.push(`${name}: getyCatalog.official or .community is missing`);
+	} else if (catalog.official.length !== connectorCount) {
 		errors.push(
-			`${name}: getyCatalog lists ${catalog.connectors.length} connectors, expected ${connectorCount}`,
+			`${name}: getyCatalog lists ${catalog.official.length} official connectors, expected ${connectorCount}`,
 		);
 	}
 	if (!tarball.files.has('README.md')) {

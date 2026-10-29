@@ -1,0 +1,37 @@
+# The catalog steps that both release.yml jobs publishing the catalog run
+# (publish after the connectors, catalog when nothing is released). The
+# calling job checks out the repository, sets up Deno and an npm that supports
+# trusted publishing, and has `id-token: write`: npm trusts the release.yml
+# workflow, whose jobs run these steps.
+
+name: Publish the catalog
+description: >-
+  Generates @gety-connectors/catalog and publishes it with npm when it differs
+  from the published one.
+
+runs:
+  using: composite
+  steps:
+    # Lists every connector at its npm `latest` and publish time, so in the
+    # publish job it runs after the connectors are published, and every
+    # community registration at its registered version with the author's
+    # GitHub id. It fails when a connector at this commit is not on npm at its
+    # package.json version (after waiting out the registry's cache) or a
+    # registration is invalid, and writes the package directory only when the
+    # catalog differs from the published one.
+    - name: Generate the catalog
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: deno task catalog --out "${RUNNER_TEMP}/catalog"
+
+    # `npm publish`, not pnpm: the directory is outside the workspace and
+    # already contains the LICENSE.
+    - name: Publish the catalog
+      shell: bash
+      run: |
+        if [ -d "${RUNNER_TEMP}/catalog" ]; then
+          npm publish "${RUNNER_TEMP}/catalog"
+        else
+          echo 'The published catalog is up to date.'
+        fi

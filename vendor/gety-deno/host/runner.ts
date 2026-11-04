@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import type { Connector, PollResult } from "@gety-ai/connector-sdk";
 import {
@@ -16,6 +17,13 @@ import { readStartFrame } from "./start_frame.ts";
 // negotiation and no tolerance for unknown versions.
 // Keep in sync: libs/gety-deno-connectors/tests/protocol_version_sync.rs
 const BUNDLED_PROTOCOL_VERSION = "0.2.0";
+// How long a poll may run between event-loop turns that let a pending cancel
+// (stdin EOF, SIGTERM) be observed. This gives periodic opportunities to see
+// cancel between poll results, not a wall-clock guarantee: a single long
+// `poll().next()` still runs to completion, and the host's forced kill after
+// its cancel grace remains the backstop. Costs at most one ~1 ms timer turn per
+// interval.
+const CANCEL_CHECK_INTERVAL_MS = 100;
 
 installConsoleLogRedirect();
 
@@ -101,7 +109,17 @@ try {
     Deno.exit(0);
   }
 
+  let lastCancelCheck = performance.now();
   for await (const result of instance.poll()) {
+    // A poll that never awaits real I/O resumes through microtasks only, and
+    // the stdin-EOF watcher and SIGTERM listener only run once the runtime
+    // polls I/O. Without this turn the host's cancel goes unobserved until the
+    // poll ends. A timer is required: it parks the runtime, which polls I/O,
+    // while an immediate keeps it busy and can defer I/O for many turns.
+    if (performance.now() - lastCancelCheck >= CANCEL_CHECK_INTERVAL_MS) {
+      await sleep(0);
+      lastCancelCheck = performance.now();
+    }
     if (controller.signal.aborted) {
       break;
     }

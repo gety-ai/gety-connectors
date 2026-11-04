@@ -90,6 +90,15 @@
         }
       ]
     },
+    "sync_version": {
+      "description": "Format version of the sync results (`state`, document ids, document\ncontent). Bump it when a new release cannot reuse what an older\nrelease synced; Gety then resyncs on upgrade. Defaults to 1.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 1
+    },
     "version": {
       "type": "string"
     }

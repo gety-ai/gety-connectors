@@ -2,7 +2,7 @@
 	"id": "codex_sessions",
 	"name": "Codex",
 	"version": "0.3.0",
-	"min_gety_app_version": "0.6.5",
+	"min_gety_app_version": "0.7.0",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",
 	"icon": "assets/codex-color.svg",

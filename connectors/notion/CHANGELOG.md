@@ -1,5 +1,12 @@
 # @gety-connectors/notion
 
+## 0.2.2
+
+### Patch Changes
+
+- 030e84e: Requires Gety 0.7.0 or newer, the first release that installs connectors from
+  npm. Installed copies keep working.
+
 ## 0.2.1
 
 ### Patch Changes

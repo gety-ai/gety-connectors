@@ -5,7 +5,7 @@ This Gety custom connector indexes Linear issues as markdown documents.
 ## Current Scope
 
 - Authenticates with a Linear personal API key.
-- Requires Gety 0.6.5 or newer and may only reach `api.linear.app` (manifest
+- Requires Gety 0.7.0 or newer and may only reach `api.linear.app` (manifest
   `permissions`).
 - Indexes Linear issues with `doc_type: "linear:issue"`.
 - Stores each issue as markdown so Gety can render the source preview when the

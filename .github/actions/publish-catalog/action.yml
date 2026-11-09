@@ -26,12 +26,33 @@ runs:
       run: deno task catalog --out "${RUNNER_TEMP}/catalog"
 
     # `npm publish`, not pnpm: the directory is outside the workspace and
-    # already contains the LICENSE.
+    # already contains the LICENSE. npm usually serves a new version as
+    # `latest` a minute or two after `npm publish` returns, so the step then
+    # waits until it does before succeeding: the next run (release.yml runs one
+    # at a time) reads the published catalog from there, and before it is
+    # visible would generate and publish the same version again, which npm
+    # rejects.
     - name: Publish the catalog
       shell: bash
       run: |
-        if [ -d "${RUNNER_TEMP}/catalog" ]; then
-          npm publish "${RUNNER_TEMP}/catalog"
-        else
+        dir="${RUNNER_TEMP}/catalog"
+        if [ ! -d "${dir}" ]; then
           echo 'The published catalog is up to date.'
+          exit 0
         fi
+        npm publish "${dir}"
+        name="$(jq -r .name "${dir}/package.json")"
+        version="$(jq -r .version "${dir}/package.json")"
+        url="https://registry.npmjs.org/${name/\//%2F}/latest"
+        attempts=25
+        for attempt in $(seq "${attempts}"); do
+          latest="$(curl -fsS --connect-timeout 10 --max-time 30 -H 'accept: application/json' "${url}" | jq -r .version)" || latest=''
+          if [ "${latest}" = "${version}" ]; then
+            echo "The registry serves ${name}@${version} as latest."
+            exit 0
+          fi
+          echo "Waiting for the registry to serve ${name}@${version} as latest (read ${attempt} of ${attempts}: ${latest:-no answer})"
+          sleep 15
+        done
+        echo "::error::${name}@${version} is published, but the registry still does not serve it as latest; re-run this job once it does"
+        exit 1

@@ -172,6 +172,12 @@ export type RawManifest = {
    * to `null`.
    */
   permissions?: RawPermissions;
+  /**
+   * Format version of the sync results (`state`, document ids, document
+   * content). Bump it when a new release cannot reuse what an older
+   * release synced; Gety then resyncs on upgrade. Defaults to 1.
+   */
+  sync_version?: number | null;
 };
 
 export type RawNetEntry = string | RawConfigFieldRef;

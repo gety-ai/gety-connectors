@@ -38,8 +38,9 @@ type PollResultLike = {
 };
 
 const encoder = new TextEncoder();
-// Soft split target for ordinary batches. Large single docs may use the hard cap below.
-const TARGET_BATCH_FRAME_BYTES = 512 * 1024;
+/** @internal Soft split target for ordinary batches. */
+// Large single docs may use the hard cap below.
+export const TARGET_BATCH_FRAME_BYTES = 512 * 1024;
 /** @internal Hard cap for one Deno -> host stdout frame. */
 // Mirrors DEFAULT_STDOUT_MAX_LINE in libs/gety-deno-connectors/src/process.rs.
 // Ecosystem defaults vary (Kafka ~1 MiB, gRPC 4 MiB, tokio-util 8 MiB,
@@ -57,58 +58,55 @@ export function encodeRunnerMessage(message: RunnerMessage): string {
 }
 
 export function writeRunnerMessage(message: RunnerMessage): void {
-  const deno = getDeno();
-  const writeSync = deno.stdout?.writeSync;
-  if (typeof writeSync !== "function") {
-    throw new Error("Deno stdout is unavailable");
-  }
-  writeAllSync(
-    writeSync,
-    deno.stdout,
-    encoder.encode(encodeRunnerMessage(message)),
-  );
+  writeFrame(encoder.encode(encodeRunnerMessage(message)));
 }
 
 export function writePollResultMessages(result: PollResultLike): void {
   const hasState = Object.prototype.hasOwnProperty.call(result, "state");
   const state = hasState ? (result.state as JsonValue) : undefined;
-  let chunk: WireDocUpdate[] = [];
 
   if (result.updates.length === 0) {
-    writeBatchChunk(chunk, hasState, state);
+    writeBatchChunk([], hasState, state);
     return;
   }
 
+  // A batch frame is the empty-batch frame plus each update's JSON and one
+  // comma between updates, so sizes are tracked as running byte totals and
+  // every update is encoded once for sizing instead of re-encoding the chunk.
+  const emptyFrameBytes = batchFrameBytes([], false, undefined);
+  let chunk: WireDocUpdate[] = [];
+  let chunkFrameBytes = emptyFrameBytes;
+  let lastUpdateBytes = 0;
   for (const update of result.updates) {
+    lastUpdateBytes = encoder.encode(JSON.stringify(update)).byteLength;
     if (
       chunk.length > 0 &&
-      batchFrameBytes([...chunk, update], false, undefined) >
-        TARGET_BATCH_FRAME_BYTES
+      chunkFrameBytes + 1 + lastUpdateBytes > TARGET_BATCH_FRAME_BYTES
     ) {
       writeBatchChunk(chunk, false, undefined);
       chunk = [];
+      chunkFrameBytes = emptyFrameBytes;
     }
 
+    chunkFrameBytes += (chunk.length > 0 ? 1 : 0) + lastUpdateBytes;
     chunk.push(update);
-    if (batchFrameBytes(chunk, false, undefined) > MAX_STDOUT_FRAME_BYTES) {
+    if (chunkFrameBytes > MAX_STDOUT_FRAME_BYTES) {
       throw new Error("single Deno doc update exceeds IPC frame size limit");
     }
   }
 
-  while (
-    hasState &&
+  const stateBytes = batchFrameBytes([], hasState, state) - emptyFrameBytes;
+  if (
     chunk.length > 1 &&
-    batchFrameBytes(chunk, true, state) > MAX_STDOUT_FRAME_BYTES
+    chunkFrameBytes + stateBytes > MAX_STDOUT_FRAME_BYTES
   ) {
     const last = chunk.pop()!;
     writeBatchChunk(chunk, false, undefined);
     chunk = [last];
+    chunkFrameBytes = emptyFrameBytes + lastUpdateBytes;
   }
 
-  if (
-    hasState &&
-    batchFrameBytes(chunk, true, state) > MAX_STDOUT_FRAME_BYTES
-  ) {
+  if (chunkFrameBytes + stateBytes > MAX_STDOUT_FRAME_BYTES) {
     writeBatchChunk(chunk, false, undefined);
     writeBatchChunk([], true, state);
     return;
@@ -133,13 +131,15 @@ function writeBatchChunk(
   hasState: boolean,
   state: JsonValue | undefined,
 ): void {
-  const message = hasState
-    ? batchMessage({ updates, state })
-    : batchMessage({ updates });
-  if (encodedMessageBytes(message) > MAX_STDOUT_FRAME_BYTES) {
+  const frame = encoder.encode(
+    encodeRunnerMessage(
+      hasState ? batchMessage({ updates, state }) : batchMessage({ updates }),
+    ),
+  );
+  if (frame.byteLength > MAX_STDOUT_FRAME_BYTES) {
     throw new Error("Deno poll result state exceeds IPC frame size limit");
   }
-  writeRunnerMessage(message);
+  writeFrame(frame);
 }
 
 function batchFrameBytes(
@@ -147,20 +147,20 @@ function batchFrameBytes(
   hasState: boolean,
   state: JsonValue | undefined,
 ): number {
-  return encodedMessageBytes(
-    hasState ? batchMessage({ updates, state }) : batchMessage({ updates }),
-  );
+  return encoder.encode(
+    encodeRunnerMessage(
+      hasState ? batchMessage({ updates, state }) : batchMessage({ updates }),
+    ),
+  ).byteLength;
 }
 
-function encodedMessageBytes(message: RunnerMessage): number {
-  return encoder.encode(encodeRunnerMessage(message)).byteLength;
-}
-
-function writeAllSync(
-  writeSync: (data: Uint8Array) => number,
-  stdout: DenoLike["stdout"],
-  bytes: Uint8Array,
-): void {
+/** Write one encoded frame, retrying short writes. */
+function writeFrame(bytes: Uint8Array): void {
+  const stdout = getDeno().stdout;
+  const writeSync = stdout?.writeSync;
+  if (typeof writeSync !== "function") {
+    throw new Error("Deno stdout is unavailable");
+  }
   let offset = 0;
   while (offset < bytes.byteLength) {
     const written = writeSync.call(stdout, bytes.subarray(offset));

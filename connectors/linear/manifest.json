@@ -1,7 +1,7 @@
 {
 	"id": "linear",
 	"name": "Linear",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"min_gety_app_version": "0.7.0",
 	"entry": "dist/main.js",
 	"icon": "assets/linear.webp",

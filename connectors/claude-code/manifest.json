@@ -1,7 +1,7 @@
 {
 	"id": "claude-code",
 	"name": "Claude Code",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"min_gety_app_version": "0.7.0",
 	"capabilities": ["data-source"],
 	"entry": "dist/main.js",

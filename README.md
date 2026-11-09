@@ -168,10 +168,12 @@ Releases are driven by [changesets](https://changesets.dev) and
    community registration that no longer passes `deno task community:check`
    fails the step too. When the generated `getyCatalog` differs from the
    published one, the job publishes it with `npm publish` as the published
-   catalog version plus a patch; otherwise it publishes nothing. The catalog is
-   not managed by changesets (its `package.json` is `private` and has no
-   version): a change to a connector's name, description or icon ships with that
-   connector's release, and no catalog changeset is needed.
+   catalog version plus a patch, and succeeds only once the registry serves that
+   version as `latest` (usually a minute or two), so the next run reads it;
+   otherwise it publishes nothing. The catalog is not managed by changesets (its
+   `package.json` is `private` and has no version): a change to a connector's
+   name, description or icon ships with that connector's release, and no catalog
+   changeset is needed.
 5. A push to `main` with nothing to version or publish (no pending changesets,
    every package version on npm), such as a merged community registration, runs
    the catalog job instead: the same catalog steps
@@ -182,8 +184,11 @@ Releases are driven by [changesets](https://changesets.dev) and
 
 If the publish job fails partway (a package or the catalog), re-run the failed
 job: changesets skips the packages already on npm, and the catalog is generated
-again; re-run a failed catalog job the same way. `deno task catalog` (without
-`--out`) prints what would be published.
+again; re-run a failed catalog job the same way. When the step fails because the
+registry does not serve the published catalog yet, re-run it once
+`npm view @gety-connectors/catalog version` shows the new version: the catalog
+is then equal to the published one and nothing is published. `deno task catalog`
+(without `--out`) prints what would be published.
 
 Only the publish and catalog jobs can mint an OIDC token (`id-token: write`);
 the version job has `contents: write` to push its branch and
